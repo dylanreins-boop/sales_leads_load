@@ -1,0 +1,48 @@
+# Fly.io settings for the Bob Moses lead pipeline.
+# If the app name is taken, change it here (or let `fly launch` pick one).
+app = "bob-moses-leads"
+primary_region = "lax"   # Los Angeles, the closest Fly region to Las Vegas
+
+[build]
+
+[env]
+  PORT = "3000"
+  DB_PATH = "/data/leads.db"
+  TZ = "America/Los_Angeles"
+  BRAND_NAME = "Bob Moses Ceramic Coating"
+  BRAND_SHORT_NAME = "Bob Moses Leads"
+  BRAND_CITY = "Las Vegas"
+  BRAND_PHONE = "(702) 600-1128"
+  BRAND_ADDRESS = "3120 W Sirius Ave Ste 103, Las Vegas, NV 89102"
+  BRAND_WEBSITE = "https://bobmosescc.com/locations/las-vegas-nv/"
+  REMINDER_HOUR = "9"
+  REMINDER_SKIP_WEEKENDS = "true"
+  LEAD_ARCHIVE_DAYS = "14"
+  CORS_ORIGINS = "https://bobmosescc.com,https://www.bobmosescc.com"
+  # Passwords and keys (APP_USERS, EMAIL_API_KEY, FB_*) go in `fly secrets set`, not here.
+
+# The lead database lives on this disk so it survives deploys and restarts.
+[[mounts]]
+  source = "leads_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Keep one machine running so reminders, the two-week sweep and webhooks are always on.
+  # The database is a single file, so run exactly one machine (don't scale out).
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/manifest.webmanifest"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -234,7 +234,36 @@ fields. Recognised field names include `name`, `first_name`, `last_name`, `email
 If someone who is already in the pipeline submits again (same email or phone), the inquiry is added to
 their existing lead's activity log instead of creating a duplicate card.
 
-## Deploying
+## Deploying on Fly.io
+
+`fly.toml` and `Dockerfile` are set up for Fly: one machine in Los Angeles (closest to Las Vegas), a 1 GB
+volume at `/data` for the database, Las Vegas time, and the company details. Run these from this folder
+with the [Fly CLI](https://fly.io/docs/flyctl/install/) installed and `fly auth login` done:
+
+```bash
+fly launch --copy-config --no-deploy          # creates the app from fly.toml (pick a new name if asked)
+fly volumes create leads_data --region lax --size 1
+fly secrets set APP_USERS='Dylan:a-strong-password,Sam:another-strong-password'
+fly deploy
+fly open                                      # opens https://<app-name>.fly.dev
+```
+
+Then put it on the company's domain:
+
+```bash
+fly certs add leads.bobmosescc.com
+```
+
+Fly prints the DNS record to add (a CNAME from `leads` to `<app-name>.fly.dev`). Once that's added at
+whoever hosts bobmosescc.com's DNS, `fly certs show leads.bobmosescc.com` shows the certificate is ready,
+usually within minutes.
+
+Later, add the other secrets the same way when you have them:
+`fly secrets set WEBSITE_API_KEY=… EMAIL_PROVIDER=resend EMAIL_API_KEY=… EMAIL_FROM='Bob Moses Ceramic Coating <…>' FB_VERIFY_TOKEN=… FB_APP_SECRET=… FB_PAGE_ACCESS_TOKEN=… FB_FORM_IDS=…`
+Each `fly secrets set` restarts the app with the new values. Keep it at one machine: the database is a
+single file on the volume. Turn on volume snapshots (`fly volumes list`, then the Fly dashboard) for backups.
+
+## Deploying elsewhere
 
 Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS. Things to check:
 
