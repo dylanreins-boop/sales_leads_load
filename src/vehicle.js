@@ -1,12 +1,39 @@
 // Vehicle details for a ceramic coating lead, and how to find them in
 // Facebook / website form answers whatever the questions were called.
 const VEHICLE_FIELDS = [
+  { key: 'vehicle_type', label: 'Vehicle type' },
   { key: 'vehicle_year', label: 'Year' },
   { key: 'vehicle_make', label: 'Make' },
   { key: 'vehicle_model', label: 'Model' },
   { key: 'vehicle_color', label: 'Color' },
-  { key: 'service_interest', label: 'Service interested in' },
 ];
+
+// Choices for the Vehicle type dropdown. Edit this list to change them.
+const VEHICLE_TYPES = ['Car', 'Truck', 'SUV', 'Van', 'Motorcycle', 'Coach / RV', 'Boat', 'Jet Ski', 'Plane', 'Other'];
+
+// Words in a form answer that point to one of the types above (checked in order).
+const TYPE_WORDS = [
+  ['Jet Ski', ['jet ski', 'jetski', 'pwc', 'sea-doo', 'seadoo', 'waverunner']],
+  ['Plane', ['plane', 'airplane', 'aircraft', 'jet', 'helicopter']],
+  ['Boat', ['boat', 'yacht', 'pontoon', 'sailboat', 'vessel']],
+  ['Coach / RV', ['coach', 'rv', 'motorhome', 'motor home', 'camper', 'bus', 'trailer']],
+  ['Motorcycle', ['motorcycle', 'motorbike', 'bike']],
+  ['Truck', ['truck', 'pickup']],
+  ['SUV', ['suv', 'crossover']],
+  ['Van', ['van', 'minivan']],
+  ['Car', ['car', 'sedan', 'coupe', 'hatchback', 'convertible', 'wagon']],
+];
+
+// Turns a free-text answer like "motorhome" into "Coach / RV". Unknown answers are kept as typed.
+function normalizeVehicleType(text) {
+  const value = String(text || '').trim();
+  if (!value) return value;
+  const exact = VEHICLE_TYPES.find((t) => t.toLowerCase() === value.toLowerCase());
+  if (exact) return exact;
+  const lower = ` ${value.toLowerCase().replace(/[^a-z0-9-]+/g, ' ')} `;
+  const hit = TYPE_WORDS.find(([, ws]) => ws.some((w) => lower.includes(` ${w} `)));
+  return hit ? hit[0] : value;
+}
 
 // Words in a form field name that tell us what the answer is.
 const MATCHERS = [
@@ -14,7 +41,7 @@ const MATCHERS = [
   ['vehicle_make', ['make', 'brand', 'manufacturer']],
   ['vehicle_model', ['model']],
   ['vehicle_color', ['color', 'colour', 'paint']],
-  ['service_interest', ['service', 'package', 'coating', 'interested']],
+  ['vehicle_type', ['type', 'kind']],
 ];
 
 const words = (name) => String(name).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -23,11 +50,9 @@ function classify(fieldName) {
   const w = words(fieldName);
   const hits = MATCHERS.filter(([, keys]) => keys.some((k) => w.includes(k))).map(([field]) => field);
   if (!hits.length) return null;
-  // "Color" or "service" questions are what they say, even if they mention the car.
+  // "Color" and "type" questions are what they say, even if they mention the vehicle.
   if (hits.includes('vehicle_color')) return 'vehicle_color';
-  if (hits.includes('service_interest') && !hits.some((h) => ['vehicle_year', 'vehicle_make', 'vehicle_model'].includes(h))) {
-    return 'service_interest';
-  }
+  if (hits.includes('vehicle_type')) return 'vehicle_type';
   // A combined "year, make and model" question keeps the whole answer together.
   const carParts = hits.filter((h) => ['vehicle_year', 'vehicle_make', 'vehicle_model'].includes(h));
   if (carParts.length > 1) return 'vehicle_model';
@@ -41,7 +66,7 @@ function extractVehicle(answers) {
     const text = value == null ? '' : String(value).trim();
     if (!text) continue;
     const field = classify(name);
-    if (field && !vehicle[field]) vehicle[field] = text;
+    if (field && !vehicle[field]) vehicle[field] = field === 'vehicle_type' ? normalizeVehicleType(text) : text;
   }
   return vehicle;
 }
@@ -53,4 +78,4 @@ function isValidYear(value) {
   return /^\d{4}$/.test(String(value).trim()) && year >= 1900 && year <= new Date().getFullYear() + 2;
 }
 
-module.exports = { VEHICLE_FIELDS, extractVehicle, isValidYear };
+module.exports = { VEHICLE_FIELDS, VEHICLE_TYPES, extractVehicle, normalizeVehicleType, isValidYear };

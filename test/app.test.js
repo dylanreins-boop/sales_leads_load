@@ -286,12 +286,12 @@ test('dashboard is served and unknown API routes 404', async () => {
 test('vehicle details are picked up from website and Facebook forms', () => {
   const { mapWebsiteLead } = require('../src/website');
   const { mapFacebookLead } = require('../src/facebook');
-  const web = mapWebsiteLead({ name: 'Kai Lee', phone: '555-1234567', vehicle_year: '2023', make: 'Tesla', model: 'Model Y', color: 'Pearl White', service: 'Full ceramic coating' });
+  const web = mapWebsiteLead({ name: 'Kai Lee', phone: '555-1234567', vehicle_year: '2023', make: 'Tesla', model: 'Model Y', color: 'Pearl White', type: 'car' });
   assert.equal(web.vehicle_year, '2023');
   assert.equal(web.vehicle_make, 'Tesla');
   assert.equal(web.vehicle_model, 'Model Y');
   assert.equal(web.vehicle_color, 'Pearl White');
-  assert.equal(web.service_interest, 'Full ceramic coating');
+  assert.equal(web.vehicle_type, 'Car');
 
   const fb = mapFacebookLead({
     id: 'fb-v1',
@@ -299,12 +299,19 @@ test('vehicle details are picked up from website and Facebook forms', () => {
       { name: 'full_name', values: ['Rae Kim'] },
       { name: 'what_is_the_year,_make_and_model_of_your_vehicle?', values: ['2021 BMW M3'] },
       { name: 'what_color_is_your_vehicle?', values: ['Isle of Man Green'] },
-      { name: 'which_package_are_you_interested_in?', values: ['Paint correction + coating'] },
+      { name: 'what_type_of_vehicle_is_it?', values: ['Motorhome'] },
     ],
   });
   assert.equal(fb.vehicle_model, '2021 BMW M3');
   assert.equal(fb.vehicle_color, 'Isle of Man Green');
-  assert.equal(fb.service_interest, 'Paint correction + coating');
+  assert.equal(fb.vehicle_type, 'Coach / RV');
+
+  const { normalizeVehicleType } = require('../src/vehicle');
+  assert.equal(normalizeVehicleType('Pontoon boat'), 'Boat');
+  assert.equal(normalizeVehicleType('Sea-Doo jet ski'), 'Jet Ski');
+  assert.equal(normalizeVehicleType('Cessna aircraft'), 'Plane');
+  assert.equal(normalizeVehicleType('pickup'), 'Truck');
+  assert.equal(normalizeVehicleType('Golf cart'), 'Golf cart', 'unknown types are kept as typed');
 });
 
 test('lead info can be edited and every change is logged', async () => {
@@ -315,11 +322,12 @@ test('lead info can be edited and every change is logged', async () => {
   assert.equal(lead.vehicle_make, 'Audi');
 
   const res = await call('PATCH', `/api/leads/${lead.id}`, {
-    vehicle_year: '2020', vehicle_make: 'Audi', vehicle_color: 'Navarra Blue', last_name: 'Diaz-Ruiz', email: 'nora@example.com',
+    vehicle_year: '2020', vehicle_make: 'Audi', vehicle_color: 'Navarra Blue', vehicle_type: 'SUV', last_name: 'Diaz-Ruiz', email: 'nora@example.com',
   });
   assert.equal(res.status, 200);
   assert.equal(res.data.vehicle_year, '2020');
   assert.equal(res.data.vehicle_color, 'Navarra Blue');
+  assert.equal(res.data.vehicle_type, 'SUV');
   assert.equal(res.data.full_name, 'Nora Diaz-Ruiz');
   const log = res.data.activities.find((a) => a.type === 'info_updated');
   assert.match(log.note, /Year: 2019 → 2020/);

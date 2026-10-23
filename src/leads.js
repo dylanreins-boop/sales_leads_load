@@ -138,7 +138,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
       params.push(like, like, `%${q.replace(/\D/g, '') || q}%`, like);
     }
     return stmt(`SELECT l.id, l.source, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage,
-                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.service_interest,
+                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type,
                         l.campaign, l.last_disposition, l.last_contacted_at, l.received_at, l.updated_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}

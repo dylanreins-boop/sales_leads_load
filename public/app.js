@@ -129,10 +129,10 @@ function renderBoard() {
   }));
 }
 
-// "2023 Tesla Model Y · Pearl White"
+// "Car · 2023 Tesla Model Y · Pearl White"
 function vehicleLine(l) {
-  const car = [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ');
-  return [car, l.vehicle_color].filter(Boolean).join(' · ');
+  const vehicle = [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ');
+  return [l.vehicle_type, vehicle, l.vehicle_color].filter(Boolean).join(' · ');
 }
 
 function leadCard(lead) {
@@ -242,10 +242,19 @@ function renderLead(lead) {
 }
 
 // ---------- lead info ----------
-const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'service_interest'];
+const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type'];
+
+// Fills a Vehicle type dropdown, keeping any non-standard value a lead already has.
+function fillVehicleTypes(select, current = '') {
+  const types = [...state.meta.vehicleTypes];
+  if (current && !types.includes(current)) types.push(current);
+  select.replaceChildren(h('option', { value: '' }, 'Not set'), ...types.map((t) => h('option', { value: t }, t)));
+  select.value = current;
+}
 
 function fillInfoForm(lead) {
   const form = $('#infoForm');
+  fillVehicleTypes(form.vehicle_type, lead.vehicle_type ?? '');
   for (const f of INFO_FIELDS) form[f].value = lead[f] ?? '';
   // Older leads may only have a full name.
   if (!lead.first_name && !lead.last_name && lead.full_name) {
@@ -576,6 +585,7 @@ async function init() {
   $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
   $('#syncFb').addEventListener('click', syncFacebook);
+  fillVehicleTypes($('#addLeadForm').vehicle_type);
   $('#addLeadBtn').addEventListener('click', () => $('#addLeadDialog').showModal());
   $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
   $('#emailForm').addEventListener('submit', saveEmailSettings);

@@ -10,7 +10,7 @@
   point its "webhook" / "send to URL" setting at
   POST https://leads.yourcompany.com/api/intake/website
   with JSON or form fields named name/first_name/last_name, email, phone, message,
-  vehicle_year, vehicle_make, vehicle_model, vehicle_color and service_interest.
+  vehicle_type, vehicle_year, vehicle_make, vehicle_model and vehicle_color.
 -->
 <form action="https://leads.yourcompany.com/api/intake/website" method="POST">
   <input type="hidden" name="form_name" value="Contact page">
@@ -24,19 +24,24 @@
   <label>Last name <input name="last_name"></label>
   <label>Phone <input name="phone" type="tel" required></label>
   <label>Email <input name="email" type="email"></label>
+  <label>Vehicle type
+    <select name="vehicle_type">
+      <option>Car</option>
+      <option>Truck</option>
+      <option>SUV</option>
+      <option>Van</option>
+      <option>Motorcycle</option>
+      <option>Coach / RV</option>
+      <option>Boat</option>
+      <option>Jet Ski</option>
+      <option>Plane</option>
+      <option>Other</option>
+    </select>
+  </label>
   <label>Vehicle year <input name="vehicle_year" inputmode="numeric" maxlength="4"></label>
   <label>Make <input name="vehicle_make"></label>
   <label>Model <input name="vehicle_model"></label>
   <label>Color <input name="vehicle_color"></label>
-  <label>Service
-    <select name="service_interest">
-      <option value="">Not sure yet</option>
-      <option>Full ceramic coating</option>
-      <option>Paint correction + ceramic coating</option>
-      <option>Paint protection film (PPF)</option>
-      <option>Interior ceramic protection</option>
-    </select>
-  </label>
   <label>How can we help? <textarea name="message"></textarea></label>
   <button type="submit">Request a call</button>
 </form>
