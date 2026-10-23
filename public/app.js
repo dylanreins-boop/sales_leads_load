@@ -7,6 +7,7 @@ const state = {
   openLeadId: null,
   openLead: null,
   emailSettings: null,
+  pipeline: 'other',
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -107,10 +108,41 @@ async function loadLeads() {
   renderBoard();
 }
 
+// ---------- pipelines (RVs / all other vehicles) ----------
+function pickPipeline() {
+  const ids = state.meta.pipelines.map((p) => p.id);
+  const fromLink = location.hash.slice(1);
+  let saved = null;
+  try { saved = localStorage.getItem('pipeline'); } catch { /* storage unavailable */ }
+  state.pipeline = [fromLink, saved].find((id) => ids.includes(id)) || 'other';
+}
+
+function setPipeline(id) {
+  state.pipeline = id;
+  try { localStorage.setItem('pipeline', id); } catch { /* storage unavailable */ }
+  history.replaceState(null, '', `#${id}`);
+  renderBoard();
+}
+
+function renderTabs() {
+  $('#pipelineTabs').replaceChildren(...state.meta.pipelines.map((p) => h('button', {
+    type: 'button',
+    role: 'tab',
+    class: 'pipeline-tab',
+    'aria-selected': String(p.id === state.pipeline),
+    onclick: () => setPipeline(p.id),
+  }, p.label, h('span', { class: 'count' }, state.leads.filter((l) => l.pipeline === p.id).length))));
+}
+
+const pipelineLabel = (id) => state.meta.pipelines.find((p) => p.id === id)?.label ?? id;
+
 function renderBoard() {
+  renderTabs();
   const board = $('#board');
+  board.setAttribute('aria-label', pipelineLabel(state.pipeline));
+  const inPipeline = state.leads.filter((l) => l.pipeline === state.pipeline);
   board.replaceChildren(...state.meta.stages.map((stage) => {
-    const leads = state.leads.filter((l) => l.stage === stage.id);
+    const leads = inPipeline.filter((l) => l.stage === stage.id);
     const column = h('section', { class: 'column', dataset: { stage: stage.id } },
       h('div', { class: 'column-head' }, stage.label, h('span', { class: 'count' }, leads.length)),
       h('div', { class: 'cards' }, leads.length ? leads.map(leadCard) : h('div', { class: 'empty' }, 'No leads')),
@@ -341,9 +373,10 @@ async function saveInfo(e) {
   const saved = JSON.parse(form.dataset.saved);
   const patch = Object.fromEntries(Object.entries(values).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(saved[k])));
   try {
+    const before = state.openLead?.pipeline;
     const lead = await api(`/api/leads/${state.openLeadId}`, { method: 'PATCH', body: patch });
     renderLead(lead);
-    toast('Lead info saved');
+    toast(lead.pipeline !== before ? `Lead info saved. Moved to ${pipelineLabel(lead.pipeline)}` : 'Lead info saved');
     await loadLeads();
   } catch (err) { fail(err); }
 }
@@ -501,7 +534,7 @@ function renderReminders() {
     h('div', { class: 'reminder-group' }, titles[key]),
     ...items.map((r) => h('div', { class: `reminder-item ${key}`, onclick: () => openLead(r.lead_id) },
       h('div', {},
-        h('div', { class: 'name' }, leadName(r)),
+        h('div', { class: 'name' }, leadName(r), r.pipeline === 'rv' && ' ', r.pipeline === 'rv' && h('span', { class: 'tag rv' }, 'RV')),
         h('div', { class: 'when' }, `${fmtDateTime(r.due_at)} · ${stageLabel(r.stage)}`),
         r.phone && h('div', { class: 'muted' }, r.phone)),
       h('div', { class: 'small-btns' },
@@ -618,6 +651,7 @@ async function addLead(e) {
     form.reset();
     toast(created ? 'Lead added' : 'That lead already exists, so the inquiry was added to it');
     await loadLeads();
+    if (lead.pipeline && lead.pipeline !== state.pipeline) setPipeline(lead.pipeline);
     openLead(lead.id);
   } catch (err) { fail(err); }
 }
@@ -657,13 +691,17 @@ async function init() {
   [state.meta, state.emailSettings] = await Promise.all([api('/api/meta'), api('/api/settings/email')]);
   $('#syncFb').hidden = !state.meta.facebookConfigured;
   applyBrand(state.meta.brand);
+  pickPipeline();
 
   $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
   $('#syncFb').addEventListener('click', syncFacebook);
   fillVehicleTypes($('#addLeadForm').vehicle_type);
   fillHeardAbout($('#addLeadForm').heard_about);
-  $('#addLeadBtn').addEventListener('click', () => $('#addLeadDialog').showModal());
+  $('#addLeadBtn').addEventListener('click', () => {
+    $('#addLeadForm').vehicle_type.value = state.pipeline === 'rv' ? 'Coach / RV' : '';
+    $('#addLeadDialog').showModal();
+  });
   $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
   $('#emailForm').addEventListener('submit', saveEmailSettings);
   $('#emailForm').addEventListener('input', renderEmailPreview);

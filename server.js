@@ -9,7 +9,7 @@ const { STAGES, DISPOSITIONS } = require('./src/pipeline');
 const facebook = require('./src/facebook');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
-const { VEHICLE_FIELDS, VEHICLE_TYPES } = require('./src/vehicle');
+const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 
@@ -152,10 +152,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     emailPlaceholders: PLACEHOLDERS,
     vehicleFields: VEHICLE_FIELDS,
     vehicleTypes: VEHICLE_TYPES,
+    pipelines: PIPELINES,
     bookingServices: BOOKING_SERVICES,
     heardAboutOptions: HEARD_ABOUT_OPTIONS,
   }));
-  route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source') }));
+  route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source'), pipeline: query.get('pipeline') }));
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
   route('GET', '/api/leads/:id', ({ params }) => leads.getLead(Number(params.id)));
   route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));

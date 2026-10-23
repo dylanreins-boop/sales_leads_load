@@ -14,6 +14,16 @@ const VEHICLE_TYPES = [
   'Plane', 'Other',
 ];
 
+// Two boards: RVs (motorhomes, coaches, trailers, toy haulers) and everything else.
+// A lead's pipeline follows its vehicle type; leads with no type yet go to "all other".
+const PIPELINES = [
+  { id: 'rv', label: 'RV Pipeline', types: ['Coach / RV', 'Trailer / Toy Hauler'] },
+  { id: 'other', label: 'All Other Vehicles' },
+];
+const RV_TYPES = PIPELINES[0].types;
+const pipelineFor = (vehicleType) => (RV_TYPES.includes(vehicleType) ? 'rv' : 'other');
+const pipelineLabel = (id) => PIPELINES.find((p) => p.id === id)?.label ?? id;
+
 // Words in a form answer that point to one of the types above (checked in order).
 const TYPE_WORDS = [
   ['Jet Ski', ['jet ski', 'jetski', 'pwc', 'sea-doo', 'seadoo', 'waverunner']],
@@ -93,4 +103,6 @@ function isValidYear(value) {
   return /^\d{4}$/.test(String(value).trim()) && year >= 1900 && year <= new Date().getFullYear() + 2;
 }
 
-module.exports = { VEHICLE_FIELDS, VEHICLE_TYPES, extractVehicle, normalizeVehicleType, isValidYear };
+module.exports = {
+  VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES, RV_TYPES, pipelineFor, pipelineLabel, extractVehicle, normalizeVehicleType, isValidYear,
+};

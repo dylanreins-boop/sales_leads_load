@@ -445,3 +445,26 @@ test('heard-about and text opt-in are saved, editable and logged', async () => {
   assert.match(res.data.activities[0].note, /OK to text: yes → no/);
   assert.ok((await call('GET', '/api/meta')).data.heardAboutOptions.includes('Radio'));
 });
+
+test('RVs and all other vehicles are two separate pipelines', async () => {
+  await call('POST', '/api/intake/website', { name: 'Roy Coach', phone: '702-555-0201', services: 'RV' }, { 'X-API-Key': 'site-key' });
+  await call('POST', '/api/intake/website', { name: 'Tia Hauler', phone: '702-555-0202', vehicle_type: 'toy hauler' }, { 'X-API-Key': 'site-key' });
+  await call('POST', '/api/intake/website', { name: 'Cal Sedan', phone: '702-555-0203', services: 'Auto' }, { 'X-API-Key': 'site-key' });
+  await call('POST', '/api/intake/website', { name: 'Nia Unknown', phone: '702-555-0204' }, { 'X-API-Key': 'site-key' });
+
+  const rv = (await call('GET', '/api/leads?pipeline=rv')).data.map((l) => l.full_name);
+  const other = (await call('GET', '/api/leads?pipeline=other')).data.map((l) => l.full_name);
+  assert.ok(rv.includes('Roy Coach') && rv.includes('Tia Hauler'));
+  assert.ok(!rv.includes('Cal Sedan') && !rv.includes('Nia Unknown'));
+  assert.ok(other.includes('Cal Sedan') && other.includes('Nia Unknown'), 'no vehicle type yet goes to all other');
+  assert.ok(!other.includes('Roy Coach'));
+  const all = (await call('GET', '/api/leads')).data;
+  assert.equal(all.find((l) => l.full_name === 'Roy Coach').pipeline, 'rv');
+
+  // Changing the vehicle type moves the lead, and the move is logged.
+  const cal = all.find((l) => l.full_name === 'Cal Sedan');
+  const moved = await call('PATCH', `/api/leads/${cal.id}`, { vehicle_type: 'Coach / RV' });
+  assert.equal(moved.data.pipeline, 'rv');
+  assert.match(moved.data.activities[0].note, /Moved to RV Pipeline/);
+  assert.deepEqual((await call('GET', '/api/meta')).data.pipelines.map((p) => p.id), ['rv', 'other']);
+});

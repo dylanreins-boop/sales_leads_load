@@ -34,6 +34,21 @@ the default follow-up email. `TZ=America/Los_Angeles` keeps reminder times on La
   replace that file and the three PNGs next to it (`icon-192.png`, `icon-512.png`,
   `apple-touch-icon.png`) with square versions of the logo.
 
+## Two pipelines: RVs and everything else
+
+The board has two tabs:
+
+- **RV Pipeline:** leads whose vehicle type is **Coach / RV** or **Trailer / Toy Hauler**.
+- **All Other Vehicles:** cars, SUVs, trucks, semis, motorcycles, SXS / OHVs, boats, jet skis, planes,
+  and any lead whose vehicle type isn't known yet.
+
+Each tab shows how many leads it has and remembers which one you were on. A lead's pipeline follows its
+vehicle type, so a website form that says "RV" lands in the RV Pipeline, and changing a lead's vehicle type
+in Lead info moves it to the other board (the move is logged). "+ Add lead" on the RV tab starts the new
+lead as a Coach / RV. Reminders cover both pipelines; RV leads are tagged "RV". You can link straight to a
+tab with `#rv` or `#other` at the end of the address. To change which types count as RVs, edit
+`PIPELINES` in `src/vehicle.js`. The API also takes `GET /api/leads?pipeline=rv` (or `other`).
+
 ## How dispositions work
 
 | Disposition | Lead moves to | Call-tomorrow reminder |

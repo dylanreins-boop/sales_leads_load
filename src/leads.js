@@ -1,7 +1,7 @@
 const { transaction } = require('./db');
 const { STAGE_IDS, STAGES, DISPOSITIONS_BY_ID, stageAfterDisposition, tomorrowAt } = require('./pipeline');
 const { renderTemplate } = require('./email');
-const { VEHICLE_FIELDS, isValidYear } = require('./vehicle');
+const { VEHICLE_FIELDS, RV_TYPES, pipelineFor, pipelineLabel, isValidYear } = require('./vehicle');
 const { cleanServices, serviceLabels, parseServices } = require('./services');
 
 const VEHICLE_KEYS = VEHICLE_FIELDS.map((f) => f.key);
@@ -138,9 +138,14 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
     });
   }
 
-  function listLeads({ q, source } = {}) {
+  function listLeads({ q, source, pipeline } = {}) {
     const where = [];
     const params = [];
+    if (pipeline === 'rv' || pipeline === 'other') {
+      const marks = RV_TYPES.map(() => '?').join(', ');
+      where.push(pipeline === 'rv' ? `l.vehicle_type IN (${marks})` : `(l.vehicle_type IS NULL OR l.vehicle_type NOT IN (${marks}))`);
+      params.push(...RV_TYPES);
+    }
     if (source) {
       where.push('l.source = ?');
       params.push(source);
@@ -157,7 +162,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY l.received_at DESC`).all(...params)
-      .map((row) => ({ ...row, booked_services: parseServices(row.booked_services) }));
+      .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type) }));
   }
 
   function getLead(id) {
@@ -165,6 +170,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
     if (!lead) throw new HttpError(404, 'Lead not found');
     delete lead.raw;
     lead.booked_services = parseServices(lead.booked_services);
+    lead.pipeline = pipelineFor(lead.vehicle_type);
     lead.activities = stmt('SELECT * FROM activities WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
@@ -214,6 +220,9 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
           params.push(JSON.stringify(services));
           changes.push(`Services booked: ${serviceLabels(lead.booked_services) || '(none)'} → ${serviceLabels(services) || '(none)'}`);
         }
+      }
+      if ('vehicle_type' in patch && pipelineFor(clean(patch.vehicle_type)) !== lead.pipeline) {
+        changes.push(`Moved to ${pipelineLabel(pipelineFor(clean(patch.vehicle_type)))}`);
       }
       if (changes.length) logActivity(id, 'info_updated', { note: changes.join('\n'), user });
       if ('email' in patch) {
@@ -289,10 +298,11 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
   }
 
   function listReminders({ status = 'open' } = {}) {
-    return stmt(`SELECT r.*, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage
+    return stmt(`SELECT r.*, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage, l.vehicle_type
                  FROM reminders r JOIN leads l ON l.id = r.lead_id
                  ${status === 'open' ? 'WHERE r.done_at IS NULL' : ''}
-                 ORDER BY r.due_at ASC`).all();
+                 ORDER BY r.due_at ASC`).all()
+      .map((row) => ({ ...row, pipeline: pipelineFor(row.vehicle_type) }));
   }
 
   function getReminder(id) {
