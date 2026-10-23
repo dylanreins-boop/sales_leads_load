@@ -1,8 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#2f6fed"/>
-  <g fill="#ffffff">
-    <rect x="96" y="132" width="320" height="56" rx="28"/>
-    <rect x="144" y="228" width="224" height="56" rx="28"/>
-    <rect x="200" y="324" width="112" height="56" rx="28"/>
-  </g>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2e35"/>
+      <stop offset="0.55" stop-color="#121417"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3cf7a"/>
+      <stop offset="0.6" stop-color="#d9a441"/>
+      <stop offset="1" stop-color="#9c6d1e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#paint)"/>
+  <path d="M256 92C256 92 146 222 146 304a110 110 0 0 0 220 0C366 222 256 92 256 92Z" fill="url(#gold)"/>
+  <ellipse cx="214" cy="300" rx="22" ry="44" fill="#ffffff" fill-opacity="0.45" transform="rotate(-18 214 300)"/>
+  <ellipse cx="256" cy="430" rx="96" ry="10" fill="#d9a441" fill-opacity="0.25"/>
 </svg>

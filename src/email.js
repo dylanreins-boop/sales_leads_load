@@ -2,12 +2,18 @@
 // Supported: Resend, SendGrid, Postmark. Set EMAIL_PROVIDER, EMAIL_API_KEY
 // and EMAIL_FROM in .env.
 
-const PLACEHOLDERS = ['first_name', 'last_name', 'full_name', 'email', 'phone'];
+const PLACEHOLDERS = ['first_name', 'last_name', 'full_name', 'vehicle', 'email', 'phone'];
+
+// "2023 Tesla Model Y", or the vehicle type, or just "vehicle".
+function vehicleText(lead) {
+  const named = [lead.vehicle_year, lead.vehicle_make, lead.vehicle_model].filter(Boolean).join(' ');
+  return named || (lead.vehicle_type ? lead.vehicle_type.toLowerCase() : 'vehicle');
+}
 
 // Fills {{first_name}}-style placeholders from the lead. Unknown ones are left as-is.
 function renderTemplate(template, lead) {
   const first = lead.first_name || (lead.full_name || '').split(' ')[0] || 'there';
-  const values = { ...lead, first_name: first, full_name: lead.full_name || first };
+  const values = { ...lead, first_name: first, full_name: lead.full_name || first, vehicle: vehicleText(lead) };
   return String(template || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) =>
     PLACEHOLDERS.includes(key) ? (values[key] ?? '') : match);
 }

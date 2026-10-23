@@ -218,6 +218,9 @@ test('attempt chain stops at Follow Up 3 and leaves other stages alone', () => {
 test('follow-up email is off until the user turns it on', async () => {
   const settings = (await call('GET', '/api/settings/email')).data;
   assert.equal(settings.enabled, false);
+  assert.match(settings.subject, /Bob Mosses Ceramic Coating/);
+  assert.match(settings.body, /Bob Mosses Ceramic Coating here in Las Vegas/);
+  assert.match(settings.body, /\{\{vehicle\}\}/);
   assert.match(settings.body, /\{\{first_name\}\}/);
 
   await call('POST', '/api/leads', { first_name: 'Emma', last_name: 'Stone', email: 'emma@example.com' });
@@ -361,4 +364,19 @@ test('booking requires picking services, which are saved on the lead', async () 
 
   const meta = (await call('GET', '/api/meta')).data;
   assert.ok(meta.bookingServices.some((s) => s.id === 'pop_outs' && s.types.includes('Coach / RV')));
+});
+
+test('the app is branded for the company', async () => {
+  const meta = (await call('GET', '/api/meta')).data;
+  assert.equal(meta.brand.name, 'Bob Mosses Ceramic Coating');
+  assert.equal(meta.brand.city, 'Las Vegas');
+
+  const manifest = (await call('GET', '/manifest.webmanifest')).data;
+  assert.equal(manifest.name, 'Bob Mosses Ceramic Coating');
+  assert.equal(manifest.short_name, 'Bob Mosses Leads');
+
+  const { renderTemplate } = require('../src/email');
+  assert.equal(renderTemplate('your {{vehicle}}', { vehicle_year: '2021', vehicle_make: 'Sea Ray', vehicle_model: 'SLX 400' }), 'your 2021 Sea Ray SLX 400');
+  assert.equal(renderTemplate('your {{vehicle}}', { vehicle_type: 'Boat' }), 'your boat');
+  assert.equal(renderTemplate('your {{vehicle}}', {}), 'your vehicle');
 });

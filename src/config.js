@@ -34,6 +34,15 @@ module.exports = {
     ...(process.env.APP_PASSWORD ? [{ name: process.env.APP_USER || 'admin', password: process.env.APP_PASSWORD }] : []),
   ],
 
+  // Company details shown in the app, the phone app name and the default follow-up email.
+  brand: {
+    name: process.env.BRAND_NAME || 'Bob Mosses Ceramic Coating',
+    shortName: process.env.BRAND_SHORT_NAME || 'Bob Mosses Leads',
+    city: process.env.BRAND_CITY || 'Las Vegas',
+    phone: process.env.BRAND_PHONE || '',
+    website: process.env.BRAND_WEBSITE || '',
+  },
+
   // Hour of the day (server local time) for "call tomorrow" reminders when
   // the browser doesn't send its own time.
   reminderHour: Number(process.env.REMINDER_HOUR ?? 9),

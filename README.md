@@ -1,6 +1,7 @@
-# Lead Pipeline
+# Lead Pipeline · Bob Mosses Ceramic Coating
 
-A lead pipeline board for a sales or call team. It:
+The lead pipeline for **Bob Mosses Ceramic Coating, Las Vegas**: cars, trucks, coaches, boats and planes.
+It:
 
 - **Pulls in leads** from **Facebook Lead Ads** (real-time webhook plus a "Sync Facebook" backstop) and from your **company website** form.
 - Shows them on a **pipeline board**: New / Working → Voicemail → Follow Up 1 → Follow Up 2 → Follow Up 3 → Contacted → Booked → Waste.
@@ -18,6 +19,18 @@ cp .env.example .env      # then edit it
 npm start                 # http://localhost:3000
 npm test                  # runs the test suite
 ```
+
+## Company branding
+
+The company name, city and phone live in `.env` (`BRAND_NAME`, `BRAND_SHORT_NAME`, `BRAND_CITY`,
+`BRAND_PHONE`, `BRAND_WEBSITE`). They appear in the header, the browser tab, the phone app name, and
+the default follow-up email. `TZ=America/Los_Angeles` keeps reminder times on Las Vegas time.
+
+- **Colors:** glossy black header with a gold accent. All colors are tokens at the top of
+  `public/styles.css`; change `--accent`, `--bar` and friends to match the company's brand colors.
+- **Logo:** the app icon is a gold water bead (`public/icons/icon.svg`). To use the company logo,
+  replace that file and the three PNGs next to it (`icon-192.png`, `icon-512.png`,
+  `apple-touch-icon.png`) with square versions of the logo.
 
 ## How dispositions work
 
@@ -73,8 +86,11 @@ Open **Email template** in the top bar, write the subject and message, tick **Se
 automatically**, and save. From then on, saving "No Answer – Left Voicemail" on a lead that has an
 email address sends that email. The rep can untick "Send follow-up email" on any single call.
 
-- Personalize with `{{first_name}}`, `{{last_name}}`, `{{full_name}}`, `{{email}}` and `{{phone}}`.
+- Personalize with `{{first_name}}`, `{{last_name}}`, `{{full_name}}`, `{{vehicle}}`, `{{email}}` and
+  `{{phone}}`. `{{vehicle}}` becomes e.g. "2021 Sea Ray SLX 400", or "boat" if only the type is known.
   The editor shows a live preview.
+- The starting email is written for Bob Mosses Ceramic Coating and uses `BRAND_PHONE` if it's set.
+  Replace `[your name]` (and the number, if `BRAND_PHONE` is empty) before turning it on.
 - Every email (sent, failed, or not sent) shows in the lead's **Emails** section and activity log.
   A failed email never undoes the disposition.
 - To actually deliver mail, sign up for [Resend](https://resend.com), [SendGrid](https://sendgrid.com)
@@ -157,7 +173,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 
 - Set `APP_USERS` so the dashboard needs a login (see below). The webhook and website intake URLs stay public.
 - Keep `data/leads.db` on a persistent disk, and back it up.
-- Set `TZ` (for example `America/Chicago`) so server-side reminder times match your office.
+- Set `TZ=America/Los_Angeles` so server-side reminder times are Las Vegas time.
 
 ## API
 

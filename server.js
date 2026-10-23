@@ -116,7 +116,7 @@ function serveStatic(req, res, pathname) {
 }
 
 function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
-  const leads = createLeadService(db, { reminderHour: config.reminderHour });
+  const leads = createLeadService(db, { reminderHour: config.reminderHour, brand: config.brand });
   const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
   const mailer = createMailer(config.email, fetchImpl);
   const routes = [];
@@ -140,6 +140,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
   // ---- Dashboard API ----
   route('GET', '/api/meta', ({ actor }) => ({
     currentUser: actor.user,
+    brand: config.brand,
     stages: STAGES,
     dispositions: DISPOSITIONS,
     reminderHour: config.reminderHour,
@@ -194,6 +195,25 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     }
     return { fetched, created };
   });
+
+  // Phone install details, named after the company.
+  route('GET', '/manifest.webmanifest', ({ res }) => {
+    send(res, 200, JSON.stringify({
+      name: config.brand.name,
+      short_name: config.brand.shortName,
+      description: `Leads, calls and call-backs for ${config.brand.name}.`,
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      background_color: '#0f1114',
+      theme_color: '#121417',
+      icons: [
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    }), { 'Content-Type': 'application/manifest+json' });
+  }, { isPublic: true });
 
   // ---- Facebook Lead Ads webhook ----
   // Meta calls GET once to verify the endpoint, then POSTs each new lead.
@@ -250,7 +270,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
       const match = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
       if (!match) {
         if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
-          if (!authenticate(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
+          if (!url.pathname.startsWith('/icons/') && !authenticate(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
           return serveStatic(req, res, url.pathname);
         }
         return send(res, 404, { error: 'Not found' });

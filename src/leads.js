@@ -11,19 +11,26 @@ const FIELD_LABELS = {
 };
 
 // Follow-up email template. Off until the user writes their own and turns it on.
-const EMAIL_SETTINGS = {
-  followup_email_enabled: 'false',
-  followup_email_subject: 'Sorry we missed you, {{first_name}}',
-  followup_email_body: [
-    'Hi {{first_name}},',
-    '',
-    'I just tried calling you about your request and left you a voicemail.',
-    'You can call or text me back at [your number], or reply to this email with a good time to talk.',
-    '',
-    'Thanks,',
-    '[Your name]',
-  ].join('\n'),
-};
+function defaultEmailSettings({ name, city, phone, website }) {
+  const where = city ? `${name} here in ${city}` : name;
+  return {
+    followup_email_enabled: 'false',
+    followup_email_subject: `Sorry we missed you, {{first_name}} – ${name}`,
+    followup_email_body: [
+      'Hi {{first_name}},',
+      '',
+      `This is [your name] with ${where}. I just tried calling about ceramic coating for your {{vehicle}} and left you a voicemail.`,
+      '',
+      'I\'d love to walk you through your options and get you a quote. You can call or text me back at '
+        + `${phone || '[your number]'}, or just reply to this email with a good time to talk.`,
+      '',
+      'Thanks,',
+      '[Your name]',
+      name,
+      ...(website ? [website] : []),
+    ].join('\n'),
+  };
+}
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -53,7 +60,8 @@ function displayName(lead) {
   return lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email || lead.phone || `Lead #${lead.id}`;
 }
 
-function createLeadService(db, { reminderHour = 9 } = {}) {
+function createLeadService(db, { reminderHour = 9, brand = { name: 'Lead Pipeline' } } = {}) {
+  const EMAIL_SETTINGS = defaultEmailSettings(brand);
   const stmt = (sql) => db.prepare(sql);
 
   function logActivity(leadId, type, fields = {}) {

@@ -528,7 +528,10 @@ function updateNotifButton() {
 }
 
 // ---------- follow-up email template ----------
-const SAMPLE_LEAD = { first_name: 'Maria', last_name: 'Lopez', full_name: 'Maria Lopez', email: 'maria@example.com', phone: '555-201-3344' };
+const SAMPLE_LEAD = {
+  first_name: 'Maria', last_name: 'Lopez', full_name: 'Maria Lopez', email: 'maria@example.com', phone: '555-201-3344',
+  vehicle: '2024 Tesla Model Y',
+};
 
 function fillTemplate(text, lead) {
   return String(text || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) =>
@@ -610,6 +613,16 @@ async function syncFacebook() {
   }
 }
 
+// ---------- company branding ----------
+function applyBrand(brand) {
+  if (!brand) return;
+  $('#brandName').textContent = brand.name;
+  $('#brandCity').textContent = brand.city;
+  $('#brandCity').hidden = !brand.city;
+  document.title = brand.shortName || brand.name;
+  document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', brand.shortName || brand.name);
+}
+
 // ---------- wiring ----------
 function debounce(fn, ms) {
   let t;
@@ -619,6 +632,7 @@ function debounce(fn, ms) {
 async function init() {
   [state.meta, state.emailSettings] = await Promise.all([api('/api/meta'), api('/api/settings/email')]);
   $('#syncFb').hidden = !state.meta.facebookConfigured;
+  applyBrand(state.meta.brand);
 
   $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
