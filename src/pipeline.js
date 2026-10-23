@@ -14,15 +14,19 @@ const STAGE_IDS = new Set(STAGES.map((s) => s.id));
 // "No answer" dispositions walk a lead down this chain one step per attempt.
 const NO_ANSWER = 'advance_attempt';
 const ATTEMPT_CHAIN = ['new', 'voicemail', 'follow_up_1', 'follow_up_2', 'follow_up_3'];
+// Dispositions that log something without moving the lead.
+const KEEP_STAGE = 'keep_stage';
 
 // `stage` is where the lead goes; `reminder` is whether a call-tomorrow
-// reminder is set by default (the user can override it per disposition).
+// reminder is set by default (the user can override it per disposition);
+// `email` sends the follow-up email template, when the user has turned it on.
 const DISPOSITIONS = [
-  { id: 'no_answer_vm', label: 'No Answer – Left Voicemail', stage: NO_ANSWER, reminder: true },
+  { id: 'no_answer_vm', label: 'No Answer – Left Voicemail', stage: NO_ANSWER, reminder: true, email: true },
   { id: 'no_answer', label: 'No Answer – No Voicemail', stage: NO_ANSWER, reminder: true },
   { id: 'contacted_follow_up', label: 'Contacted – Needs Follow Up', stage: 'contacted', reminder: true },
   { id: 'callback_requested', label: 'Contacted – Call Back Requested', stage: 'contacted', reminder: true },
   { id: 'booked', label: 'Appointment Booked', stage: 'booked', reminder: true },
+  { id: 'updated_notes', label: 'Updated Notes', stage: KEEP_STAGE, reminder: true, call: false },
   { id: 'not_interested', label: 'Not Interested', stage: 'waste', reminder: false },
   { id: 'wrong_number', label: 'Wrong / Bad Number', stage: 'waste', reminder: false },
   { id: 'duplicate', label: 'Duplicate Lead', stage: 'waste', reminder: false },
@@ -31,6 +35,7 @@ const DISPOSITIONS = [
 const DISPOSITIONS_BY_ID = Object.fromEntries(DISPOSITIONS.map((d) => [d.id, d]));
 
 function stageAfterDisposition(currentStage, disposition) {
+  if (disposition.stage === KEEP_STAGE) return currentStage;
   if (disposition.stage !== NO_ANSWER) return disposition.stage;
   const i = ATTEMPT_CHAIN.indexOf(currentStage);
   // Leads outside the attempt chain (contacted, booked, ...) stay put.

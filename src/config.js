@@ -35,6 +35,13 @@ module.exports = {
     corsOrigins: list(process.env.CORS_ORIGINS || '*'),
   },
 
+  email: {
+    provider: (process.env.EMAIL_PROVIDER || '').toLowerCase(),
+    apiKey: process.env.EMAIL_API_KEY || '',
+    from: process.env.EMAIL_FROM || '',
+    replyTo: process.env.EMAIL_REPLY_TO || '',
+  },
+
   facebook: {
     verifyToken: process.env.FB_VERIFY_TOKEN || '',
     appSecret: process.env.FB_APP_SECRET || '',

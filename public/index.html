@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Lead Pipeline</title>
+  <meta name="theme-color" content="#2f6fed">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Leads">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -21,6 +28,7 @@
     <div class="actions">
       <button id="syncFb" type="button">Sync Facebook</button>
       <button id="addLeadBtn" type="button">+ Add lead</button>
+      <button id="emailSettingsBtn" type="button">Email template</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
       </button>
@@ -59,6 +67,12 @@
           <label id="reminderWhen">When
             <input type="datetime-local" name="reminder_at" required>
           </label>
+          <div id="emailOption" hidden>
+            <label class="check">
+              <input type="checkbox" name="send_email" checked> <span id="emailOptionText">Send follow-up email</span>
+            </label>
+            <p id="emailOptionHint" class="hint"></p>
+          </div>
           <p id="dispoHint" class="hint"></p>
           <button type="submit" class="primary">Save disposition</button>
         </form>
@@ -72,6 +86,11 @@
       <section class="card-section">
         <h3>Reminders</h3>
         <ul id="leadReminders" class="list"></ul>
+      </section>
+
+      <section class="card-section">
+        <h3>Emails</h3>
+        <ul id="leadEmails" class="list"></ul>
       </section>
 
       <section class="card-section">
@@ -94,6 +113,40 @@
     <div class="drawer-body">
       <button id="enableNotifs" type="button" hidden>Turn on desktop notifications</button>
       <div id="remindersList"></div>
+    </div>
+  </aside>
+
+  <!-- Follow-up email template -->
+  <aside id="emailPanel" class="drawer" aria-label="Follow-up email" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Follow-up email</h2>
+        <div class="muted">Sent to the lead when you save "No Answer – Left Voicemail".</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <p id="emailServiceStatus" class="notice" hidden></p>
+      <form id="emailForm">
+        <label class="check">
+          <input type="checkbox" name="enabled"> Send this email automatically
+        </label>
+        <label>Subject
+          <input name="subject" maxlength="200">
+        </label>
+        <label>Message
+          <textarea name="body" rows="10"></textarea>
+        </label>
+        <p class="hint">Personalize with: <span id="placeholderChips"></span></p>
+        <button type="submit" class="primary">Save email</button>
+      </form>
+      <section class="card-section">
+        <h3>Preview</h3>
+        <div class="email-preview">
+          <div id="previewSubject" class="what"></div>
+          <div id="previewBody" class="preview-body"></div>
+        </div>
+      </section>
     </div>
   </aside>
 

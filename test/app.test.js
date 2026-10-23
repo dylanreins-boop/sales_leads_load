@@ -10,6 +10,9 @@ process.env.FB_APP_SECRET = 'app-secret';
 process.env.FB_PAGE_ACCESS_TOKEN = 'page-token';
 process.env.FB_FORM_IDS = 'form-1';
 process.env.REMINDER_HOUR = '9';
+process.env.EMAIL_PROVIDER = 'resend';
+process.env.EMAIL_API_KEY = 'email-key';
+process.env.EMAIL_FROM = 'office@example.com';
 
 const { createApp } = require('../server');
 const { openDatabase } = require('../src/db');
@@ -27,10 +30,18 @@ const fbLead = (id, name, phone) => ({
   ],
 });
 
-// Fake Graph API: single-lead lookups and form lead lists.
-const fakeFetch = async (url) => {
+const sentEmails = [];
+
+// Fake Graph API (single-lead lookups and form lead lists) and email service.
+const fakeFetch = async (url, options = {}) => {
   const u = new URL(url);
   const json = (body) => ({ ok: true, json: async () => body });
+  if (u.hostname === 'api.resend.com') {
+    const message = JSON.parse(options.body);
+    if (message.to[0].startsWith('bounce')) return { ok: false, status: 422, text: async () => 'invalid address' };
+    sentEmails.push({ message, auth: options.headers.Authorization });
+    return json({ id: 'email-1' });
+  }
   if (u.pathname.endsWith('/form-1/leads')) {
     return json({ data: [fbLead('fb-200', 'Sam Sync', '555-000-0200'), fbLead('fb-201', 'Pat Sync', '555-000-0201')] });
   }
@@ -163,6 +174,16 @@ test('next disposition closes the old reminder and walks through follow-ups', as
   assert.equal(booked.data.lead.stage, 'booked');
 });
 
+test('updated notes keeps the stage and still sets a reminder', async () => {
+  const lead = await findLead('Pat Sync');
+  await call('PATCH', `/api/leads/${lead.id}`, { stage: 'follow_up_1' });
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'updated_notes', note: 'Prefers texts' });
+  assert.equal(res.data.lead.stage, 'follow_up_1');
+  assert.equal(res.data.lead.last_disposition, 'updated_notes');
+  assert.equal(res.data.lead.last_contacted_at, null, 'a note is not a call');
+  assert.ok(res.data.reminder);
+});
+
 test('waste dispositions skip the reminder unless asked', async () => {
   const lead = await findLead('Casey Form');
   const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'not_interested' });
@@ -191,6 +212,57 @@ test('attempt chain stops at Follow Up 3 and leaves other stages alone', () => {
   assert.equal(stageAfterDisposition('follow_up_2', vm), 'follow_up_3');
   assert.equal(stageAfterDisposition('follow_up_3', vm), 'follow_up_3');
   assert.equal(stageAfterDisposition('contacted', vm), 'contacted');
+});
+
+test('follow-up email is off until the user turns it on', async () => {
+  const settings = (await call('GET', '/api/settings/email')).data;
+  assert.equal(settings.enabled, false);
+  assert.match(settings.body, /\{\{first_name\}\}/);
+
+  await call('POST', '/api/leads', { first_name: 'Emma', last_name: 'Stone', email: 'emma@example.com' });
+  const lead = await findLead('Emma Stone');
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm' });
+  assert.equal(res.data.email, null);
+  assert.equal(sentEmails.length, 0);
+
+  const blank = await call('PUT', '/api/settings/email', { enabled: true, subject: '', body: '' });
+  assert.equal(blank.status, 400);
+});
+
+test('left-voicemail disposition emails the lead using the saved template', async () => {
+  const saved = await call('PUT', '/api/settings/email', {
+    enabled: true, subject: 'Missed you, {{first_name}}', body: 'Hi {{first_name}}, call me back. {{unknown}}',
+  });
+  assert.equal(saved.data.enabled, true);
+
+  const lead = await findLead('Emma Stone');
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm' });
+  assert.equal(res.data.email.status, 'sent');
+  assert.equal(sentEmails.length, 1);
+  assert.deepEqual(sentEmails[0].message.to, ['emma@example.com']);
+  assert.equal(sentEmails[0].message.subject, 'Missed you, Emma');
+  assert.equal(sentEmails[0].message.text, 'Hi Emma, call me back. {{unknown}}');
+  assert.equal(sentEmails[0].auth, 'Bearer email-key');
+  assert.equal(res.data.lead.emails.length, 1);
+  assert.ok(res.data.lead.activities.some((a) => a.type === 'email'));
+
+  // Other dispositions, an unticked box, and leads without email don't send.
+  await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'contacted_follow_up' });
+  await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm', send_email: false });
+  const noEmail = await findLead('Tanya Brooks') || (await call('POST', '/api/leads', { full_name: 'Tanya Brooks', phone: '555-909-4410' })).data.lead;
+  await call('POST', `/api/leads/${noEmail.id}/disposition`, { disposition: 'no_answer_vm' });
+  assert.equal(sentEmails.length, 1);
+});
+
+test('a failed email is recorded on the lead without undoing the disposition', async () => {
+  await call('POST', '/api/leads', { full_name: 'Bad Address', email: 'bounce@example.com' });
+  const lead = await findLead('Bad Address');
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm' });
+  assert.equal(res.status, 201);
+  assert.equal(res.data.lead.stage, 'voicemail');
+  assert.equal(res.data.email.status, 'failed');
+  assert.match(res.data.email.error, /422/);
+  await call('PUT', '/api/settings/email', { enabled: false });
 });
 
 test('dashboard is served and unknown API routes 404', async () => {

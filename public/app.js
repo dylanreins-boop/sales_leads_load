@@ -5,6 +5,8 @@ const state = {
   leads: [],
   reminders: [],
   openLeadId: null,
+  openLead: null,
+  emailSettings: null,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -164,9 +166,12 @@ async function moveStage(id, stage) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
-  if (!panel) state.openLeadId = null;
+  if (panel !== $('#drawer')) {
+    state.openLeadId = null;
+    state.openLead = null;
+  }
 }
 
 async function openLead(id) {
@@ -179,6 +184,7 @@ async function openLead(id) {
 }
 
 function renderLead(lead) {
+  state.openLead = lead;
   $('#leadName').textContent = leadName(lead);
   $('#leadMeta').textContent = [
     sourceLabel[lead.source] || lead.source,
@@ -187,11 +193,11 @@ function renderLead(lead) {
     `Received ${fmtDateTime(lead.received_at)}`,
   ].filter(Boolean).join(' · ');
 
-  $('#leadContact').replaceChildren(
+  $('#leadContact').replaceChildren(...[
     lead.phone && h('a', { href: `tel:${lead.phone.replace(/[^\d+]/g, '')}`, class: 'call-btn' }, `Call ${lead.phone}`),
     lead.email && h('a', { href: `mailto:${lead.email}` }, lead.email),
     lead.message && h('div', { class: 'message' }, lead.message),
-  );
+  ].filter(Boolean));
 
   const stageSelect = $('#stageSelect');
   stageSelect.replaceChildren(...state.meta.stages.map((s) => h('option', { value: s.id, selected: s.id === lead.stage }, s.label)));
@@ -212,6 +218,16 @@ function renderLead(lead) {
         h('button', { type: 'button', onclick: () => completeReminder(r.id) }, 'Done'))))
     : [h('li', { class: 'muted' }, 'No reminders yet')]));
 
+  const emailStatus = { sent: 'Sent', failed: 'Failed', not_configured: 'Not sent' };
+  $('#leadEmails').replaceChildren(...(lead.emails.length
+    ? lead.emails.map((m) => h('li', { title: m.error || '' },
+      h('div', { class: 'email-line' },
+        h('span', {}, m.subject),
+        h('span', { class: 'muted' }, `${fmtDateTime(m.created_at)} · to ${m.to_email}`),
+        m.error && h('span', { class: 'muted' }, m.error)),
+      h('span', { class: `status ${m.status}` }, emailStatus[m.status] || m.status)))
+    : [h('li', { class: 'muted' }, lead.email ? 'No emails sent yet' : 'No email address on file')]));
+
   $('#timeline').replaceChildren(...lead.activities.map(activityItem));
 }
 
@@ -223,6 +239,7 @@ function activityItem(a) {
     disposition: `${dispoLabel(a.disposition)}${a.from_stage !== a.to_stage ? ` · ${stageLabel(a.from_stage)} → ${stageLabel(a.to_stage)}` : ''}`,
     note: 'Note',
     reminder_done: 'Reminder completed',
+    email: 'Email',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -241,11 +258,33 @@ function syncDispoForm(fromDispositionChange = false) {
   let hint = '';
   if (def) {
     const lead = state.leads.find((l) => l.id === state.openLeadId);
-    const target = def.stage === 'advance_attempt' ? 'the next follow-up stage' : stageLabel(def.stage);
-    hint = `Moves ${lead ? 'this lead ' : ''}to ${target}.`;
+    if (def.stage === 'keep_stage') hint = 'Lead stays in its current stage.';
+    else {
+      const target = def.stage === 'advance_attempt' ? 'the next follow-up stage' : stageLabel(def.stage);
+      hint = `Moves ${lead ? 'this lead ' : ''}to ${target}.`;
+    }
     hint += form.reminder.checked ? ' A call reminder will be set.' : ' No reminder will be set.';
   }
   $('#dispoHint').textContent = hint;
+  syncEmailOption(def);
+}
+
+// Shows the "send follow-up email" choice for dispositions that send one.
+function syncEmailOption(def) {
+  const box = $('#emailOption');
+  const form = $('#dispoForm');
+  const lead = state.openLead;
+  box.hidden = !def?.email;
+  if (box.hidden || !lead) return;
+  const settings = state.emailSettings;
+  let reason = '';
+  if (!lead.email) reason = 'No email address on file for this lead.';
+  else if (!settings?.enabled) reason = 'The follow-up email is turned off. Set it up under Email template.';
+  else if (!state.meta.emailConfigured) reason = 'Email sending is not connected yet, so this will be logged but not delivered.';
+  form.send_email.disabled = !lead.email || !settings?.enabled;
+  if (form.send_email.disabled) form.send_email.checked = false;
+  $('#emailOptionText').textContent = lead.email ? `Send follow-up email to ${lead.email}` : 'Send follow-up email';
+  $('#emailOptionHint').textContent = reason;
 }
 
 async function saveDisposition(e) {
@@ -258,11 +297,14 @@ async function saveDisposition(e) {
     reminder: form.reminder.checked,
   };
   if (form.reminder.checked) body.reminder_at = new Date(form.reminder_at.value).toISOString();
+  if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
   try {
-    const { lead, reminder } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
+    const { lead, reminder, email } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
     toast(reminder
       ? `Saved. Reminder set for ${fmtDateTime(reminder.due_at)}`
       : `Saved. Lead moved to ${stageLabel(lead.stage)}`);
+    if (email?.status === 'sent') toast(`Follow-up email sent to ${email.to_email}`);
+    else if (email) toast(`Follow-up email not sent: ${email.error}`, 'error');
     renderLead(lead);
     await Promise.all([loadLeads(), loadReminders()]);
   } catch (err) { fail(err); }
@@ -359,6 +401,60 @@ function updateNotifButton() {
   $('#enableNotifs').hidden = !('Notification' in window) || Notification.permission !== 'default';
 }
 
+// ---------- follow-up email template ----------
+const SAMPLE_LEAD = { first_name: 'Maria', last_name: 'Lopez', full_name: 'Maria Lopez', email: 'maria@example.com', phone: '555-201-3344' };
+
+function fillTemplate(text, lead) {
+  return String(text || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) =>
+    state.meta.emailPlaceholders.includes(key) ? (lead[key] ?? '') : match);
+}
+
+function renderEmailPreview() {
+  const form = $('#emailForm');
+  $('#previewSubject').textContent = fillTemplate(form.subject.value, SAMPLE_LEAD) || '(no subject)';
+  $('#previewBody').textContent = fillTemplate(form.body.value, SAMPLE_LEAD) || '(no message)';
+}
+
+async function openEmailSettings() {
+  try {
+    state.emailSettings = await api('/api/settings/email');
+  } catch (err) { return fail(err); }
+  const form = $('#emailForm');
+  form.enabled.checked = state.emailSettings.enabled;
+  form.subject.value = state.emailSettings.subject;
+  form.body.value = state.emailSettings.body;
+  const status = $('#emailServiceStatus');
+  status.hidden = state.meta.emailConfigured;
+  status.textContent = 'Email sending is not connected yet. You can write and save your email now; '
+    + 'it starts going out once EMAIL_PROVIDER, EMAIL_API_KEY and EMAIL_FROM are set on the server.';
+  $('#placeholderChips').replaceChildren(...state.meta.emailPlaceholders.map((p) => h('button', {
+    type: 'button',
+    class: 'chip',
+    title: 'Insert into message',
+    onclick: () => {
+      const body = form.body;
+      const at = body.selectionStart ?? body.value.length;
+      body.setRangeText(`{{${p}}}`, at, body.selectionEnd ?? at, 'end');
+      body.focus();
+      renderEmailPreview();
+    },
+  }, `{{${p}}}`)));
+  renderEmailPreview();
+  showPanel($('#emailPanel'));
+}
+
+async function saveEmailSettings(e) {
+  e.preventDefault();
+  const form = e.target;
+  try {
+    state.emailSettings = await api('/api/settings/email', {
+      method: 'PUT',
+      body: { enabled: form.enabled.checked, subject: form.subject.value, body: form.body.value },
+    });
+    toast(state.emailSettings.enabled ? 'Saved. The follow-up email is on.' : 'Saved. The follow-up email is off.');
+  } catch (err) { fail(err); }
+}
+
 // ---------- add lead / facebook sync ----------
 async function addLead(e) {
   e.preventDefault();
@@ -395,13 +491,16 @@ function debounce(fn, ms) {
 }
 
 async function init() {
-  state.meta = await api('/api/meta');
+  [state.meta, state.emailSettings] = await Promise.all([api('/api/meta'), api('/api/settings/email')]);
   $('#syncFb').hidden = !state.meta.facebookConfigured;
 
   $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
   $('#syncFb').addEventListener('click', syncFacebook);
   $('#addLeadBtn').addEventListener('click', () => $('#addLeadDialog').showModal());
+  $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
+  $('#emailForm').addEventListener('submit', saveEmailSettings);
+  $('#emailForm').addEventListener('input', renderEmailPreview);
   $('#addLeadForm').addEventListener('submit', addLead);
   $('[data-cancel]').addEventListener('click', () => $('#addLeadDialog').close());
   $('#remindersBtn').addEventListener('click', () => { renderReminders(); showPanel($('#remindersPanel')); updateNotifButton(); });
@@ -422,3 +521,8 @@ async function init() {
 }
 
 init().catch(fail);
+
+// Makes the app installable ("Add to Home Screen") and able to open offline.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

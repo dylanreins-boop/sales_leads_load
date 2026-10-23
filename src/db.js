@@ -51,6 +51,24 @@ CREATE TABLE IF NOT EXISTS reminders (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS reminders_open ON reminders (done_at, due_at);
+
+CREATE TABLE IF NOT EXISTS emails (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id    INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  to_email   TEXT NOT NULL,
+  subject    TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  status     TEXT NOT NULL,                    -- sent | failed | not_configured
+  error      TEXT,
+  trigger    TEXT,                             -- disposition that sent it
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS emails_lead ON emails (lead_id);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 `;
 
 function openDatabase(file) {

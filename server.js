@@ -8,6 +8,7 @@ const { createLeadService, HttpError } = require('./src/leads');
 const { STAGES, DISPOSITIONS } = require('./src/pipeline');
 const facebook = require('./src/facebook');
 const { mapWebsiteLead, isSpam } = require('./src/website');
+const { createMailer, PLACEHOLDERS } = require('./src/email');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -16,6 +17,9 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 };
 
 function send(res, status, body, headers = {}) {
@@ -91,7 +95,9 @@ function serveStatic(req, res, pathname) {
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 404, 'Not found');
   fs.readFile(file, (err, data) => {
     if (err) return send(res, 404, 'Not found');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' };
+    if (pathname === '/sw.js') headers['Cache-Control'] = 'no-cache';
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
@@ -99,6 +105,7 @@ function serveStatic(req, res, pathname) {
 function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
   const leads = createLeadService(db, { reminderHour: config.reminderHour });
   const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
+  const mailer = createMailer(config.email, fetchImpl);
   const routes = [];
 
   // `pattern` supports ":param" segments; public routes skip dashboard login.
@@ -124,13 +131,35 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     reminderHour: config.reminderHour,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
     facebookFormIds: config.facebook.formIds,
+    emailConfigured: mailer.configured,
+    emailPlaceholders: PLACEHOLDERS,
   }));
   route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source') }));
   route('POST', '/api/leads', ({ body }) => leads.ingest({ ...body, source: 'manual' }));
   route('GET', '/api/leads/:id', ({ params }) => leads.getLead(Number(params.id)));
   route('PATCH', '/api/leads/:id', ({ params, body }) => leads.updateLead(Number(params.id), body));
-  route('POST', '/api/leads/:id/disposition', ({ params, body }) => leads.dispositionLead(Number(params.id), body));
+  route('POST', '/api/leads/:id/disposition', async ({ params, body }) => {
+    const id = Number(params.id);
+    const result = leads.dispositionLead(id, body);
+    // The rep can untick "send follow-up email" for a single call.
+    const message = body.send_email === false ? null : leads.followUpEmailFor(id, body.disposition);
+    let email = null;
+    if (message) {
+      try {
+        await mailer.send(message);
+        email = leads.recordEmail(id, message, { status: 'sent', trigger: body.disposition });
+      } catch (err) {
+        // The disposition is already saved; a failed email shows on the lead instead.
+        const status = mailer.configured ? 'failed' : 'not_configured';
+        email = leads.recordEmail(id, message, { status, error: err.message, trigger: body.disposition });
+      }
+      result.lead = leads.getLead(id);
+    }
+    return { ...result, email };
+  });
   route('POST', '/api/leads/:id/notes', ({ params, body }) => leads.addNote(Number(params.id), body.note));
+  route('GET', '/api/settings/email', () => leads.getEmailSettings());
+  route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body));
   route('GET', '/api/reminders', ({ query }) => leads.listReminders({ status: query.get('status') || 'open' }));
   route('POST', '/api/reminders/:id/complete', ({ params }) => leads.completeReminder(Number(params.id)));
   route('POST', '/api/reminders/:id/snooze', ({ params, body }) => leads.snoozeReminder(Number(params.id), body.due_at));

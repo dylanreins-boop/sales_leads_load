@@ -1,5 +1,21 @@
 const { transaction } = require('./db');
 const { STAGE_IDS, STAGES, DISPOSITIONS_BY_ID, stageAfterDisposition, tomorrowAt } = require('./pipeline');
+const { renderTemplate } = require('./email');
+
+// Follow-up email template. Off until the user writes their own and turns it on.
+const EMAIL_SETTINGS = {
+  followup_email_enabled: 'false',
+  followup_email_subject: 'Sorry we missed you, {{first_name}}',
+  followup_email_body: [
+    'Hi {{first_name}},',
+    '',
+    'I just tried calling you about your request and left you a voicemail.',
+    'You can call or text me back at [your number], or reply to this email with a good time to talk.',
+    '',
+    'Thanks,',
+    '[Your name]',
+  ].join('\n'),
+};
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -124,6 +140,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     delete lead.raw;
     lead.activities = stmt('SELECT * FROM activities WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
+    lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
     return lead;
   }
 
@@ -180,8 +197,9 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
 
     return transaction(db, () => {
       const ts = now();
+      const contactedAt = def.call === false ? lead.last_contacted_at : ts;
       stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?`)
-        .run(toStage, def.id, ts, ts, id);
+        .run(toStage, def.id, contactedAt, ts, id);
       logActivity(id, 'disposition', {
         disposition: def.id, from_stage: lead.stage, to_stage: toStage, note: clean(note),
       });
@@ -236,9 +254,47 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     return getReminder(id);
   }
 
+  function getEmailSettings() {
+    const rows = stmt("SELECT key, value FROM settings WHERE key LIKE 'followup_email_%'").all();
+    const s = { ...EMAIL_SETTINGS, ...Object.fromEntries(rows.map((r) => [r.key, r.value])) };
+    return { enabled: s.followup_email_enabled === 'true', subject: s.followup_email_subject, body: s.followup_email_body };
+  }
+
+  function saveEmailSettings({ enabled, subject, body }) {
+    if (enabled && (!clean(subject) || !clean(body))) {
+      throw new HttpError(400, 'Write a subject and a message before turning the email on.');
+    }
+    const save = stmt('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
+    transaction(db, () => {
+      save.run('followup_email_enabled', enabled ? 'true' : 'false');
+      if (subject != null) save.run('followup_email_subject', String(subject));
+      if (body != null) save.run('followup_email_body', String(body));
+    });
+    return getEmailSettings();
+  }
+
+  // The follow-up email this disposition should send, or null if it shouldn't send one.
+  function followUpEmailFor(id, dispositionId) {
+    const settings = getEmailSettings();
+    const lead = getLead(id);
+    if (!DISPOSITIONS_BY_ID[dispositionId]?.email || !settings.enabled || !lead.email) return null;
+    return { to: lead.email, subject: renderTemplate(settings.subject, lead), text: renderTemplate(settings.body, lead) };
+  }
+
+  function recordEmail(leadId, message, { status, error, trigger }) {
+    stmt(`INSERT INTO emails (lead_id, to_email, subject, body, status, error, trigger, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      leadId, message.to, message.subject, message.text, status, error ?? null, trigger ?? null, now(),
+    );
+    const what = status === 'sent' ? `Follow-up email sent to ${message.to}` : `Follow-up email to ${message.to} not sent: ${error}`;
+    logActivity(leadId, 'email', { note: what });
+    return stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(leadId);
+  }
+
   return {
     ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
+    getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail,
   };
 }
 

@@ -6,6 +6,8 @@ A lead pipeline board for a sales or call team. It:
 - Shows them on a **pipeline board**: New / Working → Voicemail → Follow Up 1 → Follow Up 2 → Follow Up 3 → Contacted → Booked → Waste.
 - Lets reps **disposition** every call. The disposition moves the lead to the right stage and **sets a reminder to call the lead the next day**.
 - Shows due reminders as a banner, a badge, a reminders panel and (optionally) desktop notifications.
+- Sends **your own follow-up email** to the lead when a rep saves "No Answer – Left Voicemail" (off until you turn it on).
+- Works as a **website and as a phone app**: people can add it to their home screen from the browser.
 
 It needs no npm packages: just Node.js 22.13 or newer. Data is stored in SQLite (built into Node).
 
@@ -26,6 +28,7 @@ npm test                  # runs the test suite
 | Contacted – Needs Follow Up | Contacted | yes |
 | Contacted – Call Back Requested | Contacted | yes |
 | Appointment Booked | Booked | yes (confirmation call) |
+| Updated Notes | stays where it is | yes |
 | Not Interested / Wrong Number / Duplicate / Do Not Call | Waste | no (can be turned on) |
 
 \* Attempt stages go New / Working → Voicemail → Follow Up 1 → 2 → 3, one step per no-answer.
@@ -37,6 +40,36 @@ since the call has now happened. Leads can also be dragged between columns, or m
 dropdown.
 
 To change the stages or dispositions, edit `src/pipeline.js`.
+
+## Follow-up email after a voicemail
+
+Open **Email template** in the top bar, write the subject and message, tick **Send this email
+automatically**, and save. From then on, saving "No Answer – Left Voicemail" on a lead that has an
+email address sends that email. The rep can untick "Send follow-up email" on any single call.
+
+- Personalize with `{{first_name}}`, `{{last_name}}`, `{{full_name}}`, `{{email}}` and `{{phone}}`.
+  The editor shows a live preview.
+- Every email (sent, failed, or not sent) shows in the lead's **Emails** section and activity log.
+  A failed email never undoes the disposition.
+- To actually deliver mail, sign up for [Resend](https://resend.com), [SendGrid](https://sendgrid.com)
+  or [Postmark](https://postmarkapp.com), verify your sending domain, and set `EMAIL_PROVIDER`,
+  `EMAIL_API_KEY` and `EMAIL_FROM` (plus optional `EMAIL_REPLY_TO`) in `.env`. Until then, emails are
+  logged as "Not sent".
+- There's one template for the whole team for now. Once logins are added, each rep can have their own.
+
+To send the email for other dispositions too, add `email: true` to them in `src/pipeline.js`.
+
+## Using it on a phone
+
+The app is a Progressive Web App, so the same site works in a browser and as a home-screen app.
+It must be served over HTTPS (any normal host gives you this).
+
+- **iPhone:** open the site in Safari → Share → **Add to Home Screen**.
+- **Android:** open the site in Chrome → menu → **Install app** (or **Add to Home screen**).
+
+It opens full-screen with its own icon. Lead data always loads live from the server. If you later
+want it in the App Store or Google Play, the same web app can be wrapped with a tool such as
+Capacitor without a rewrite.
 
 ## Connecting Facebook Lead Ads
 
@@ -95,6 +128,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/reminders` | Open reminders |
 | POST | `/api/reminders/:id/complete` | Mark a reminder done |
 | POST | `/api/reminders/:id/snooze` | `{ due_at }` |
+| GET / PUT | `/api/settings/email` | Follow-up email template `{ enabled, subject, body }` |
 | POST | `/api/facebook/sync` | Pull leads from `FB_FORM_IDS` |
 | GET / POST | `/webhooks/facebook` | Facebook verification and lead events |
 | POST | `/api/intake/website` | Website form submissions |
@@ -107,8 +141,9 @@ src/pipeline.js      stages, dispositions, follow-up rules
 src/leads.js         lead, disposition and reminder logic
 src/facebook.js      webhook signature check and Graph API client
 src/website.js       website form field mapping
+src/email.js         email templates and sending (Resend / SendGrid / Postmark)
 src/db.js            SQLite schema
-public/              dashboard (HTML/CSS/JS)
+public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons
 examples/            website form snippet
 test/                tests (npm test)
 ```
