@@ -157,6 +157,7 @@ function leadCard(lead) {
     h('span', { class: 'phone' }, lead.phone || lead.email || ''),
     h('span', { class: 'muted' }, timeAgo(lead.received_at))),
   vehicleLine(lead) && h('div', { class: 'vehicle' }, vehicleLine(lead)),
+  lead.booked_services?.length > 0 && h('div', { class: 'services-line' }, serviceLabels(lead.booked_services)),
   (lead.last_disposition || reminderPill) && h('div', { class: 'row' },
     h('span', { class: 'muted' }, lead.last_disposition ? dispoLabel(lead.last_disposition) : ''),
     reminderPill));
@@ -219,6 +220,8 @@ function renderLead(lead) {
   );
   form.reminder_at.value = toLocalInput(tomorrowAtReminderHour());
   setNoteError(false);
+  setServicesError(false);
+  $('#servicesField').hidden = true;
   syncDispoForm();
 
   $('#leadReminders').replaceChildren(...(lead.reminders.length
@@ -239,6 +242,24 @@ function renderLead(lead) {
     : [h('li', { class: 'muted' }, lead.email ? 'No emails sent yet' : 'No email address on file')]));
 
   $('#timeline').replaceChildren(...lead.activities.map(activityItem));
+}
+
+// ---------- booked services ----------
+const serviceLabels = (ids) => ids.map((id) => state.meta.bookingServices.find((s) => s.id === id)?.label ?? id).join(', ');
+
+// Checkboxes for the services that fit this lead's vehicle type (all of them if the type isn't set).
+// Services already picked always stay visible.
+function renderServiceChecks(container, lead, selected = []) {
+  const fits = (s) => !s.types || !lead.vehicle_type || s.types.includes(lead.vehicle_type) || selected.includes(s.id);
+  container.replaceChildren(...state.meta.bookingServices.filter(fits).map((s) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', value: s.id, checked: selected.includes(s.id) }), ` ${s.label}`)));
+}
+
+const checkedServices = (container) => [...container.querySelectorAll('input:checked')].map((i) => i.value);
+
+function setServicesError(show) {
+  $('#servicesField').classList.toggle('invalid', show);
+  $('#servicesError').hidden = !show;
 }
 
 // ---------- lead info ----------
@@ -262,6 +283,9 @@ function fillInfoForm(lead) {
     form.first_name.value = first;
     form.last_name.value = rest.join(' ');
   }
+  const showServices = lead.stage === 'booked' || lead.booked_services.length > 0;
+  $('#infoServicesField').hidden = !showServices;
+  renderServiceChecks($('#infoServices'), lead, lead.booked_services);
   form.dataset.saved = JSON.stringify(infoValues());
   form.vehicle_year.classList.remove('invalid');
   syncInfoForm();
@@ -269,7 +293,9 @@ function fillInfoForm(lead) {
 
 function infoValues() {
   const form = $('#infoForm');
-  return Object.fromEntries(INFO_FIELDS.map((f) => [f, form[f].value.trim()]));
+  const values = Object.fromEntries(INFO_FIELDS.map((f) => [f, form[f].value.trim()]));
+  if (!$('#infoServicesField').hidden) values.booked_services = checkedServices($('#infoServices'));
+  return values;
 }
 
 function syncInfoForm() {
@@ -290,7 +316,7 @@ async function saveInfo(e) {
   }
   // Only send what changed, so the activity log lists real edits.
   const saved = JSON.parse(form.dataset.saved);
-  const patch = Object.fromEntries(Object.entries(values).filter(([k, v]) => v !== saved[k]));
+  const patch = Object.fromEntries(Object.entries(values).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(saved[k])));
   try {
     const lead = await api(`/api/leads/${state.openLeadId}`, { method: 'PATCH', body: patch });
     renderLead(lead);
@@ -346,6 +372,12 @@ function syncDispoForm(fromDispositionChange = false) {
   }
   $('#dispoHint').textContent = hint;
   syncEmailOption(def);
+  const wasHidden = $('#servicesField').hidden;
+  $('#servicesField').hidden = !def?.services;
+  if (def?.services && wasHidden && state.openLead) {
+    renderServiceChecks($('#serviceChecks'), state.openLead, state.openLead.booked_services);
+  }
+  if (!def?.services) setServicesError(false);
 }
 
 // Shows the "send follow-up email" choice for dispositions that send one.
@@ -370,9 +402,14 @@ async function saveDisposition(e) {
   e.preventDefault();
   const form = e.target;
   if (!form.disposition.value) return toast('Pick a call outcome first', 'error');
-  if (!form.note.value.trim()) {
-    setNoteError(true);
-    form.note.focus();
+  const needsServices = !$('#servicesField').hidden;
+  const services = needsServices ? checkedServices($('#serviceChecks')) : [];
+  const missingNote = !form.note.value.trim();
+  const missingServices = needsServices && !services.length;
+  setNoteError(missingNote);
+  setServicesError(missingServices);
+  if (missingNote || missingServices) {
+    (missingNote ? form.note : $('#serviceChecks input'))?.focus();
     return;
   }
   const body = {
@@ -382,6 +419,7 @@ async function saveDisposition(e) {
   };
   if (form.reminder.checked) body.reminder_at = new Date(form.reminder_at.value).toISOString();
   if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
+  if (needsServices) body.services = services;
   try {
     const { lead, reminder, email } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
     toast(reminder
@@ -608,6 +646,7 @@ async function init() {
     syncInfoForm();
   });
   $('#infoForm').addEventListener('submit', saveInfo);
+  $('#serviceChecks').addEventListener('change', () => { if (checkedServices($('#serviceChecks')).length) setServicesError(false); });
   $('#noteForm').note.addEventListener('input', (e) => e.target.classList.remove('invalid'));
   $('#dispoForm').note.addEventListener('input', (e) => { if (e.target.value.trim()) setNoteError(false); });
   if (state.meta.currentUser) {

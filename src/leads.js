@@ -2,6 +2,7 @@ const { transaction } = require('./db');
 const { STAGE_IDS, STAGES, DISPOSITIONS_BY_ID, stageAfterDisposition, tomorrowAt } = require('./pipeline');
 const { renderTemplate } = require('./email');
 const { VEHICLE_FIELDS, isValidYear } = require('./vehicle');
+const { cleanServices, serviceLabels, parseServices } = require('./services');
 
 const VEHICLE_KEYS = VEHICLE_FIELDS.map((f) => f.key);
 const FIELD_LABELS = {
@@ -138,17 +139,19 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
       params.push(like, like, `%${q.replace(/\D/g, '') || q}%`, like);
     }
     return stmt(`SELECT l.id, l.source, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage,
-                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type,
+                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type, l.booked_services,
                         l.campaign, l.last_disposition, l.last_contacted_at, l.received_at, l.updated_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-                 ORDER BY l.received_at DESC`).all(...params);
+                 ORDER BY l.received_at DESC`).all(...params)
+      .map((row) => ({ ...row, booked_services: parseServices(row.booked_services) }));
   }
 
   function getLead(id) {
     const lead = stmt('SELECT * FROM leads WHERE id = ?').get(id);
     if (!lead) throw new HttpError(404, 'Lead not found');
     delete lead.raw;
+    lead.booked_services = parseServices(lead.booked_services);
     lead.activities = stmt('SELECT * FROM activities WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
@@ -182,6 +185,14 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
           changes.push(`${FIELD_LABELS[field]}: ${lead[field] || '(blank)'} → ${value || '(blank)'}`);
         }
       }
+      if ('booked_services' in patch) {
+        const services = cleanServices(patch.booked_services);
+        if (services.join() !== lead.booked_services.join()) {
+          sets.push('booked_services = ?');
+          params.push(JSON.stringify(services));
+          changes.push(`Services booked: ${serviceLabels(lead.booked_services) || '(none)'} → ${serviceLabels(services) || '(none)'}`);
+        }
+      }
       if (changes.length) logActivity(id, 'info_updated', { note: changes.join('\n'), user });
       if ('email' in patch) {
         sets.push('email_norm = ?');
@@ -208,10 +219,12 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
 
   // Records a call outcome, moves the lead to the matching stage, and
   // (by default) schedules a reminder to call again tomorrow.
-  function dispositionLead(id, { disposition, note, reminder, reminder_at } = {}, { user } = {}) {
+  function dispositionLead(id, { disposition, note, reminder, reminder_at, services } = {}, { user } = {}) {
     const def = DISPOSITIONS_BY_ID[disposition];
     if (!def) throw new HttpError(400, `Unknown disposition: ${disposition}`);
     if (!clean(note)) throw new HttpError(400, 'Add a note about this call before saving.');
+    const booked = def.services ? cleanServices(services) : null;
+    if (booked && !booked.length) throw new HttpError(400, 'Pick at least one service for this booking.');
     const lead = getLead(id);
     const toStage = stageAfterDisposition(lead.stage, def);
     const wantReminder = reminder ?? def.reminder;
@@ -227,8 +240,10 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
       const contactedAt = def.call === false ? lead.last_contacted_at : ts;
       stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?`)
         .run(toStage, def.id, contactedAt, ts, id);
+      if (booked) stmt('UPDATE leads SET booked_services = ? WHERE id = ?').run(JSON.stringify(booked), id);
+      const fullNote = booked ? `Services booked: ${serviceLabels(booked)}\n${clean(note)}` : clean(note);
       logActivity(id, 'disposition', {
-        disposition: def.id, from_stage: lead.stage, to_stage: toStage, note: clean(note), user,
+        disposition: def.id, from_stage: lead.stage, to_stage: toStage, note: fullNote, user,
       });
       // The call just happened, so any earlier reminders are satisfied.
       stmt('UPDATE reminders SET done_at = ? WHERE lead_id = ? AND done_at IS NULL').run(ts, id);

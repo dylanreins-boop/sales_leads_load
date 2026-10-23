@@ -171,7 +171,7 @@ test('next disposition closes the old reminder and walks through follow-ups', as
   const open = (await call('GET', '/api/reminders')).data.filter((r) => r.lead_id === lead.id);
   assert.equal(open.length, 1, 'only the newest reminder stays open');
 
-  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Test call' });
+  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Test call', services: ['full_decon_coat'] });
   assert.equal(booked.data.lead.stage, 'booked');
 });
 
@@ -336,4 +336,29 @@ test('lead info can be edited and every change is logged', async () => {
 
   assert.equal((await call('PATCH', `/api/leads/${lead.id}`, { vehicle_year: '20' })).status, 400);
   assert.ok((await call('GET', '/api/leads?q=audi q5')).data.some((l) => l.id === lead.id), 'search finds the vehicle');
+});
+
+test('booking requires picking services, which are saved on the lead', async () => {
+  await call('POST', '/api/leads', { full_name: 'Gil Coach', phone: '555-616-7171', vehicle_type: 'Coach / RV' });
+  const lead = await findLead('Gil Coach');
+
+  const none = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Booked Tue', services: [] });
+  assert.equal(none.status, 400);
+  assert.match(none.data.error, /service/i);
+  assert.equal((await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'x', services: ['made_up'] })).status, 400);
+
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`,
+    { disposition: 'booked', note: 'Booked Tue 8am', services: ['pop_outs', 'full_decon_coat', 'pop_outs', 'made_up'] });
+  assert.equal(res.status, 201);
+  assert.equal(res.data.lead.stage, 'booked');
+  assert.deepEqual(res.data.lead.booked_services, ['full_decon_coat', 'pop_outs'], 'known ids only, list order, no repeats');
+  assert.match(res.data.lead.activities[0].note, /Services booked: Full decon & coat, Pop-outs \/ slide-outs/);
+  assert.deepEqual((await findLead('Gil Coach')).booked_services, ['full_decon_coat', 'pop_outs']);
+
+  const edited = await call('PATCH', `/api/leads/${lead.id}`, { booked_services: ['full_decon_coat', 'wheels_windows'] });
+  assert.deepEqual(edited.data.booked_services, ['full_decon_coat', 'wheels_windows']);
+  assert.match(edited.data.activities[0].note, /Services booked: Full decon & coat, Pop-outs \/ slide-outs → Full decon & coat, Wheels & windows/);
+
+  const meta = (await call('GET', '/api/meta')).data;
+  assert.ok(meta.bookingServices.some((s) => s.id === 'pop_outs' && s.types.includes('Coach / RV')));
 });

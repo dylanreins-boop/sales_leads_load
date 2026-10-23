@@ -10,6 +10,7 @@ const facebook = require('./src/facebook');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES } = require('./src/vehicle');
+const { BOOKING_SERVICES } = require('./src/services');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -148,6 +149,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     emailPlaceholders: PLACEHOLDERS,
     vehicleFields: VEHICLE_FIELDS,
     vehicleTypes: VEHICLE_TYPES,
+    bookingServices: BOOKING_SERVICES,
   }));
   route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source') }));
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));

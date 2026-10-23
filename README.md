@@ -34,6 +34,13 @@ npm test                  # runs the test suite
 \* Attempt stages go New / Working → Voicemail → Follow Up 1 → 2 → 3, one step per no-answer.
 A lead that is already Contacted or Booked stays where it is.
 
+**Appointment Booked** also asks which services were booked: Full decon & coat, Paint correction,
+Wheels & windows, Wheels & calipers only, Windows / glass only, Trim & plastics, Interior protection,
+Pop-outs / slide-outs and Roof (coaches / RVs only), Hull & gelcoat (boats and jet skis only), and
+Other. At least one must be ticked; the box turns red otherwise. The booked services show on the
+lead's card and in its Lead info, where they can be changed later (the change is logged). To change
+the list, edit `BOOKING_SERVICES` in `src/services.js`.
+
 Every disposition needs a note. If the rep tries to save without one, the Notes box turns red and
 nothing is saved until they write something.
 
@@ -178,6 +185,7 @@ src/leads.js         lead, disposition and reminder logic
 src/facebook.js      webhook signature check and Graph API client
 src/website.js       website form field mapping
 src/vehicle.js       vehicle fields and matching them in form answers
+src/services.js      services that can be booked
 src/email.js         email templates and sending (Resend / SendGrid / Postmark)
 src/db.js            SQLite schema
 public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons
