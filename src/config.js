@@ -49,6 +49,8 @@ module.exports = {
   reminderHour: Number(process.env.REMINDER_HOUR ?? 9),
   // The Las Vegas shop is closed weekends, so call-back reminders skip to Monday.
   reminderSkipWeekends: process.env.REMINDER_SKIP_WEEKENDS !== 'false',
+  // Leads leave the board for "Old & Dead Leads" this many days after they came in (Booked leads stay).
+  archiveDays: Number(process.env.LEAD_ARCHIVE_DAYS ?? 14),
 
   website: {
     apiKey: process.env.WEBSITE_API_KEY || '',

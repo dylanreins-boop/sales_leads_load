@@ -53,6 +53,35 @@
 
   <main id="board" class="board" aria-label="Pipeline board"></main>
 
+  <!-- Old & Dead Leads: leads that left the boards after two weeks -->
+  <section id="oldView" class="old-view" aria-labelledby="oldTitle" hidden>
+    <div class="old-head">
+      <h2 id="oldTitle">Old &amp; Dead Leads</h2>
+      <p id="oldIntro" class="muted"></p>
+    </div>
+    <div class="old-filters">
+      <label>Vehicle type <select id="oldVehicle"></select></label>
+      <label>Lead type
+        <select id="oldSource">
+          <option value="">All lead types</option>
+          <option value="facebook">Facebook</option>
+          <option value="website">Website</option>
+          <option value="manual">Manual</option>
+        </select>
+      </label>
+      <label>Status
+        <select id="oldStatus">
+          <option value="">Old and dead</option>
+          <option value="old">Old (aged out)</option>
+          <option value="dead">Dead (marked Waste)</option>
+        </select>
+      </label>
+    </div>
+    <h3 class="old-sub">By vehicle and lead type</h3>
+    <div class="table-scroll fit"><table id="oldMatrix" class="matrix"></table></div>
+    <div id="oldGroups"></div>
+  </section>
+
   <!-- Lead detail drawer -->
   <div id="scrim" class="scrim" hidden></div>
   <aside id="drawer" class="drawer" aria-label="Lead details" hidden>

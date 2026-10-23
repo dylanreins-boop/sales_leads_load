@@ -8,6 +8,8 @@ const state = {
   openLead: null,
   emailSettings: null,
   pipeline: 'other',
+  oldLeads: [],
+  oldFilters: { vehicle: '', source: '', status: '' },
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -103,8 +105,10 @@ async function loadLeads() {
   const q = $('#search').value.trim();
   const source = $('#sourceFilter').value;
   if (q) params.set('q', q);
+  const oldParams = new URLSearchParams(params);
+  oldParams.set('view', 'old');
   if (source) params.set('source', source);
-  state.leads = await api(`/api/leads?${params}`);
+  [state.leads, state.oldLeads] = await Promise.all([api(`/api/leads?${params}`), api(`/api/leads?${oldParams}`)]);
   renderBoard();
 }
 
@@ -114,7 +118,7 @@ function pickPipeline() {
   const fromLink = location.hash.slice(1);
   let saved = null;
   try { saved = localStorage.getItem('pipeline'); } catch { /* storage unavailable */ }
-  state.pipeline = [fromLink, saved].find((id) => ids.includes(id)) || 'other';
+  state.pipeline = [fromLink, saved].find((id) => ids.includes(id) || id === 'old') || 'other';
 }
 
 function setPipeline(id) {
@@ -125,19 +129,53 @@ function setPipeline(id) {
 }
 
 function renderTabs() {
-  $('#pipelineTabs').replaceChildren(...state.meta.pipelines.map((p) => h('button', {
+  // Phones show the short names so all tabs and the export button fit.
+  const SHORT = { rv: 'RVs', other: 'Other', old: 'Old & Dead' };
+  const tab = (id, label, count, extra = '') => h('button', {
     type: 'button',
     role: 'tab',
-    class: 'pipeline-tab',
-    'aria-selected': String(p.id === state.pipeline),
-    onclick: () => setPipeline(p.id),
-  }, p.label, h('span', { class: 'count' }, state.leads.filter((l) => l.pipeline === p.id).length))));
+    class: `pipeline-tab ${extra}`,
+    'aria-selected': String(id === state.pipeline),
+    'aria-label': label,
+    onclick: () => setPipeline(id),
+  }, h('span', { class: 'long-label' }, label), h('span', { class: 'short-label' }, SHORT[id] || label), h('span', { class: 'count' }, count));
+  $('#pipelineTabs').replaceChildren(
+    ...state.meta.pipelines.map((p) => tab(p.id, p.label, state.leads.filter((l) => l.pipeline === p.id).length)),
+    tab('old', 'Old & Dead Leads', state.oldLeads.length, 'old-tab'),
+    h('span', { class: 'spacer' }),
+    h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
+      h('span', { class: 'long-label' }, 'Export to Excel'), h('span', { class: 'short-label' }, 'Excel')),
+  );
+}
+
+// The Excel download matches the tab and filters on screen.
+function exportUrl() {
+  const params = new URLSearchParams();
+  const q = $('#search').value.trim();
+  if (q) params.set('q', q);
+  if (state.pipeline === 'old') {
+    params.set('view', 'old');
+    const f = state.oldFilters;
+    if (f.vehicle) params.set('vehicle_type', f.vehicle);
+    if (f.source) params.set('source', f.source);
+    if (f.status) params.set('status', f.status);
+  } else {
+    params.set('view', 'active');
+    params.set('pipeline', state.pipeline);
+    if ($('#sourceFilter').value) params.set('source', $('#sourceFilter').value);
+  }
+  return `/api/export.xlsx?${params}`;
 }
 
 const pipelineLabel = (id) => state.meta.pipelines.find((p) => p.id === id)?.label ?? id;
 
 function renderBoard() {
   renderTabs();
+  const showingOld = state.pipeline === 'old';
+  $('#board').hidden = showingOld;
+  $('#oldView').hidden = !showingOld;
+  $('#sourceFilter').hidden = showingOld;
+  if (showingOld) return renderOld();
   const board = $('#board');
   board.setAttribute('aria-label', pipelineLabel(state.pipeline));
   const inPipeline = state.leads.filter((l) => l.pipeline === state.pipeline);
@@ -215,6 +253,78 @@ async function moveStage(id, stage) {
   } catch (err) { fail(err); }
 }
 
+// ---------- old & dead leads ----------
+const SOURCE_LABELS = { facebook: 'Facebook', website: 'Website', manual: 'Manual' };
+const vehicleTypeOf = (l) => l.vehicle_type || 'No vehicle type';
+const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+
+function renderOld() {
+  const f = state.oldFilters;
+  $('#oldIntro').textContent = `Leads leave the boards ${state.meta.archiveDays} days after they come in unless they're booked. `
+    + '"Dead" leads were marked Waste. Restore a lead, log a call on it, or have them inquire again, and it goes back on its board.';
+
+  // Vehicle type choices: every type that has old leads, plus the current pick.
+  const types = [...new Set(state.oldLeads.map(vehicleTypeOf))].sort();
+  const vehicleSelect = $('#oldVehicle');
+  vehicleSelect.replaceChildren(h('option', { value: '' }, 'All vehicle types'),
+    ...types.map((t) => h('option', { value: t === 'No vehicle type' ? 'none' : t }, t)));
+  vehicleSelect.value = f.vehicle;
+  if (vehicleSelect.value !== f.vehicle) f.vehicle = vehicleSelect.value = '';
+  $('#oldSource').value = f.source;
+  $('#oldStatus').value = f.status;
+
+  const byStatus = state.oldLeads.filter((l) => !f.status || l.status === f.status);
+  const matches = byStatus.filter((l) => (!f.source || l.source === f.source)
+    && (!f.vehicle || (f.vehicle === 'none' ? !l.vehicle_type : l.vehicle_type === f.vehicle)));
+
+  // Counts by vehicle type (rows) and lead type (columns); a number filters to that group.
+  const sources = Object.keys(SOURCE_LABELS);
+  const pick = (vehicle, source) => () => {
+    Object.assign(state.oldFilters, { vehicle: vehicle === 'No vehicle type' ? 'none' : vehicle, source });
+    renderBoard();
+  };
+  const countCell = (n, vehicle, source) => h('td', { class: 'num' },
+    h('button', { type: 'button', class: `cell ${n ? '' : 'zero'}`, onclick: pick(vehicle, source) }, n));
+  const count = (t, s) => byStatus.filter((l) => (!t || vehicleTypeOf(l) === t) && (!s || l.source === s)).length;
+  $('#oldMatrix').replaceChildren(
+    h('thead', {}, h('tr', {}, h('th', {}, 'Vehicle type'), ...sources.map((s) => h('th', { class: 'num' }, SOURCE_LABELS[s])), h('th', { class: 'num' }, 'Total'))),
+    h('tbody', {},
+      ...types.map((t) => h('tr', {}, h('td', {}, t), ...sources.map((s) => countCell(count(t, s), t, s)), countCell(count(t), t, ''))),
+      h('tr', { class: 'total' }, h('td', {}, 'Total'), ...sources.map((s) => countCell(count('', s), '', s)), countCell(byStatus.length, '', ''))),
+  );
+
+  const groups = new Map();
+  for (const l of matches) {
+    const t = vehicleTypeOf(l);
+    if (!groups.has(t)) groups.set(t, []);
+    groups.get(t).push(l);
+  }
+  $('#oldGroups').replaceChildren(...(groups.size ? [...groups.keys()].sort().map((t) => h('section', { class: 'old-group' },
+    h('h3', {}, t, h('span', { class: 'muted' }, `${groups.get(t).length} lead${groups.get(t).length === 1 ? '' : 's'}`)),
+    h('div', { class: 'table-scroll' }, h('table', { class: 'old-table' },
+      h('thead', {}, h('tr', {}, ...['Name', 'Lead type', 'Status', 'Phone', 'Vehicle', 'Last outcome', 'Came in', 'Moved here', ''].map((c) => h('th', {}, c)))),
+      h('tbody', {}, ...groups.get(t).map((l) => h('tr', { onclick: () => openLead(l.id) },
+        h('td', {}, h('strong', {}, leadName(l))),
+        h('td', {}, SOURCE_LABELS[l.source] || l.source),
+        h('td', {}, h('span', { class: `status-pill ${l.status}` }, l.status === 'dead' ? 'Dead' : 'Old')),
+        h('td', {}, l.phone || ''),
+        h('td', {}, [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ')),
+        h('td', {}, l.last_disposition ? dispoLabel(l.last_disposition) : 'Never reached'),
+        h('td', {}, shortDate(l.received_at)),
+        h('td', {}, shortDate(l.archived_at)),
+        h('td', {}, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); restoreLead(l.id); } }, 'Restore')))))))))
+    : [h('p', { class: 'muted' }, state.oldLeads.length ? 'No old leads match these filters.' : 'No old or dead leads yet. Leads show up here two weeks after they come in.')]));
+}
+
+async function restoreLead(id) {
+  try {
+    const lead = await api(`/api/leads/${id}/restore`, { method: 'POST' });
+    toast(`${leadName(lead)} is back on ${pipelineLabel(lead.pipeline)}`);
+    await loadLeads();
+    if (state.openLeadId === id) renderLead(lead);
+  } catch (err) { fail(err); }
+}
+
 // ---------- lead drawer ----------
 function showPanel(panel) {
   for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel')]) p.hidden = p !== panel;
@@ -245,6 +355,9 @@ function renderLead(lead) {
   ].filter(Boolean).join(' · ');
 
   $('#leadContact').replaceChildren(...[
+    lead.status && lead.status !== 'active' && h('div', { class: 'notice archived-notice' },
+      h('span', {}, `${lead.status === 'dead' ? 'Dead lead' : 'Old lead'} · moved off the board ${shortDate(lead.archived_at)}`),
+      h('button', { type: 'button', onclick: () => restoreLead(lead.id) }, 'Restore to pipeline')),
     lead.phone && h('a', { href: `tel:${lead.phone.replace(/[^\d+]/g, '')}`, class: 'call-btn' }, `Call ${lead.phone}`),
     lead.email && h('a', { href: `mailto:${lead.email}` }, lead.email),
     lead.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
@@ -398,6 +511,8 @@ function activityItem(a) {
     reminder_done: 'Reminder completed',
     email: 'Email',
     info_updated: 'Lead info updated',
+    archived: 'Moved to Old & Dead Leads',
+    restored: 'Back on the board',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -718,6 +833,9 @@ async function init() {
   $('#dispoForm').reminder.addEventListener('change', () => syncDispoForm());
   $('#stageSelect').addEventListener('change', (e) => moveStage(state.openLeadId, e.target.value));
   $('#noteForm').addEventListener('submit', addNote);
+  for (const [id, key] of [['#oldVehicle', 'vehicle'], ['#oldSource', 'source'], ['#oldStatus', 'status']]) {
+    $(id).addEventListener('change', (e) => { state.oldFilters[key] = e.target.value; renderBoard(); });
+  }
   $('#infoForm').addEventListener('input', (e) => {
     if (e.target.name === 'vehicle_year') e.target.classList.remove('invalid');
     syncInfoForm();

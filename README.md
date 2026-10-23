@@ -49,6 +49,37 @@ lead as a Coach / RV. Reminders cover both pipelines; RV leads are tagged "RV". 
 tab with `#rv` or `#other` at the end of the address. To change which types count as RVs, edit
 `PIPELINES` in `src/vehicle.js`. The API also takes `GET /api/leads?pipeline=rv` (or `other`).
 
+## Old & Dead Leads
+
+**14 days after a lead comes in**, it leaves its board and moves to the **Old & Dead Leads** tab, unless
+it's **Booked**. Its open reminders are closed so nobody gets chased about it. "Dead" leads are the ones
+that were marked Waste; "Old" leads aged out without a booking. Change the number of days with
+`LEAD_ARCHIVE_DAYS`.
+
+The tab separates leads **by vehicle type and lead type** (Facebook, Website, Manual): a count grid with
+vehicle types down the side and lead types across the top (click any number to see those leads), filters
+for vehicle type, lead type and old vs. dead, and one table per vehicle type.
+
+A lead goes back on its board (with another 14 days) when:
+
+- someone clicks **Restore** (in the table, or in the lead's panel),
+- a rep logs a call on it, or
+- the person submits the website form or a Facebook ad again (it comes back as New).
+
+## Export to Excel
+
+**Export to Excel** (right end of the tabs) downloads a real `.xlsx` file of what the current tab shows,
+including the search box and any filters. The workbook has:
+
+- **Summary:** lead counts by vehicle type and lead type.
+- **All leads** on one sheet, with every field: status, pipeline, vehicle type, lead type, name, phone,
+  email, OK to text, how they heard about us, year/make/model/color, stage, last call outcome, services
+  booked, campaign, message, dates, and the full **notes & history** (who did what, and when).
+- **One sheet per vehicle type**, with the same columns.
+
+Headers are frozen and filterable. `GET /api/export.xlsx` takes the same filters as `/api/leads`
+(`view=active|old|all`, `pipeline`, `vehicle_type`, `source`, `status=old|dead`, `q`).
+
 ## How dispositions work
 
 | Disposition | Lead moves to | Call-tomorrow reminder |
@@ -215,7 +246,9 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/leads?q=&source=` | List leads |
+| GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead) |
+| POST | `/api/leads/:id/restore` | Put an old or dead lead back on its board |
+| GET | `/api/export.xlsx?…same filters…` | Excel download |
 | POST | `/api/leads` | Add a lead manually |
 | GET / PATCH | `/api/leads/:id` | Lead details, or edit fields / stage |
 | POST | `/api/leads/:id/disposition` | `{ disposition, note?, reminder?, reminder_at? }` |
@@ -238,6 +271,8 @@ src/facebook.js      webhook signature check and Graph API client
 src/website.js       website form field mapping
 src/vehicle.js       vehicle fields and matching them in form answers
 src/services.js      services that can be booked
+src/export.js        Excel workbook layout (summary, all leads, sheet per vehicle type)
+src/xlsx.js          writes .xlsx files with no dependencies
 src/email.js         email templates and sending (Resend / SendGrid / Postmark)
 src/db.js            SQLite schema
 public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons

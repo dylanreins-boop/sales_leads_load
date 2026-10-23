@@ -12,6 +12,7 @@ const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
+const { leadsWorkbook } = require('./src/export');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -117,7 +118,12 @@ function serveStatic(req, res, pathname) {
 }
 
 function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
-  const leads = createLeadService(db, { reminderHour: config.reminderHour, skipWeekends: config.reminderSkipWeekends, brand: config.brand });
+  const leads = createLeadService(db, {
+    reminderHour: config.reminderHour,
+    skipWeekends: config.reminderSkipWeekends,
+    archiveDays: config.archiveDays,
+    brand: config.brand,
+  });
   const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
   const mailer = createMailer(config.email, fetchImpl);
   const routes = [];
@@ -146,6 +152,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     dispositions: DISPOSITIONS,
     reminderHour: config.reminderHour,
     reminderSkipWeekends: config.reminderSkipWeekends,
+    archiveDays: config.archiveDays,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
     facebookFormIds: config.facebook.formIds,
     emailConfigured: mailer.configured,
@@ -156,7 +163,33 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     bookingServices: BOOKING_SERVICES,
     heardAboutOptions: HEARD_ABOUT_OPTIONS,
   }));
-  route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source'), pipeline: query.get('pipeline') }));
+  const leadFilters = (query) => ({
+    q: query.get('q'),
+    source: query.get('source'),
+    pipeline: query.get('pipeline'),
+    view: query.get('view') || undefined,
+    vehicleType: query.get('vehicle_type'),
+    status: query.get('status'),
+  });
+  route('GET', '/api/leads', ({ query }) => {
+    leads.archiveOldLeads();
+    return leads.listLeads(leadFilters(query));
+  });
+  route('POST', '/api/leads/:id/restore', ({ params, actor }) => leads.restoreLead(Number(params.id), actor));
+
+  // Excel download of the leads matching the same filters as the board (view=all by default).
+  route('GET', '/api/export.xlsx', ({ query, res }) => {
+    leads.archiveOldLeads();
+    const filters = leadFilters(query);
+    const rows = leads.exportLeads(filters);
+    const label = { active: 'Active Leads', old: 'Old & Dead Leads' }[filters.view] || 'All Leads';
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${label.replace(/\W+/g, '-')}-${stamp}.xlsx"`,
+    });
+    res.end(leadsWorkbook(rows, { title: label }));
+  });
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
   route('GET', '/api/leads/:id', ({ params }) => leads.getLead(Number(params.id)));
   route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));
@@ -267,6 +300,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     if (redirect) return send(res, 303, '', { ...cors, Location: redirect });
     send(res, 201, { ok: true }, cors);
   }, { isPublic: true });
+
+  // Move two-week-old leads off the boards now and every hour.
+  leads.archiveOldLeads();
+  const sweep = setInterval(() => leads.archiveOldLeads(), 3600000);
+  sweep.unref();
 
   return async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');
