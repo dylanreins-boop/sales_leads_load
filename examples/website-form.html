@@ -1,0 +1,44 @@
+<!--
+  Drop-in contact form for the company website.
+  Replace https://leads.yourcompany.com with wherever the pipeline app is hosted,
+  and add your site to CORS_ORIGINS in .env.
+
+  Option A (below): plain HTML form. Works with no JavaScript and sends the
+  visitor to your thank-you page via the hidden _redirect field.
+
+  Option B: if your site builder (WordPress, Webflow, Wix, etc.) has its own form,
+  point its "webhook" / "send to URL" setting at
+  POST https://leads.yourcompany.com/api/intake/website
+  with JSON or form fields named name/first_name/last_name, email, phone, message.
+-->
+<form action="https://leads.yourcompany.com/api/intake/website" method="POST">
+  <input type="hidden" name="form_name" value="Contact page">
+  <input type="hidden" name="_redirect" value="https://www.yourcompany.com/thank-you">
+
+  <!-- Spam trap: hidden from people, bots fill it in -->
+  <input type="text" name="_gotcha" tabindex="-1" autocomplete="off"
+         style="position:absolute;left:-9999px" aria-hidden="true">
+
+  <label>First name <input name="first_name" required></label>
+  <label>Last name <input name="last_name"></label>
+  <label>Phone <input name="phone" type="tel" required></label>
+  <label>Email <input name="email" type="email"></label>
+  <label>How can we help? <textarea name="message"></textarea></label>
+  <button type="submit">Request a call</button>
+</form>
+
+<script>
+  // Copies UTM tags from the page URL so you can see which campaign a lead came from.
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var form = document.currentScript.previousElementSibling;
+    ['utm_source', 'utm_campaign'].forEach(function (key) {
+      if (!params.get(key)) return;
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = key;
+      input.value = params.get(key);
+      form.appendChild(input);
+    });
+  })();
+</script>

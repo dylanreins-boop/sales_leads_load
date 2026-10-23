@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lead Pipeline</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">Lead Pipeline</h1>
+    <div class="filters">
+      <input id="search" type="search" placeholder="Search name, phone, email" aria-label="Search leads">
+      <select id="sourceFilter" aria-label="Filter by source">
+        <option value="">All sources</option>
+        <option value="facebook">Facebook</option>
+        <option value="website">Website</option>
+        <option value="manual">Manual</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button id="syncFb" type="button">Sync Facebook</button>
+      <button id="addLeadBtn" type="button">+ Add lead</button>
+      <button id="remindersBtn" type="button" class="primary">
+        Reminders <span id="reminderBadge" class="badge" hidden></span>
+      </button>
+    </div>
+  </header>
+
+  <div id="dueBanner" class="due-banner" hidden></div>
+
+  <main id="board" class="board" aria-label="Pipeline board"></main>
+
+  <!-- Lead detail drawer -->
+  <div id="scrim" class="scrim" hidden></div>
+  <aside id="drawer" class="drawer" aria-label="Lead details" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2 id="leadName"></h2>
+        <div id="leadMeta" class="muted"></div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <section class="contact" id="leadContact"></section>
+
+      <section class="card-section">
+        <h3>Disposition</h3>
+        <form id="dispoForm">
+          <label>Call outcome
+            <select name="disposition" required></select>
+          </label>
+          <label>Notes
+            <textarea name="note" rows="2" placeholder="What happened on the call?"></textarea>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="reminder" checked> Remind me to call
+          </label>
+          <label id="reminderWhen">When
+            <input type="datetime-local" name="reminder_at" required>
+          </label>
+          <p id="dispoHint" class="hint"></p>
+          <button type="submit" class="primary">Save disposition</button>
+        </form>
+      </section>
+
+      <section class="card-section">
+        <h3>Stage</h3>
+        <select id="stageSelect" aria-label="Move to stage"></select>
+      </section>
+
+      <section class="card-section">
+        <h3>Reminders</h3>
+        <ul id="leadReminders" class="list"></ul>
+      </section>
+
+      <section class="card-section">
+        <h3>Activity</h3>
+        <form id="noteForm" class="inline-form">
+          <input name="note" placeholder="Add a note" aria-label="Add a note">
+          <button type="submit">Add</button>
+        </form>
+        <ul id="timeline" class="timeline"></ul>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Reminders panel -->
+  <aside id="remindersPanel" class="drawer" aria-label="Reminders" hidden>
+    <div class="drawer-head">
+      <h2>Call reminders</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <button id="enableNotifs" type="button" hidden>Turn on desktop notifications</button>
+      <div id="remindersList"></div>
+    </div>
+  </aside>
+
+  <!-- Add lead dialog -->
+  <dialog id="addLeadDialog">
+    <form id="addLeadForm" method="dialog">
+      <h2>Add lead</h2>
+      <label>First name <input name="first_name"></label>
+      <label>Last name <input name="last_name"></label>
+      <label>Phone <input name="phone" type="tel"></label>
+      <label>Email <input name="email" type="email"></label>
+      <label>Notes <textarea name="message" rows="2"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" data-cancel>Cancel</button>
+        <button type="submit" class="primary">Add lead</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

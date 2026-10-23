@@ -1,0 +1,76 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS leads (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  source            TEXT NOT NULL,              -- facebook | website | manual
+  external_id       TEXT,                       -- Facebook leadgen id / form submission id
+  first_name        TEXT,
+  last_name         TEXT,
+  full_name         TEXT,
+  email             TEXT,
+  phone             TEXT,
+  email_norm        TEXT,
+  phone_norm        TEXT,
+  message           TEXT,
+  campaign          TEXT,
+  form_name         TEXT,
+  stage             TEXT NOT NULL DEFAULT 'new',
+  last_disposition  TEXT,
+  last_contacted_at TEXT,
+  raw               TEXT,
+  received_at       TEXT NOT NULL,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  UNIQUE (source, external_id)
+);
+CREATE INDEX IF NOT EXISTS leads_stage ON leads (stage);
+CREATE INDEX IF NOT EXISTS leads_email ON leads (email_norm);
+CREATE INDEX IF NOT EXISTS leads_phone ON leads (phone_norm);
+
+CREATE TABLE IF NOT EXISTS activities (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id     INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  type        TEXT NOT NULL,                    -- created | reinquiry | stage_change | disposition | note | reminder_done
+  disposition TEXT,
+  from_stage  TEXT,
+  to_stage    TEXT,
+  note        TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS activities_lead ON activities (lead_id);
+
+CREATE TABLE IF NOT EXISTS reminders (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id    INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  due_at     TEXT NOT NULL,
+  note       TEXT,
+  done_at    TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reminders_open ON reminders (done_at, due_at);
+`;
+
+function openDatabase(file) {
+  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new DatabaseSync(file);
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  db.exec(SCHEMA);
+  return db;
+}
+
+function transaction(db, fn) {
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+module.exports = { openDatabase, transaction };

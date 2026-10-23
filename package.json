@@ -1,0 +1,15 @@
+{
+  "name": "lead-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lead pipeline: Facebook Lead Ads + website form intake, stages, dispositions, and call-tomorrow reminders.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  }
+}
