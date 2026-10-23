@@ -9,6 +9,7 @@ const { STAGES, DISPOSITIONS } = require('./src/pipeline');
 const facebook = require('./src/facebook');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
+const { VEHICLE_FIELDS } = require('./src/vehicle');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -145,6 +146,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     facebookFormIds: config.facebook.formIds,
     emailConfigured: mailer.configured,
     emailPlaceholders: PLACEHOLDERS,
+    vehicleFields: VEHICLE_FIELDS,
   }));
   route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source') }));
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));

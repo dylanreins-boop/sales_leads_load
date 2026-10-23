@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS leads (
   message           TEXT,
   campaign          TEXT,
   form_name         TEXT,
+  vehicle_year      TEXT,
+  vehicle_make      TEXT,
+  vehicle_model     TEXT,
+  vehicle_color     TEXT,
+  service_interest  TEXT,
   stage             TEXT NOT NULL DEFAULT 'new',
   last_disposition  TEXT,
   last_contacted_at TEXT,
@@ -85,6 +90,9 @@ function openDatabase(file) {
 function migrate(db) {
   const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
+  for (const column of ['vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'service_interest']) {
+    if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
+  }
 }
 
 function transaction(db, fn) {

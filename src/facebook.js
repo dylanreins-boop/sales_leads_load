@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { extractVehicle } = require('./vehicle');
 
 // Meta signs webhook payloads with the app secret (X-Hub-Signature-256).
 function verifySignature(rawBody, header, appSecret) {
@@ -40,6 +41,7 @@ function mapFacebookLead(fbLead) {
     campaign: fbLead.campaign_name || fbLead.ad_name || null,
     form_name: fbLead.form_id ? `Facebook form ${fbLead.form_id}` : 'Facebook Lead Ad',
     received_at: fbLead.created_time,
+    ...extractVehicle(fields),
     raw: fbLead,
   };
 }

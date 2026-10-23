@@ -282,3 +282,50 @@ test('dashboard is served and unknown API routes 404', async () => {
   assert.equal((await call('GET', '/api/nope')).status, 404);
   assert.equal((await fetch(`${base}/..%2fserver.js`)).status, 404);
 });
+
+test('vehicle details are picked up from website and Facebook forms', () => {
+  const { mapWebsiteLead } = require('../src/website');
+  const { mapFacebookLead } = require('../src/facebook');
+  const web = mapWebsiteLead({ name: 'Kai Lee', phone: '555-1234567', vehicle_year: '2023', make: 'Tesla', model: 'Model Y', color: 'Pearl White', service: 'Full ceramic coating' });
+  assert.equal(web.vehicle_year, '2023');
+  assert.equal(web.vehicle_make, 'Tesla');
+  assert.equal(web.vehicle_model, 'Model Y');
+  assert.equal(web.vehicle_color, 'Pearl White');
+  assert.equal(web.service_interest, 'Full ceramic coating');
+
+  const fb = mapFacebookLead({
+    id: 'fb-v1',
+    field_data: [
+      { name: 'full_name', values: ['Rae Kim'] },
+      { name: 'what_is_the_year,_make_and_model_of_your_vehicle?', values: ['2021 BMW M3'] },
+      { name: 'what_color_is_your_vehicle?', values: ['Isle of Man Green'] },
+      { name: 'which_package_are_you_interested_in?', values: ['Paint correction + coating'] },
+    ],
+  });
+  assert.equal(fb.vehicle_model, '2021 BMW M3');
+  assert.equal(fb.vehicle_color, 'Isle of Man Green');
+  assert.equal(fb.service_interest, 'Paint correction + coating');
+});
+
+test('lead info can be edited and every change is logged', async () => {
+  await call('POST', '/api/intake/website',
+    { first_name: 'Nora', last_name: 'Diaz', phone: '555-888-1212', vehicle_year: '2019', make: 'Audi', model: 'Q5' },
+    { 'X-API-Key': 'site-key' });
+  const lead = await findLead('Nora Diaz');
+  assert.equal(lead.vehicle_make, 'Audi');
+
+  const res = await call('PATCH', `/api/leads/${lead.id}`, {
+    vehicle_year: '2020', vehicle_make: 'Audi', vehicle_color: 'Navarra Blue', last_name: 'Diaz-Ruiz', email: 'nora@example.com',
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.data.vehicle_year, '2020');
+  assert.equal(res.data.vehicle_color, 'Navarra Blue');
+  assert.equal(res.data.full_name, 'Nora Diaz-Ruiz');
+  const log = res.data.activities.find((a) => a.type === 'info_updated');
+  assert.match(log.note, /Year: 2019 → 2020/);
+  assert.match(log.note, /Color: \(blank\) → Navarra Blue/);
+  assert.doesNotMatch(log.note, /Make/, 'unchanged fields are not logged');
+
+  assert.equal((await call('PATCH', `/api/leads/${lead.id}`, { vehicle_year: '20' })).status, 400);
+  assert.ok((await call('GET', '/api/leads?q=audi q5')).data.some((l) => l.id === lead.id), 'search finds the vehicle');
+});

@@ -1,6 +1,13 @@
 const { transaction } = require('./db');
 const { STAGE_IDS, STAGES, DISPOSITIONS_BY_ID, stageAfterDisposition, tomorrowAt } = require('./pipeline');
 const { renderTemplate } = require('./email');
+const { VEHICLE_FIELDS, isValidYear } = require('./vehicle');
+
+const VEHICLE_KEYS = VEHICLE_FIELDS.map((f) => f.key);
+const FIELD_LABELS = {
+  first_name: 'First name', last_name: 'Last name', full_name: 'Name', email: 'Email', phone: 'Phone', message: 'Message',
+  ...Object.fromEntries(VEHICLE_FIELDS.map((f) => [f.key, f.label])),
+};
 
 // Follow-up email template. Off until the user writes their own and turns it on.
 const EMAIL_SETTINGS = {
@@ -82,6 +89,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
       message: clean(input.message),
       campaign: clean(input.campaign),
       form_name: clean(input.form_name),
+      ...Object.fromEntries(VEHICLE_KEYS.map((k) => [k, clean(input[k])])),
     };
     if (!lead.full_name) lead.full_name = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || null;
     lead.email_norm = normEmail(lead.email);
@@ -103,10 +111,11 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
       const ts = now();
       const { lastInsertRowid } = stmt(`INSERT INTO leads
         (source, external_id, first_name, last_name, full_name, email, phone, email_norm, phone_norm,
-         message, campaign, form_name, stage, raw, received_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`).run(
+         message, campaign, form_name, ${VEHICLE_KEYS.join(', ')}, stage, raw, received_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${VEHICLE_KEYS.map(() => '?').join(', ')}, 'new', ?, ?, ?, ?)`).run(
         lead.source, lead.external_id, lead.first_name, lead.last_name, lead.full_name, lead.email,
         lead.phone, lead.email_norm, lead.phone_norm, lead.message, lead.campaign, lead.form_name,
+        ...VEHICLE_KEYS.map((k) => lead[k]),
         input.raw ? JSON.stringify(input.raw) : null, toIso(input.received_at, ts), ts, ts,
       );
       const id = Number(lastInsertRowid);
@@ -124,10 +133,12 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     }
     if (q) {
       const like = `%${q.toLowerCase()}%`;
-      where.push('(lower(l.full_name) LIKE ? OR l.email_norm LIKE ? OR l.phone_norm LIKE ?)');
-      params.push(like, like, `%${q.replace(/\D/g, '') || q}%`);
+      where.push(`(lower(l.full_name) LIKE ? OR l.email_norm LIKE ? OR l.phone_norm LIKE ?
+                   OR lower(coalesce(l.vehicle_year, '') || ' ' || coalesce(l.vehicle_make, '') || ' ' || coalesce(l.vehicle_model, '')) LIKE ?)`);
+      params.push(like, like, `%${q.replace(/\D/g, '') || q}%`, like);
     }
     return stmt(`SELECT l.id, l.source, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage,
+                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.service_interest,
                         l.campaign, l.last_disposition, l.last_contacted_at, l.received_at, l.updated_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -144,19 +155,34 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     return lead;
   }
 
-  const EDITABLE = ['first_name', 'last_name', 'full_name', 'email', 'phone', 'message'];
+  const EDITABLE = ['first_name', 'last_name', 'full_name', 'email', 'phone', 'message', ...VEHICLE_KEYS];
 
   function updateLead(id, patch, { user } = {}) {
     const lead = getLead(id);
+    if ('vehicle_year' in patch && !isValidYear(patch.vehicle_year)) {
+      throw new HttpError(400, 'Vehicle year should be 4 digits, like 2022.');
+    }
+    // Editing first/last name keeps the display name in step.
+    if (!('full_name' in patch) && ('first_name' in patch || 'last_name' in patch)) {
+      const first = 'first_name' in patch ? clean(patch.first_name) : lead.first_name;
+      const last = 'last_name' in patch ? clean(patch.last_name) : lead.last_name;
+      patch = { ...patch, full_name: [first, last].filter(Boolean).join(' ') || lead.full_name };
+    }
     return transaction(db, () => {
       const sets = [];
       const params = [];
+      const changes = [];
       for (const field of EDITABLE) {
-        if (field in patch) {
-          sets.push(`${field} = ?`);
-          params.push(clean(patch[field]));
+        if (!(field in patch)) continue;
+        const value = clean(patch[field]);
+        if (value === (lead[field] ?? null)) continue;
+        sets.push(`${field} = ?`);
+        params.push(value);
+        if (field !== 'full_name' || !('first_name' in patch || 'last_name' in patch)) {
+          changes.push(`${FIELD_LABELS[field]}: ${lead[field] || '(blank)'} → ${value || '(blank)'}`);
         }
       }
+      if (changes.length) logActivity(id, 'info_updated', { note: changes.join('\n'), user });
       if ('email' in patch) {
         sets.push('email_norm = ?');
         params.push(normEmail(patch.email));

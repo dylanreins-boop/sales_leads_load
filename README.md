@@ -44,6 +44,21 @@ dropdown.
 
 To change the stages or dispositions, edit `src/pipeline.js`.
 
+## Lead info and vehicle details
+
+Each lead has a **Lead info** section that anyone can edit: first and last name, phone, email, and
+the vehicle's **year, make, model and color**, plus the **service they're interested in** (pick from
+the list or type your own). The vehicle shows on the lead's card, for example "2023 Tesla Model Y ·
+Pearl White", and the search box finds leads by vehicle too.
+
+Every save is logged in the lead's activity with what changed, who changed it and when, for example
+"Color: (blank) → Pearl White".
+
+Vehicle details fill in automatically from Facebook and website forms. Field names are matched
+loosely, so Facebook questions like "What is the year, make and model of your vehicle?" or "What
+color is your car?" land in the right place. A combined year/make/model answer is kept together in
+the Model field. To change the service list, edit the `serviceOptions` list in `public/index.html`.
+
 ## Follow-up email after a voicemail
 
 Open **Email template** in the top bar, write the subject and message, tick **Send this email
@@ -113,7 +128,8 @@ Webhooks need a public HTTPS URL. When testing locally, use a tunnel such as `ng
 
 Send each form submission as a POST to `https://<your-host>/api/intake/website`, as JSON or regular form
 fields. Recognised field names include `name`, `first_name`, `last_name`, `email`, `phone`, `message`,
-`utm_campaign` and `form_name`.
+`utm_campaign`, `form_name`, and the vehicle fields `vehicle_year`, `vehicle_make`, `vehicle_model`,
+`vehicle_color` and `service_interest` (`year`, `make`, `model`, `color` and `service` work too).
 
 - **Plain HTML form:** see `examples/website-form.html`. It includes a spam trap and redirects to your
   thank-you page.
@@ -160,6 +176,7 @@ src/pipeline.js      stages, dispositions, follow-up rules
 src/leads.js         lead, disposition and reminder logic
 src/facebook.js      webhook signature check and Graph API client
 src/website.js       website form field mapping
+src/vehicle.js       vehicle fields and matching them in form answers
 src/email.js         email templates and sending (Resend / SendGrid / Postmark)
 src/db.js            SQLite schema
 public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons

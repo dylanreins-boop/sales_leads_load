@@ -1,3 +1,5 @@
+const { extractVehicle } = require('./vehicle');
+
 // Maps a website form submission (JSON or URL-encoded) into a lead.
 // Accepts common field-name variants so most existing forms work as-is.
 function mapWebsiteLead(body) {
@@ -21,6 +23,7 @@ function mapWebsiteLead(body) {
     message: pick('message', 'comments', 'notes', 'details', 'inquiry'),
     campaign: pick('utm_campaign', 'campaign', 'utm_source'),
     form_name: pick('form_name', 'formName', 'page') || 'Website form',
+    ...extractVehicle(body),
     raw: body,
   };
 }

@@ -18,7 +18,7 @@
     <h1 class="brand">Lead Pipeline</h1>
     <span id="currentUser" class="muted" hidden></span>
     <div class="filters">
-      <input id="search" type="search" placeholder="Search name, phone, email" aria-label="Search leads">
+      <input id="search" type="search" placeholder="Search name, phone, email, vehicle" aria-label="Search leads">
       <select id="sourceFilter" aria-label="Filter by source">
         <option value="">All sources</option>
         <option value="facebook">Facebook</option>
@@ -52,6 +52,36 @@
     </div>
     <div class="drawer-body">
       <section class="contact" id="leadContact"></section>
+
+      <section class="card-section">
+        <h3>Lead info</h3>
+        <form id="infoForm" class="info-grid">
+          <label>First name <input name="first_name" autocomplete="off"></label>
+          <label>Last name <input name="last_name" autocomplete="off"></label>
+          <label>Phone <input name="phone" type="tel" autocomplete="off"></label>
+          <label>Email <input name="email" type="email" autocomplete="off"></label>
+          <label>Year <input name="vehicle_year" inputmode="numeric" maxlength="4" placeholder="2024"></label>
+          <label>Make <input name="vehicle_make" placeholder="Tesla"></label>
+          <label>Model <input name="vehicle_model" placeholder="Model Y"></label>
+          <label>Color <input name="vehicle_color" placeholder="Pearl White"></label>
+          <label class="span-2">Service interested in
+            <input name="service_interest" list="serviceOptions" placeholder="Full ceramic coating">
+          </label>
+          <div class="span-2 info-actions">
+            <button type="submit" class="primary" disabled>Save info</button>
+            <span id="infoStatus" class="muted"></span>
+          </div>
+        </form>
+        <datalist id="serviceOptions">
+          <option value="Full ceramic coating">
+          <option value="Paint correction + ceramic coating">
+          <option value="Ceramic coating – wheels &amp; calipers">
+          <option value="Ceramic coating – glass">
+          <option value="Interior ceramic protection">
+          <option value="Paint protection film (PPF)">
+          <option value="Maintenance wash / coating top-up">
+        </datalist>
+      </section>
 
       <section class="card-section">
         <h3>Disposition</h3>
@@ -160,6 +190,13 @@
       <label>Last name <input name="last_name"></label>
       <label>Phone <input name="phone" type="tel"></label>
       <label>Email <input name="email" type="email"></label>
+      <div class="info-grid">
+        <label>Year <input name="vehicle_year" inputmode="numeric" maxlength="4" placeholder="2024"></label>
+        <label>Make <input name="vehicle_make" placeholder="Tesla"></label>
+        <label>Model <input name="vehicle_model" placeholder="Model Y"></label>
+        <label>Color <input name="vehicle_color" placeholder="Pearl White"></label>
+        <label class="span-2">Service interested in <input name="service_interest" list="serviceOptions"></label>
+      </div>
       <label>Notes <textarea name="message" rows="2"></textarea></label>
       <div class="dialog-actions">
         <button type="button" data-cancel>Cancel</button>

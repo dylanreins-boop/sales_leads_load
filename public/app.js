@@ -129,6 +129,12 @@ function renderBoard() {
   }));
 }
 
+// "2023 Tesla Model Y · Pearl White"
+function vehicleLine(l) {
+  const car = [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ');
+  return [car, l.vehicle_color].filter(Boolean).join(' · ');
+}
+
 function leadCard(lead) {
   let reminderPill = null;
   if (lead.next_reminder_at) {
@@ -150,6 +156,7 @@ function leadCard(lead) {
   h('div', { class: 'row' },
     h('span', { class: 'phone' }, lead.phone || lead.email || ''),
     h('span', { class: 'muted' }, timeAgo(lead.received_at))),
+  vehicleLine(lead) && h('div', { class: 'vehicle' }, vehicleLine(lead)),
   (lead.last_disposition || reminderPill) && h('div', { class: 'row' },
     h('span', { class: 'muted' }, lead.last_disposition ? dispoLabel(lead.last_disposition) : ''),
     reminderPill));
@@ -199,6 +206,8 @@ function renderLead(lead) {
     lead.message && h('div', { class: 'message' }, lead.message),
   ].filter(Boolean));
 
+  fillInfoForm(lead);
+
   const stageSelect = $('#stageSelect');
   stageSelect.replaceChildren(...state.meta.stages.map((s) => h('option', { value: s.id, selected: s.id === lead.stage }, s.label)));
 
@@ -232,6 +241,55 @@ function renderLead(lead) {
   $('#timeline').replaceChildren(...lead.activities.map(activityItem));
 }
 
+// ---------- lead info ----------
+const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'service_interest'];
+
+function fillInfoForm(lead) {
+  const form = $('#infoForm');
+  for (const f of INFO_FIELDS) form[f].value = lead[f] ?? '';
+  // Older leads may only have a full name.
+  if (!lead.first_name && !lead.last_name && lead.full_name) {
+    const [first, ...rest] = lead.full_name.split(' ');
+    form.first_name.value = first;
+    form.last_name.value = rest.join(' ');
+  }
+  form.dataset.saved = JSON.stringify(infoValues());
+  form.vehicle_year.classList.remove('invalid');
+  syncInfoForm();
+}
+
+function infoValues() {
+  const form = $('#infoForm');
+  return Object.fromEntries(INFO_FIELDS.map((f) => [f, form[f].value.trim()]));
+}
+
+function syncInfoForm() {
+  const form = $('#infoForm');
+  const changed = JSON.stringify(infoValues()) !== form.dataset.saved;
+  form.querySelector('button[type=submit]').disabled = !changed;
+  $('#infoStatus').textContent = changed ? 'Unsaved changes' : '';
+}
+
+async function saveInfo(e) {
+  e.preventDefault();
+  const form = e.target;
+  const values = infoValues();
+  if (values.vehicle_year && !/^\d{4}$/.test(values.vehicle_year)) {
+    form.vehicle_year.classList.add('invalid');
+    form.vehicle_year.focus();
+    return toast('Vehicle year should be 4 digits, like 2022', 'error');
+  }
+  // Only send what changed, so the activity log lists real edits.
+  const saved = JSON.parse(form.dataset.saved);
+  const patch = Object.fromEntries(Object.entries(values).filter(([k, v]) => v !== saved[k]));
+  try {
+    const lead = await api(`/api/leads/${state.openLeadId}`, { method: 'PATCH', body: patch });
+    renderLead(lead);
+    toast('Lead info saved');
+    await loadLeads();
+  } catch (err) { fail(err); }
+}
+
 // Notes are required on every disposition: highlight the field until filled in.
 function setNoteError(show) {
   $('#noteField').classList.toggle('invalid', show);
@@ -248,6 +306,7 @@ function activityItem(a) {
     note: 'Note',
     reminder_done: 'Reminder completed',
     email: 'Email',
+    info_updated: 'Lead info updated',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -534,6 +593,11 @@ async function init() {
   $('#dispoForm').reminder.addEventListener('change', () => syncDispoForm());
   $('#stageSelect').addEventListener('change', (e) => moveStage(state.openLeadId, e.target.value));
   $('#noteForm').addEventListener('submit', addNote);
+  $('#infoForm').addEventListener('input', (e) => {
+    if (e.target.name === 'vehicle_year') e.target.classList.remove('invalid');
+    syncInfoForm();
+  });
+  $('#infoForm').addEventListener('submit', saveInfo);
   $('#noteForm').note.addEventListener('input', (e) => e.target.classList.remove('invalid'));
   $('#dispoForm').note.addEventListener('input', (e) => { if (e.target.value.trim()) setNoteError(false); });
   if (state.meta.currentUser) {
