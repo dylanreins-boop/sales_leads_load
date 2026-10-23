@@ -1,6 +1,6 @@
-# Lead Pipeline · Bob Mosses Ceramic Coating
+# Lead Pipeline · Bob Moses Ceramic Coating
 
-The lead pipeline for **Bob Mosses Ceramic Coating, Las Vegas**: cars, trucks, coaches, boats and planes.
+The lead pipeline for **Bob Moses Ceramic Coating, Las Vegas**: cars, trucks, coaches, boats and planes.
 It:
 
 - **Pulls in leads** from **Facebook Lead Ads** (real-time webhook plus a "Sync Facebook" backstop) and from your **company website** form.
@@ -22,8 +22,9 @@ npm test                  # runs the test suite
 
 ## Company branding
 
-The company name, city and phone live in `.env` (`BRAND_NAME`, `BRAND_SHORT_NAME`, `BRAND_CITY`,
-`BRAND_PHONE`, `BRAND_WEBSITE`). They appear in the header, the browser tab, the phone app name, and
+The company name, city, phone, address and website live in `.env` (`BRAND_NAME`, `BRAND_SHORT_NAME`,
+`BRAND_CITY`, `BRAND_PHONE`, `BRAND_ADDRESS`, `BRAND_WEBSITE`). `.env.example` is filled in with the
+Las Vegas shop's public listing; confirm the phone and address with the shop before going live. They appear in the header, the browser tab, the phone app name, and
 the default follow-up email. `TZ=America/Los_Angeles` keeps reminder times on Las Vegas time.
 
 - **Colors:** glossy black header with a gold accent. All colors are tokens at the top of
@@ -49,13 +50,16 @@ A lead that is already Contacted or Booked stays where it is.
 
 **Appointment Booked** also asks which services were booked: Full decon & coat, Paint correction,
 Wheels & windows, Wheels & calipers only, Windows / glass only, Trim & plastics, Interior protection,
-Pop-outs / slide-outs and Roof (coaches / RVs only), Hull & gelcoat (boats and jet skis only), and
+Pop-outs / slide-outs and Roof (coaches, RVs, trailers and toy haulers only), Hull & gelcoat (boats and jet skis only), and
 Other. At least one must be ticked; the box turns red otherwise. The booked services show on the
 lead's card and in its Lead info, where they can be changed later (the change is logged). To change
 the list, edit `BOOKING_SERVICES` in `src/services.js`.
 
 Every disposition needs a note. If the rep tries to save without one, the Notes box turns red and
 nothing is saved until they write something.
+
+The shop is closed weekends, so a call-back that would land on Saturday or Sunday moves to **Monday**
+(set `REMINDER_SKIP_WEEKENDS=false` to allow weekends).
 
 The reminder defaults to **tomorrow at 9:00 AM** in the rep's own time zone. The rep can change the time or
 untick "Remind me to call" before saving. Saving a new disposition closes the lead's older open reminders,
@@ -67,7 +71,8 @@ To change the stages or dispositions, edit `src/pipeline.js`.
 ## Lead info and vehicle details
 
 Each lead has a **Lead info** section that anyone can edit: first and last name, phone, email, and
-the **vehicle type** (Car, Truck, SUV, Van, Motorcycle, Coach / RV, Boat, Jet Ski, Plane, Other) and
+the **vehicle type** (Car, SUV, Truck, Van, Motorcycle, Semi, Coach / RV, Trailer / Toy Hauler, Boat, Jet Ski,
+Plane, Other) and
 the vehicle's **year, make, model and color**. The vehicle shows on the lead's card, for example
 "Boat · 2021 Sea Ray SLX 400 · White", and the search box finds leads by vehicle too.
 
@@ -89,7 +94,7 @@ email address sends that email. The rep can untick "Send follow-up email" on any
 - Personalize with `{{first_name}}`, `{{last_name}}`, `{{full_name}}`, `{{vehicle}}`, `{{email}}` and
   `{{phone}}`. `{{vehicle}}` becomes e.g. "2021 Sea Ray SLX 400", or "boat" if only the type is known.
   The editor shows a live preview.
-- The starting email is written for Bob Mosses Ceramic Coating and uses `BRAND_PHONE` if it's set.
+- The starting email is written for Bob Moses Ceramic Coating and uses `BRAND_PHONE` if it's set.
   Replace `[your name]` (and the number, if `BRAND_PHONE` is empty) before turning it on.
 - Every email (sent, failed, or not sent) shows in the lead's **Emails** section and activity log.
   A failed email never undoes the disposition.

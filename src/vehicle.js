@@ -9,14 +9,18 @@ const VEHICLE_FIELDS = [
 ];
 
 // Choices for the Vehicle type dropdown. Edit this list to change them.
-const VEHICLE_TYPES = ['Car', 'Truck', 'SUV', 'Van', 'Motorcycle', 'Coach / RV', 'Boat', 'Jet Ski', 'Plane', 'Other'];
+const VEHICLE_TYPES = [
+  'Car', 'SUV', 'Truck', 'Van', 'Motorcycle', 'Semi', 'Coach / RV', 'Trailer / Toy Hauler', 'Boat', 'Jet Ski', 'Plane', 'Other',
+];
 
 // Words in a form answer that point to one of the types above (checked in order).
 const TYPE_WORDS = [
   ['Jet Ski', ['jet ski', 'jetski', 'pwc', 'sea-doo', 'seadoo', 'waverunner']],
   ['Plane', ['plane', 'airplane', 'aircraft', 'jet', 'helicopter']],
   ['Boat', ['boat', 'yacht', 'pontoon', 'sailboat', 'vessel']],
-  ['Coach / RV', ['coach', 'rv', 'motorhome', 'motor home', 'camper', 'bus', 'trailer']],
+  ['Trailer / Toy Hauler', ['toy hauler', 'toyhauler', 'fifth wheel', '5th wheel', 'travel trailer', 'trailer', 'airstream']],
+  ['Semi', ['semi', 'tractor', 'big rig', '18 wheeler', '18-wheeler', 'peterbilt', 'kenworth', 'freightliner']],
+  ['Coach / RV', ['coach', 'rv', 'motorhome', 'motor home', 'camper', 'bus']],
   ['Motorcycle', ['motorcycle', 'motorbike', 'bike']],
   ['Truck', ['truck', 'pickup']],
   ['SUV', ['suv', 'crossover']],

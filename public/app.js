@@ -87,9 +87,11 @@ function toLocalInput(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// Default call-back time: tomorrow, or Monday when weekends are skipped.
 function tomorrowAtReminderHour() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
+  while (state.meta.reminderSkipWeekends && (d.getDay() === 0 || d.getDay() === 6)) d.setDate(d.getDate() + 1);
   d.setHours(state.meta.reminderHour, 0, 0, 0);
   return d;
 }

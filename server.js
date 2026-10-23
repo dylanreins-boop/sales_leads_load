@@ -116,7 +116,7 @@ function serveStatic(req, res, pathname) {
 }
 
 function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
-  const leads = createLeadService(db, { reminderHour: config.reminderHour, brand: config.brand });
+  const leads = createLeadService(db, { reminderHour: config.reminderHour, skipWeekends: config.reminderSkipWeekends, brand: config.brand });
   const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
   const mailer = createMailer(config.email, fetchImpl);
   const routes = [];
@@ -144,6 +144,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     stages: STAGES,
     dispositions: DISPOSITIONS,
     reminderHour: config.reminderHour,
+    reminderSkipWeekends: config.reminderSkipWeekends,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
     facebookFormIds: config.facebook.formIds,
     emailConfigured: mailer.configured,

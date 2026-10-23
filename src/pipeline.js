@@ -44,9 +44,11 @@ function stageAfterDisposition(currentStage, disposition) {
   return ATTEMPT_CHAIN[Math.min(i + 1, ATTEMPT_CHAIN.length - 1)];
 }
 
-function tomorrowAt(hour, now = new Date()) {
+// The next day at `hour`. With skipWeekends, Saturday and Sunday roll on to Monday.
+function tomorrowAt(hour, now = new Date(), { skipWeekends = false } = {}) {
   const d = new Date(now);
   d.setDate(d.getDate() + 1);
+  while (skipWeekends && (d.getDay() === 0 || d.getDay() === 6)) d.setDate(d.getDate() + 1);
   d.setHours(hour, 0, 0, 0);
   return d;
 }

@@ -36,16 +36,19 @@ module.exports = {
 
   // Company details shown in the app, the phone app name and the default follow-up email.
   brand: {
-    name: process.env.BRAND_NAME || 'Bob Mosses Ceramic Coating',
-    shortName: process.env.BRAND_SHORT_NAME || 'Bob Mosses Leads',
+    name: process.env.BRAND_NAME || 'Bob Moses Ceramic Coating',
+    shortName: process.env.BRAND_SHORT_NAME || 'Bob Moses Leads',
     city: process.env.BRAND_CITY || 'Las Vegas',
     phone: process.env.BRAND_PHONE || '',
     website: process.env.BRAND_WEBSITE || '',
+    address: process.env.BRAND_ADDRESS || '',
   },
 
   // Hour of the day (server local time) for "call tomorrow" reminders when
   // the browser doesn't send its own time.
   reminderHour: Number(process.env.REMINDER_HOUR ?? 9),
+  // The Las Vegas shop is closed weekends, so call-back reminders skip to Monday.
+  reminderSkipWeekends: process.env.REMINDER_SKIP_WEEKENDS !== 'false',
 
   website: {
     apiKey: process.env.WEBSITE_API_KEY || '',

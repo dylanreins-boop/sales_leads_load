@@ -8,8 +8,8 @@ const BOOKING_SERVICES = [
   { id: 'windows', label: 'Windows / glass only' },
   { id: 'trim', label: 'Trim & plastics' },
   { id: 'interior', label: 'Interior protection' },
-  { id: 'pop_outs', label: 'Pop-outs / slide-outs', types: ['Coach / RV'] },
-  { id: 'roof', label: 'Roof', types: ['Coach / RV'] },
+  { id: 'pop_outs', label: 'Pop-outs / slide-outs', types: ['Coach / RV', 'Trailer / Toy Hauler'] },
+  { id: 'roof', label: 'Roof', types: ['Coach / RV', 'Trailer / Toy Hauler'] },
   { id: 'hull', label: 'Hull & gelcoat', types: ['Boat', 'Jet Ski'] },
   { id: 'other', label: 'Other (see notes)' },
 ];

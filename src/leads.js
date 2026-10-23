@@ -11,7 +11,7 @@ const FIELD_LABELS = {
 };
 
 // Follow-up email template. Off until the user writes their own and turns it on.
-function defaultEmailSettings({ name, city, phone, website }) {
+function defaultEmailSettings({ name, city, phone, website, address }) {
   const where = city ? `${name} here in ${city}` : name;
   return {
     followup_email_enabled: 'false',
@@ -27,6 +27,7 @@ function defaultEmailSettings({ name, city, phone, website }) {
       'Thanks,',
       '[Your name]',
       name,
+      ...(address ? [address] : []),
       ...(website ? [website] : []),
     ].join('\n'),
   };
@@ -60,7 +61,7 @@ function displayName(lead) {
   return lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email || lead.phone || `Lead #${lead.id}`;
 }
 
-function createLeadService(db, { reminderHour = 9, brand = { name: 'Lead Pipeline' } } = {}) {
+function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand = { name: 'Lead Pipeline' } } = {}) {
   const EMAIL_SETTINGS = defaultEmailSettings(brand);
   const stmt = (sql) => db.prepare(sql);
 
@@ -238,7 +239,7 @@ function createLeadService(db, { reminderHour = 9, brand = { name: 'Lead Pipelin
     const wantReminder = reminder ?? def.reminder;
     let dueAt = null;
     if (wantReminder) {
-      const due = reminder_at ? new Date(reminder_at) : tomorrowAt(reminderHour);
+      const due = reminder_at ? new Date(reminder_at) : tomorrowAt(reminderHour, new Date(), { skipWeekends });
       if (Number.isNaN(due.getTime())) throw new HttpError(400, 'Invalid reminder time');
       dueAt = due.toISOString();
     }

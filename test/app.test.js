@@ -155,6 +155,8 @@ test('disposition moves the lead and sets a call reminder for tomorrow', async (
   const due = new Date(res.data.reminder.due_at);
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
+  // Weekends are skipped by default, so a Friday call-back lands on Monday.
+  while (tomorrow.getDay() === 0 || tomorrow.getDay() === 6) tomorrow.setDate(tomorrow.getDate() + 1);
   assert.equal(due.toDateString(), tomorrow.toDateString());
   assert.equal(due.getHours(), 9);
 
@@ -207,6 +209,18 @@ test('reminders can be snoozed and completed; stage can be moved by hand', async
   assert.equal((await call('PATCH', `/api/leads/${lead.id}`, { stage: 'bogus' })).status, 400);
 });
 
+test('call-backs skip the weekend when the shop is closed', () => {
+  const { tomorrowAt } = require('../src/pipeline');
+  const friday = new Date(2026, 9, 23, 15, 0); // Fri Oct 23, 2026
+  const saturday = new Date(2026, 9, 24, 11, 0);
+  const tuesday = new Date(2026, 9, 27, 11, 0);
+  assert.equal(tomorrowAt(9, friday, { skipWeekends: true }).toDateString(), new Date(2026, 9, 26).toDateString());
+  assert.equal(tomorrowAt(9, saturday, { skipWeekends: true }).toDateString(), new Date(2026, 9, 26).toDateString());
+  assert.equal(tomorrowAt(9, tuesday, { skipWeekends: true }).toDateString(), new Date(2026, 9, 28).toDateString());
+  assert.equal(tomorrowAt(9, friday).toDateString(), saturday.toDateString(), 'weekends allowed when not skipped');
+  assert.equal(tomorrowAt(9, friday, { skipWeekends: true }).getHours(), 9);
+});
+
 test('attempt chain stops at Follow Up 3 and leaves other stages alone', () => {
   const vm = DISPOSITIONS_BY_ID.no_answer_vm;
   assert.equal(stageAfterDisposition('new', vm), 'voicemail');
@@ -218,8 +232,8 @@ test('attempt chain stops at Follow Up 3 and leaves other stages alone', () => {
 test('follow-up email is off until the user turns it on', async () => {
   const settings = (await call('GET', '/api/settings/email')).data;
   assert.equal(settings.enabled, false);
-  assert.match(settings.subject, /Bob Mosses Ceramic Coating/);
-  assert.match(settings.body, /Bob Mosses Ceramic Coating here in Las Vegas/);
+  assert.match(settings.subject, /Bob Moses Ceramic Coating/);
+  assert.match(settings.body, /Bob Moses Ceramic Coating here in Las Vegas/);
   assert.match(settings.body, /\{\{vehicle\}\}/);
   assert.match(settings.body, /\{\{first_name\}\}/);
 
@@ -314,6 +328,9 @@ test('vehicle details are picked up from website and Facebook forms', () => {
   assert.equal(normalizeVehicleType('Sea-Doo jet ski'), 'Jet Ski');
   assert.equal(normalizeVehicleType('Cessna aircraft'), 'Plane');
   assert.equal(normalizeVehicleType('pickup'), 'Truck');
+  assert.equal(normalizeVehicleType('Toy hauler'), 'Trailer / Toy Hauler');
+  assert.equal(normalizeVehicleType('Kenworth semi'), 'Semi');
+  assert.equal(normalizeVehicleType('Class A motor home'), 'Coach / RV');
   assert.equal(normalizeVehicleType('Golf cart'), 'Golf cart', 'unknown types are kept as typed');
 });
 
@@ -368,12 +385,12 @@ test('booking requires picking services, which are saved on the lead', async () 
 
 test('the app is branded for the company', async () => {
   const meta = (await call('GET', '/api/meta')).data;
-  assert.equal(meta.brand.name, 'Bob Mosses Ceramic Coating');
+  assert.equal(meta.brand.name, 'Bob Moses Ceramic Coating');
   assert.equal(meta.brand.city, 'Las Vegas');
 
   const manifest = (await call('GET', '/manifest.webmanifest')).data;
-  assert.equal(manifest.name, 'Bob Mosses Ceramic Coating');
-  assert.equal(manifest.short_name, 'Bob Mosses Leads');
+  assert.equal(manifest.name, 'Bob Moses Ceramic Coating');
+  assert.equal(manifest.short_name, 'Bob Moses Leads');
 
   const { renderTemplate } = require('../src/email');
   assert.equal(renderTemplate('your {{vehicle}}', { vehicle_year: '2021', vehicle_make: 'Sea Ray', vehicle_model: 'SLX 400' }), 'your 2021 Sea Ray SLX 400');
