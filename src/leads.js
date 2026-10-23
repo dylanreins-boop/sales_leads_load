@@ -49,10 +49,10 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
   const stmt = (sql) => db.prepare(sql);
 
   function logActivity(leadId, type, fields = {}) {
-    stmt(`INSERT INTO activities (lead_id, type, disposition, from_stage, to_stage, note, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    stmt(`INSERT INTO activities (lead_id, type, disposition, from_stage, to_stage, note, user_name, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
       leadId, type, fields.disposition ?? null, fields.from_stage ?? null,
-      fields.to_stage ?? null, fields.note ?? null, now(),
+      fields.to_stage ?? null, fields.note ?? null, fields.user ?? null, now(),
     );
   }
 
@@ -70,7 +70,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
   }
 
   // Adds a lead from any source, de-duplicating repeat submissions.
-  function ingest(input) {
+  function ingest(input, { user } = {}) {
     const lead = {
       source: input.source || 'manual',
       external_id: clean(input.external_id),
@@ -110,7 +110,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
         input.raw ? JSON.stringify(input.raw) : null, toIso(input.received_at, ts), ts, ts,
       );
       const id = Number(lastInsertRowid);
-      logActivity(id, 'created', { to_stage: 'new', note: `Lead received from ${lead.source}` });
+      logActivity(id, 'created', { to_stage: 'new', note: `Lead received from ${lead.source}`, user });
       return { lead: getLead(id), created: true, duplicate: false };
     });
   }
@@ -146,7 +146,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
 
   const EDITABLE = ['first_name', 'last_name', 'full_name', 'email', 'phone', 'message'];
 
-  function updateLead(id, patch) {
+  function updateLead(id, patch, { user } = {}) {
     const lead = getLead(id);
     return transaction(db, () => {
       const sets = [];
@@ -169,7 +169,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
         if (!STAGE_IDS.has(patch.stage)) throw new HttpError(400, `Unknown stage: ${patch.stage}`);
         sets.push('stage = ?');
         params.push(patch.stage);
-        logActivity(id, 'stage_change', { from_stage: lead.stage, to_stage: patch.stage });
+        logActivity(id, 'stage_change', { from_stage: lead.stage, to_stage: patch.stage, user });
       }
       if (sets.length) {
         sets.push('updated_at = ?');
@@ -182,9 +182,10 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
 
   // Records a call outcome, moves the lead to the matching stage, and
   // (by default) schedules a reminder to call again tomorrow.
-  function dispositionLead(id, { disposition, note, reminder, reminder_at } = {}) {
+  function dispositionLead(id, { disposition, note, reminder, reminder_at } = {}, { user } = {}) {
     const def = DISPOSITIONS_BY_ID[disposition];
     if (!def) throw new HttpError(400, `Unknown disposition: ${disposition}`);
+    if (!clean(note)) throw new HttpError(400, 'Add a note about this call before saving.');
     const lead = getLead(id);
     const toStage = stageAfterDisposition(lead.stage, def);
     const wantReminder = reminder ?? def.reminder;
@@ -201,7 +202,7 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
       stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?`)
         .run(toStage, def.id, contactedAt, ts, id);
       logActivity(id, 'disposition', {
-        disposition: def.id, from_stage: lead.stage, to_stage: toStage, note: clean(note),
+        disposition: def.id, from_stage: lead.stage, to_stage: toStage, note: clean(note), user,
       });
       // The call just happened, so any earlier reminders are satisfied.
       stmt('UPDATE reminders SET done_at = ? WHERE lead_id = ? AND done_at IS NULL').run(ts, id);
@@ -216,10 +217,10 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     });
   }
 
-  function addNote(id, note) {
+  function addNote(id, note, { user } = {}) {
     getLead(id);
     if (!clean(note)) throw new HttpError(400, 'Note is empty');
-    logActivity(id, 'note', { note: clean(note) });
+    logActivity(id, 'note', { note: clean(note), user });
     stmt('UPDATE leads SET updated_at = ? WHERE id = ?').run(now(), id);
     return getLead(id);
   }
@@ -237,11 +238,11 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     return r;
   }
 
-  function completeReminder(id) {
+  function completeReminder(id, { user } = {}) {
     const r = getReminder(id);
     if (!r.done_at) {
       stmt('UPDATE reminders SET done_at = ? WHERE id = ?').run(now(), id);
-      logActivity(r.lead_id, 'reminder_done', { note: r.note });
+      logActivity(r.lead_id, 'reminder_done', { note: r.note, user });
     }
     return getReminder(id);
   }
@@ -281,13 +282,13 @@ function createLeadService(db, { reminderHour = 9 } = {}) {
     return { to: lead.email, subject: renderTemplate(settings.subject, lead), text: renderTemplate(settings.body, lead) };
   }
 
-  function recordEmail(leadId, message, { status, error, trigger }) {
+  function recordEmail(leadId, message, { status, error, trigger, user }) {
     stmt(`INSERT INTO emails (lead_id, to_email, subject, body, status, error, trigger, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
       leadId, message.to, message.subject, message.text, status, error ?? null, trigger ?? null, now(),
     );
     const what = status === 'sent' ? `Follow-up email sent to ${message.to}` : `Follow-up email to ${message.to} not sent: ${error}`;
-    logActivity(leadId, 'email', { note: what });
+    logActivity(leadId, 'email', { note: what, user });
     return stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(leadId);
   }
 

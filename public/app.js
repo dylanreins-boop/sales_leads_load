@@ -209,6 +209,7 @@ function renderLead(lead) {
     ...state.meta.dispositions.map((d) => h('option', { value: d.id }, d.label)),
   );
   form.reminder_at.value = toLocalInput(tomorrowAtReminderHour());
+  setNoteError(false);
   syncDispoForm();
 
   $('#leadReminders').replaceChildren(...(lead.reminders.length
@@ -231,6 +232,13 @@ function renderLead(lead) {
   $('#timeline').replaceChildren(...lead.activities.map(activityItem));
 }
 
+// Notes are required on every disposition: highlight the field until filled in.
+function setNoteError(show) {
+  $('#noteField').classList.toggle('invalid', show);
+  $('#noteError').hidden = !show;
+  $('#dispoForm').note.setAttribute('aria-invalid', String(show));
+}
+
 function activityItem(a) {
   const what = {
     created: 'Lead created',
@@ -244,7 +252,10 @@ function activityItem(a) {
   return h('li', {},
     h('div', { class: 'what' }, what),
     a.note && h('div', { class: 'note' }, a.note),
-    h('div', { class: 'muted' }, fmtDateTime(a.created_at)));
+    h('div', { class: 'muted' },
+      a.user_name && h('span', { class: 'who' }, a.user_name),
+      a.user_name && ' · ',
+      fmtDateTime(a.created_at)));
 }
 
 // Defaults the reminder checkbox from the chosen disposition and explains
@@ -291,6 +302,11 @@ async function saveDisposition(e) {
   e.preventDefault();
   const form = e.target;
   if (!form.disposition.value) return toast('Pick a call outcome first', 'error');
+  if (!form.note.value.trim()) {
+    setNoteError(true);
+    form.note.focus();
+    return;
+  }
   const body = {
     disposition: form.disposition.value,
     note: form.note.value,
@@ -313,7 +329,11 @@ async function saveDisposition(e) {
 async function addNote(e) {
   e.preventDefault();
   const input = e.target.note;
-  if (!input.value.trim()) return;
+  if (!input.value.trim()) {
+    input.classList.add('invalid');
+    input.focus();
+    return;
+  }
   try {
     const lead = await api(`/api/leads/${state.openLeadId}/notes`, { method: 'POST', body: { note: input.value } });
     input.value = '';
@@ -514,6 +534,12 @@ async function init() {
   $('#dispoForm').reminder.addEventListener('change', () => syncDispoForm());
   $('#stageSelect').addEventListener('change', (e) => moveStage(state.openLeadId, e.target.value));
   $('#noteForm').addEventListener('submit', addNote);
+  $('#noteForm').note.addEventListener('input', (e) => e.target.classList.remove('invalid'));
+  $('#dispoForm').note.addEventListener('input', (e) => { if (e.target.value.trim()) setNoteError(false); });
+  if (state.meta.currentUser) {
+    $('#currentUser').hidden = false;
+    $('#currentUser').textContent = `Signed in as ${state.meta.currentUser}`;
+  }
 
   await Promise.all([loadLeads(), loadReminders()]);
   // Refresh so new Facebook/website leads and due reminders show up on their own.

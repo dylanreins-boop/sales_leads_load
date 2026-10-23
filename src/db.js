@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS activities (
   from_stage  TEXT,
   to_stage    TEXT,
   note        TEXT,
+  user_name   TEXT,                             -- who did it (null for automatic events)
   created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS activities_lead ON activities (lead_id);
@@ -76,7 +77,14 @@ function openDatabase(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Adds columns introduced after a database was first created.
+function migrate(db) {
+  const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
 }
 
 function transaction(db, fn) {

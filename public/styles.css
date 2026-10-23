@@ -215,6 +215,14 @@ label.check input { width: auto; margin: 0; }
 .small-btns button, .btn-link { padding: 3px 8px; font-size: 12px; }
 .btn-link { border: 1px solid var(--border); border-radius: 8px; color: var(--accent); text-decoration: none; }
 
+.invalid > textarea, .invalid > input, input.invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+.invalid > textarea:focus, .invalid > input:focus, input.invalid:focus { outline: 2px solid var(--danger); outline-offset: 0; }
+label.invalid { color: var(--danger); }
+.field-error { color: var(--danger); font-size: 12px; font-weight: 600; margin: -6px 0 10px; }
+.timeline .who { font-weight: 600; color: var(--text); }
 .notice {
   margin: 0 0 14px;
   padding: 10px 12px;

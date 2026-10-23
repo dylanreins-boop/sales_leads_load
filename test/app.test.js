@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 
 process.env.APP_PASSWORD = '';
+process.env.APP_USERS = '';
 process.env.WEBSITE_API_KEY = 'site-key';
 process.env.FB_VERIFY_TOKEN = 'verify-me';
 process.env.FB_APP_SECRET = 'app-secret';
@@ -164,13 +165,13 @@ test('disposition moves the lead and sets a call reminder for tomorrow', async (
 test('next disposition closes the old reminder and walks through follow-ups', async () => {
   const lead = await findLead('Alex Web');
   const custom = new Date(Date.now() + 2 * 86400_000).toISOString();
-  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer', reminder_at: custom });
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer', note: 'Test call', reminder_at: custom });
   assert.equal(res.data.lead.stage, 'follow_up_1');
   assert.equal(res.data.reminder.due_at, custom);
   const open = (await call('GET', '/api/reminders')).data.filter((r) => r.lead_id === lead.id);
   assert.equal(open.length, 1, 'only the newest reminder stays open');
 
-  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked' });
+  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Test call' });
   assert.equal(booked.data.lead.stage, 'booked');
 });
 
@@ -186,17 +187,17 @@ test('updated notes keeps the stage and still sets a reminder', async () => {
 
 test('waste dispositions skip the reminder unless asked', async () => {
   const lead = await findLead('Casey Form');
-  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'not_interested' });
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'not_interested', note: 'Test call' });
   assert.equal(res.data.lead.stage, 'waste');
   assert.equal(res.data.reminder, null);
 
-  const bad = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'nope' });
+  const bad = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'nope', note: 'Test call' });
   assert.equal(bad.status, 400);
 });
 
 test('reminders can be snoozed and completed; stage can be moved by hand', async () => {
   const lead = await findLead('Jordan Facebook');
-  const { reminder } = (await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'callback_requested' })).data;
+  const { reminder } = (await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'callback_requested', note: 'Test call' })).data;
   const later = new Date(Date.now() + 3600_000).toISOString();
   assert.equal((await call('POST', `/api/reminders/${reminder.id}/snooze`, { due_at: later })).data.due_at, later);
   assert.ok((await call('POST', `/api/reminders/${reminder.id}/complete`)).data.done_at);
@@ -221,7 +222,7 @@ test('follow-up email is off until the user turns it on', async () => {
 
   await call('POST', '/api/leads', { first_name: 'Emma', last_name: 'Stone', email: 'emma@example.com' });
   const lead = await findLead('Emma Stone');
-  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm' });
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm', note: 'Test call' });
   assert.equal(res.data.email, null);
   assert.equal(sentEmails.length, 0);
 
@@ -236,7 +237,7 @@ test('left-voicemail disposition emails the lead using the saved template', asyn
   assert.equal(saved.data.enabled, true);
 
   const lead = await findLead('Emma Stone');
-  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm' });
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm', note: 'Test call' });
   assert.equal(res.data.email.status, 'sent');
   assert.equal(sentEmails.length, 1);
   assert.deepEqual(sentEmails[0].message.to, ['emma@example.com']);
@@ -247,22 +248,31 @@ test('left-voicemail disposition emails the lead using the saved template', asyn
   assert.ok(res.data.lead.activities.some((a) => a.type === 'email'));
 
   // Other dispositions, an unticked box, and leads without email don't send.
-  await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'contacted_follow_up' });
-  await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm', send_email: false });
+  await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'contacted_follow_up', note: 'Test call' });
+  await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm', note: 'Test call', send_email: false });
   const noEmail = await findLead('Tanya Brooks') || (await call('POST', '/api/leads', { full_name: 'Tanya Brooks', phone: '555-909-4410' })).data.lead;
-  await call('POST', `/api/leads/${noEmail.id}/disposition`, { disposition: 'no_answer_vm' });
+  await call('POST', `/api/leads/${noEmail.id}/disposition`, { disposition: 'no_answer_vm', note: 'Test call' });
   assert.equal(sentEmails.length, 1);
 });
 
 test('a failed email is recorded on the lead without undoing the disposition', async () => {
   await call('POST', '/api/leads', { full_name: 'Bad Address', email: 'bounce@example.com' });
   const lead = await findLead('Bad Address');
-  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm' });
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer_vm', note: 'Test call' });
   assert.equal(res.status, 201);
   assert.equal(res.data.lead.stage, 'voicemail');
   assert.equal(res.data.email.status, 'failed');
   assert.match(res.data.email.error, /422/);
   await call('PUT', '/api/settings/email', { enabled: false });
+});
+
+test('a disposition without notes is rejected', async () => {
+  const lead = await findLead('Chris Sync') || await findLead('Pat Sync');
+  for (const note of [undefined, '', '   ']) {
+    const res = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'no_answer', note });
+    assert.equal(res.status, 400);
+    assert.match(res.data.error, /note/i);
+  }
 });
 
 test('dashboard is served and unknown API routes 404', async () => {

@@ -22,9 +22,17 @@ module.exports = {
   port: Number(process.env.PORT) || 3000,
   dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'leads.db'),
 
-  // Dashboard login (HTTP Basic auth). Leave APP_PASSWORD empty to disable.
-  appUser: process.env.APP_USER || 'admin',
-  appPassword: process.env.APP_PASSWORD || '',
+  // Dashboard logins (HTTP Basic auth). APP_USERS="Dylan:pass1,Sam:pass2" gives
+  // each person their own login so the activity log shows who did what.
+  // APP_USER/APP_PASSWORD still work for a single shared login.
+  // With neither set, the dashboard has no login.
+  users: [
+    ...list(process.env.APP_USERS).map((entry) => {
+      const sep = entry.indexOf(':');
+      return { name: entry.slice(0, sep).trim(), password: entry.slice(sep + 1) };
+    }).filter((u) => u.name && u.password),
+    ...(process.env.APP_PASSWORD ? [{ name: process.env.APP_USER || 'admin', password: process.env.APP_PASSWORD }] : []),
+  ],
 
   // Hour of the day (server local time) for "call tomorrow" reminders when
   // the browser doesn't send its own time.

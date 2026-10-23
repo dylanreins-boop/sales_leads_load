@@ -16,6 +16,7 @@
 <body>
   <header class="topbar">
     <h1 class="brand">Lead Pipeline</h1>
+    <span id="currentUser" class="muted" hidden></span>
     <div class="filters">
       <input id="search" type="search" placeholder="Search name, phone, email" aria-label="Search leads">
       <select id="sourceFilter" aria-label="Filter by source">
@@ -58,9 +59,10 @@
           <label>Call outcome
             <select name="disposition" required></select>
           </label>
-          <label>Notes
-            <textarea name="note" rows="2" placeholder="What happened on the call?"></textarea>
+          <label id="noteField">Notes (required)
+            <textarea name="note" rows="2" placeholder="What happened on the call?" aria-describedby="noteError"></textarea>
           </label>
+          <p id="noteError" class="field-error" hidden>Add a note about this call before saving.</p>
           <label class="check">
             <input type="checkbox" name="reminder" checked> Remind me to call
           </label>

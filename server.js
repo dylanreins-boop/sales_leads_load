@@ -66,13 +66,24 @@ const safeEqual = (a, b) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 
-function isAuthorized(req) {
-  if (!config.appPassword) return true;
+// Returns the signed-in user ({ name }), or null if the login is wrong.
+// With no logins configured, everyone is let in without a name.
+function authenticate(req) {
+  if (!config.users.length) return { name: null };
   const [scheme, encoded] = (req.headers.authorization || '').split(' ');
-  if (scheme !== 'Basic' || !encoded) return false;
+  if (scheme !== 'Basic' || !encoded) return null;
   const decoded = Buffer.from(encoded, 'base64').toString('utf8');
   const sep = decoded.indexOf(':');
-  return safeEqual(decoded.slice(0, sep), config.appUser) && safeEqual(decoded.slice(sep + 1), config.appPassword);
+  const name = decoded.slice(0, sep);
+  const password = decoded.slice(sep + 1);
+  // Compare against every user so timing doesn't reveal which names exist.
+  let found = null;
+  for (const u of config.users) {
+    const nameOk = safeEqual(name.toLowerCase(), u.name.toLowerCase());
+    const passwordOk = safeEqual(password, u.password);
+    if (nameOk && passwordOk) found = u;
+  }
+  return found && { name: found.name };
 }
 
 function corsHeaders(req) {
@@ -125,7 +136,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
   }
 
   // ---- Dashboard API ----
-  route('GET', '/api/meta', () => ({
+  route('GET', '/api/meta', ({ actor }) => ({
+    currentUser: actor.user,
     stages: STAGES,
     dispositions: DISPOSITIONS,
     reminderHour: config.reminderHour,
@@ -135,33 +147,33 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     emailPlaceholders: PLACEHOLDERS,
   }));
   route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source') }));
-  route('POST', '/api/leads', ({ body }) => leads.ingest({ ...body, source: 'manual' }));
+  route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
   route('GET', '/api/leads/:id', ({ params }) => leads.getLead(Number(params.id)));
-  route('PATCH', '/api/leads/:id', ({ params, body }) => leads.updateLead(Number(params.id), body));
-  route('POST', '/api/leads/:id/disposition', async ({ params, body }) => {
+  route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));
+  route('POST', '/api/leads/:id/disposition', async ({ params, body, actor }) => {
     const id = Number(params.id);
-    const result = leads.dispositionLead(id, body);
+    const result = leads.dispositionLead(id, body, actor);
     // The rep can untick "send follow-up email" for a single call.
     const message = body.send_email === false ? null : leads.followUpEmailFor(id, body.disposition);
     let email = null;
     if (message) {
       try {
         await mailer.send(message);
-        email = leads.recordEmail(id, message, { status: 'sent', trigger: body.disposition });
+        email = leads.recordEmail(id, message, { status: 'sent', trigger: body.disposition, ...actor });
       } catch (err) {
         // The disposition is already saved; a failed email shows on the lead instead.
         const status = mailer.configured ? 'failed' : 'not_configured';
-        email = leads.recordEmail(id, message, { status, error: err.message, trigger: body.disposition });
+        email = leads.recordEmail(id, message, { status, error: err.message, trigger: body.disposition, ...actor });
       }
       result.lead = leads.getLead(id);
     }
     return { ...result, email };
   });
-  route('POST', '/api/leads/:id/notes', ({ params, body }) => leads.addNote(Number(params.id), body.note));
+  route('POST', '/api/leads/:id/notes', ({ params, body, actor }) => leads.addNote(Number(params.id), body.note, actor));
   route('GET', '/api/settings/email', () => leads.getEmailSettings());
   route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body));
   route('GET', '/api/reminders', ({ query }) => leads.listReminders({ status: query.get('status') || 'open' }));
-  route('POST', '/api/reminders/:id/complete', ({ params }) => leads.completeReminder(Number(params.id)));
+  route('POST', '/api/reminders/:id/complete', ({ params, actor }) => leads.completeReminder(Number(params.id), actor));
   route('POST', '/api/reminders/:id/snooze', ({ params, body }) => leads.snoozeReminder(Number(params.id), body.due_at));
 
   route('POST', '/api/facebook/sync', async () => {
@@ -233,19 +245,21 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
       const match = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
       if (!match) {
         if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
-          if (!isAuthorized(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
+          if (!authenticate(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
           return serveStatic(req, res, url.pathname);
         }
         return send(res, 404, { error: 'Not found' });
       }
-      if (!match.isPublic && !isAuthorized(req)) {
+      const user = match.isPublic ? null : authenticate(req);
+      if (!match.isPublic && !user) {
         return send(res, 401, { error: 'Login required' }, { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
       }
+      const actor = { user: user?.name ?? null };
       const values = url.pathname.match(match.re).slice(1);
       const params = Object.fromEntries(match.keys.map((k, i) => [k, decodeURIComponent(values[i])]));
       const raw = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readBody(req) : Buffer.alloc(0);
       const body = parseBody(raw, req.headers['content-type']);
-      const result = await match.handler({ req, res, params, query: url.searchParams, body, raw });
+      const result = await match.handler({ req, res, params, query: url.searchParams, body, raw, actor });
       if (!res.headersSent) send(res, req.method === 'POST' ? 201 : 200, result ?? { ok: true });
     } catch (err) {
       const status = err.status || 500;
@@ -257,7 +271,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
 }
 
 if (require.main === module) {
-  if (!config.appPassword) console.warn('Warning: APP_PASSWORD is not set, so the dashboard has no login.');
+  if (!config.users.length) console.warn('Warning: no APP_USERS or APP_PASSWORD set, so the dashboard has no login.');
   if (!config.facebook.appSecret) console.warn('Warning: FB_APP_SECRET is not set, so Facebook webhook signatures are not checked.');
   http.createServer(createApp()).listen(config.port, () => {
     console.log(`Lead Pipeline running at http://localhost:${config.port}`);

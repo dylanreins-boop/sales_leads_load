@@ -34,6 +34,9 @@ npm test                  # runs the test suite
 \* Attempt stages go New / Working → Voicemail → Follow Up 1 → 2 → 3, one step per no-answer.
 A lead that is already Contacted or Booked stays where it is.
 
+Every disposition needs a note. If the rep tries to save without one, the Notes box turns red and
+nothing is saved until they write something.
+
 The reminder defaults to **tomorrow at 9:00 AM** in the rep's own time zone. The rep can change the time or
 untick "Remind me to call" before saving. Saving a new disposition closes the lead's older open reminders,
 since the call has now happened. Leads can also be dragged between columns, or moved with the Stage
@@ -58,6 +61,22 @@ email address sends that email. The rep can untick "Send follow-up email" on any
 - There's one template for the whole team for now. Once logins are added, each rep can have their own.
 
 To send the email for other dispositions too, add `email: true` to them in `src/pipeline.js`.
+
+## Logins and who did what
+
+Give each person their own login in `.env`:
+
+```
+APP_USERS=Dylan:their-password,Sam:another-password
+```
+
+The browser asks for a name and password when the app opens. From then on, every note, call outcome,
+stage move, completed reminder and email in a lead's activity log shows **who did it and when**
+(for example "Sam · Fri, Oct 23, 3:07 PM"). Leads that arrive from Facebook or the website have no
+name, since nobody entered them.
+
+This is a simple browser login. A proper login page, password resets, and an admin screen for adding
+people come next. Those will use the same names, so the history recorded now carries over.
 
 ## Using it on a phone
 
@@ -112,7 +131,7 @@ their existing lead's activity log instead of creating a duplicate card.
 
 Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS. Things to check:
 
-- Set `APP_PASSWORD` so the dashboard needs a login. The webhook and website intake URLs stay public.
+- Set `APP_USERS` so the dashboard needs a login (see below). The webhook and website intake URLs stay public.
 - Keep `data/leads.db` on a persistent disk, and back it up.
 - Set `TZ` (for example `America/Chicago`) so server-side reminder times match your office.
 
