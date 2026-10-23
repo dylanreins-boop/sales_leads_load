@@ -137,6 +137,15 @@ function vehicleLine(l) {
   return [l.vehicle_type, vehicle, l.vehicle_color].filter(Boolean).join(' · ');
 }
 
+// The website promises "we'll call you back within 24 hours": count down until the first call.
+function promisePill(lead) {
+  if (lead.stage !== 'new' || lead.last_contacted_at) return null;
+  const hoursLeft = 24 - (Date.now() - new Date(lead.received_at)) / 3600000;
+  if (hoursLeft <= 0) return h('span', { class: 'pill due', title: 'Over 24 hours since this lead came in' }, '24h call-back missed');
+  return h('span', { class: `pill ${hoursLeft < 4 ? 'today' : 'promise'}`, title: 'We promise to call back within 24 hours' },
+    `Call back · ${hoursLeft < 1 ? 'under 1h' : `${Math.floor(hoursLeft)}h`} left`);
+}
+
 function leadCard(lead) {
   let reminderPill = null;
   if (lead.next_reminder_at) {
@@ -160,9 +169,9 @@ function leadCard(lead) {
     h('span', { class: 'muted' }, timeAgo(lead.received_at))),
   vehicleLine(lead) && h('div', { class: 'vehicle' }, vehicleLine(lead)),
   lead.booked_services?.length > 0 && h('div', { class: 'services-line' }, serviceLabels(lead.booked_services)),
-  (lead.last_disposition || reminderPill) && h('div', { class: 'row' },
+  (lead.last_disposition || reminderPill || promisePill(lead)) && h('div', { class: 'row' },
     h('span', { class: 'muted' }, lead.last_disposition ? dispoLabel(lead.last_disposition) : ''),
-    reminderPill));
+    reminderPill || promisePill(lead)));
 }
 
 async function moveStage(id, stage) {
@@ -206,6 +215,7 @@ function renderLead(lead) {
   $('#leadContact').replaceChildren(...[
     lead.phone && h('a', { href: `tel:${lead.phone.replace(/[^\d+]/g, '')}`, class: 'call-btn' }, `Call ${lead.phone}`),
     lead.email && h('a', { href: `mailto:${lead.email}` }, lead.email),
+    lead.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
     lead.message && h('div', { class: 'message' }, lead.message),
   ].filter(Boolean));
 
@@ -265,7 +275,7 @@ function setServicesError(show) {
 }
 
 // ---------- lead info ----------
-const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type'];
+const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'heard_about'];
 
 // Fills a Vehicle type dropdown, keeping any non-standard value a lead already has.
 function fillVehicleTypes(select, current = '') {
@@ -275,9 +285,19 @@ function fillVehicleTypes(select, current = '') {
   select.value = current;
 }
 
+// Fills a "How they heard about us" dropdown, keeping any other answer the lead gave.
+function fillHeardAbout(select, current = '') {
+  const options = [...state.meta.heardAboutOptions];
+  if (current && !options.includes(current)) options.push(current);
+  select.replaceChildren(h('option', { value: '' }, 'Not asked yet'), ...options.map((o) => h('option', { value: o }, o)));
+  select.value = current;
+}
+
 function fillInfoForm(lead) {
   const form = $('#infoForm');
   fillVehicleTypes(form.vehicle_type, lead.vehicle_type ?? '');
+  fillHeardAbout(form.heard_about, lead.heard_about ?? '');
+  form.sms_opt_in.checked = lead.sms_opt_in === 1;
   for (const f of INFO_FIELDS) form[f].value = lead[f] ?? '';
   // Older leads may only have a full name.
   if (!lead.first_name && !lead.last_name && lead.full_name) {
@@ -296,6 +316,7 @@ function fillInfoForm(lead) {
 function infoValues() {
   const form = $('#infoForm');
   const values = Object.fromEntries(INFO_FIELDS.map((f) => [f, form[f].value.trim()]));
+  values.sms_opt_in = form.sms_opt_in.checked;
   if (!$('#infoServicesField').hidden) values.booked_services = checkedServices($('#infoServices'));
   return values;
 }
@@ -619,6 +640,7 @@ async function syncFacebook() {
 function applyBrand(brand) {
   if (!brand) return;
   $('#brandName').textContent = brand.name;
+  document.querySelector('.brand-logo')?.setAttribute('alt', brand.name);
   $('#brandCity').textContent = brand.city;
   $('#brandCity').hidden = !brand.city;
   document.title = brand.shortName || brand.name;
@@ -640,6 +662,7 @@ async function init() {
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
   $('#syncFb').addEventListener('click', syncFacebook);
   fillVehicleTypes($('#addLeadForm').vehicle_type);
+  fillHeardAbout($('#addLeadForm').heard_about);
   $('#addLeadBtn').addEventListener('click', () => $('#addLeadDialog').showModal());
   $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
   $('#emailForm').addEventListener('submit', saveEmailSettings);

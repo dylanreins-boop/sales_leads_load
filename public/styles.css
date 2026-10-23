@@ -1,40 +1,47 @@
 :root {
-  /* Bob Moses Ceramic Coating: glossy black header (like fresh coating on black paint), gold accent. */
-  --bg: #f2f3f5;
+  /* Bob Moses Ceramic Coating brand (bobmosescc.com): royal blue, bright blue, amber highlight, dark navy, Montserrat. */
+  --bg: #f1f4f8;
   --panel: #ffffff;
-  --text: #17191d;
-  --muted: #646a75;
-  --border: #dcdfe4;
-  --accent: #d9a441;
-  --accent-text: #17130a;
-  --link: #8a6116;
+  --text: #0e1a2b;
+  --muted: #5d6878;
+  --border: #d8dee7;
+  --accent: #004ea2;
+  --accent-text: #ffffff;
+  --link: #004ea2;
+  --highlight: #ffad43;
   --danger: #c7392f;
-  --warn: #b77900;
+  --warn: #b26b00;
   --ok: #1d8a52;
   --fb: #1877f2;
   --web: #7a4ce0;
   --manual: #5b6476;
-  --bar: #121417;
-  --bar-sheen: #22262c;
-  --bar-text: #f3f1ec;
-  --bar-muted: #a7abb3;
-  --bar-field: #1d2025;
-  --bar-border: #33373e;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --bar: #ffffff;
+  --bar-text: #00142b;
+  --bar-muted: #5d6878;
+  --bar-field: #f4f6f9;
+  --bar-border: #d3dae4;
+  --font-brand: "Montserrat", "Segoe UI", system-ui, sans-serif;
+  --shadow: 0 1px 2px rgba(0, 20, 43, 0.06), 0 1px 3px rgba(0, 20, 43, 0.1);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1114;
-    --panel: #181b20;
-    --text: #e9e7e2;
-    --muted: #9a9fa8;
-    --border: #2a2e35;
-    --accent: #e0ac4a;
-    --link: #e6b85c;
+    --bg: #07111e;
+    --panel: #0f1c2e;
+    --text: #e6ecf3;
+    --muted: #97a3b4;
+    --border: #22324a;
+    --accent: #0f83ff;
+    --accent-text: #00142b;
+    --link: #5aa8ff;
     --danger: #ef6a60;
-    --warn: #e2a33a;
+    --warn: #ffad43;
     --ok: #3fbf87;
+    --bar: #00142b;
+    --bar-text: #f1f4f8;
+    --bar-muted: #97a3b4;
+    --bar-field: #0b2038;
+    --bar-border: #22324a;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
     color-scheme: dark;
   }
@@ -81,15 +88,27 @@ label.check input { width: auto; margin: 0; }
   flex-wrap: wrap;
   gap: 10px 16px;
   align-items: center;
-  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
-  background: linear-gradient(180deg, var(--bar-sheen), var(--bar) 60%);
-  border-bottom: 2px solid var(--accent);
+  padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+  background: var(--bar);
+  border-bottom: 3px solid var(--accent);
+  box-shadow: inset 0 -1px 0 var(--highlight);
   color: var(--bar-text);
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.brand-mark { width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0; box-shadow: 0 0 0 1px var(--bar-border); }
-.brand-name { font-size: 16px; line-height: 1.2; letter-spacing: 0.01em; }
-.brand-sub { font-size: 12px; color: var(--bar-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-logo { display: block; height: 46px; width: auto; }
+.brand-sub {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--bar-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding-left: 12px;
+  border-left: 2px solid var(--highlight);
+  line-height: 1.5;
+}
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+h2, h3, .column-head { font-family: var(--font-brand); }
 .topbar #currentUser { color: var(--bar-muted); }
 .topbar input, .topbar select, .topbar button:not(.primary) {
   background: var(--bar-field);
@@ -250,6 +269,9 @@ label.invalid { color: var(--danger); }
 .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
 .info-grid .span-2 { grid-column: 1 / -1; }
 .info-actions { display: flex; gap: 10px; align-items: center; }
+.info-grid label.opt-in { align-self: end; margin-bottom: 18px; }
+.pill.promise { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.tag.text-ok { background: var(--ok); }
 .info-grid button[disabled] { opacity: 0.5; cursor: default; }
 .lead-card .vehicle { font-size: 12px; margin-top: 4px; }
 fieldset.services { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 4px; margin: 0 0 10px; min-width: 0; }

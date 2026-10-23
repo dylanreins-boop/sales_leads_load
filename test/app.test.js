@@ -397,3 +397,51 @@ test('the app is branded for the company', async () => {
   assert.equal(renderTemplate('your {{vehicle}}', { vehicle_type: 'Boat' }), 'your boat');
   assert.equal(renderTemplate('your {{vehicle}}', {}), 'your vehicle');
 });
+
+test('answers from the Bob Moses quote form are picked up', () => {
+  const { mapWebsiteLead } = require('../src/website');
+  const { mapFacebookLead } = require('../src/facebook');
+  const web = mapWebsiteLead({
+    first_name: 'Dana', last_name: 'Cole', phone: '702-555-0100', email: 'dana@example.com',
+    services: 'RV',
+    how_did_you_hear_about_us: 'Word of mouth referral',
+    text_opt_in: 'I Consent to Receive SMS Notifications, Alerts & Occasional Marketing Communication from company.',
+    tell_us_about_your_vehicle: '2019 Thor Ace 30.4, two slide-outs',
+  });
+  assert.equal(web.vehicle_type, 'Coach / RV');
+  assert.equal(web.heard_about, 'Word of mouth referral');
+  assert.equal(web.sms_opt_in, true);
+  assert.equal(web.message, '2019 Thor Ace 30.4, two slide-outs');
+
+  const auto = mapWebsiteLead({ name: 'A B', phone: '702-555-0101', services: 'Auto', text_opt_in: '' });
+  assert.equal(auto.vehicle_type, 'Car');
+  assert.equal(auto.sms_opt_in, false);
+  const notAType = mapWebsiteLead({ name: 'C D', phone: '702-555-0102', services: 'Full ceramic coating' });
+  assert.equal(notAType.vehicle_type, undefined, 'a services answer that is not a vehicle type is ignored');
+
+  const fb = mapFacebookLead({ id: 'fb-hb', field_data: [{ name: 'full_name', values: ['Eli Fox'] }, { name: 'vehicle_type', values: ['RZR side by side'] }] });
+  assert.equal(fb.heard_about, 'Saw an ad on social media');
+  assert.equal(fb.vehicle_type, 'SXS / OHV');
+
+  const { normalizeHeardAbout } = require('../src/answers');
+  assert.equal(normalizeHeardAbout('google'), 'Searched on the internet');
+  assert.equal(normalizeHeardAbout('Instagram'), 'Saw an ad on social media');
+  assert.equal(normalizeHeardAbout('Billboard on I-15'), 'Billboard on I-15');
+});
+
+test('heard-about and text opt-in are saved, editable and logged', async () => {
+  await call('POST', '/api/intake/website', {
+    name: 'Rita Park', phone: '702-555-0177', how_did_you_hear_about_us: 'Radio', text_opt_in: 'yes',
+  }, { 'X-API-Key': 'site-key' });
+  const lead = await findLead('Rita Park');
+  assert.equal(lead.sms_opt_in, 1);
+  const detail = (await call('GET', `/api/leads/${lead.id}`)).data;
+  assert.equal(detail.heard_about, 'Radio');
+
+  const res = await call('PATCH', `/api/leads/${lead.id}`, { heard_about: 'Word of mouth referral', sms_opt_in: false });
+  assert.equal(res.data.heard_about, 'Word of mouth referral');
+  assert.equal(res.data.sms_opt_in, 0);
+  assert.match(res.data.activities[0].note, /Heard about us: Radio → Word of mouth referral/);
+  assert.match(res.data.activities[0].note, /OK to text: yes → no/);
+  assert.ok((await call('GET', '/api/meta')).data.heardAboutOptions.includes('Radio'));
+});

@@ -6,7 +6,7 @@ const { cleanServices, serviceLabels, parseServices } = require('./services');
 
 const VEHICLE_KEYS = VEHICLE_FIELDS.map((f) => f.key);
 const FIELD_LABELS = {
-  first_name: 'First name', last_name: 'Last name', full_name: 'Name', email: 'Email', phone: 'Phone', message: 'Message',
+  heard_about: 'Heard about us', first_name: 'First name', last_name: 'Last name', full_name: 'Name', email: 'Email', phone: 'Phone', message: 'Message',
   ...Object.fromEntries(VEHICLE_FIELDS.map((f) => [f.key, f.label])),
 };
 
@@ -20,6 +20,8 @@ function defaultEmailSettings({ name, city, phone, website, address }) {
       'Hi {{first_name}},',
       '',
       `This is [your name] with ${where}. I just tried calling about ceramic coating for your {{vehicle}} and left you a voicemail.`,
+      '',
+      'We use SENSHA-World coating, which is known to last up to eight years.',
       '',
       'I\'d love to walk you through your options and get you a quote. You can call or text me back at '
         + `${phone || '[your number]'}, or just reply to this email with a good time to talk.`,
@@ -100,6 +102,8 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
       campaign: clean(input.campaign),
       form_name: clean(input.form_name),
       ...Object.fromEntries(VEHICLE_KEYS.map((k) => [k, clean(input[k])])),
+      heard_about: clean(input.heard_about),
+      sms_opt_in: typeof input.sms_opt_in === 'boolean' ? Number(input.sms_opt_in) : null,
     };
     if (!lead.full_name) lead.full_name = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || null;
     lead.email_norm = normEmail(lead.email);
@@ -121,11 +125,11 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
       const ts = now();
       const { lastInsertRowid } = stmt(`INSERT INTO leads
         (source, external_id, first_name, last_name, full_name, email, phone, email_norm, phone_norm,
-         message, campaign, form_name, ${VEHICLE_KEYS.join(', ')}, stage, raw, received_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${VEHICLE_KEYS.map(() => '?').join(', ')}, 'new', ?, ?, ?, ?)`).run(
+         message, campaign, form_name, ${VEHICLE_KEYS.join(', ')}, heard_about, sms_opt_in, stage, raw, received_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${VEHICLE_KEYS.map(() => '?').join(', ')}, ?, ?, 'new', ?, ?, ?, ?)`).run(
         lead.source, lead.external_id, lead.first_name, lead.last_name, lead.full_name, lead.email,
         lead.phone, lead.email_norm, lead.phone_norm, lead.message, lead.campaign, lead.form_name,
-        ...VEHICLE_KEYS.map((k) => lead[k]),
+        ...VEHICLE_KEYS.map((k) => lead[k]), lead.heard_about, lead.sms_opt_in,
         input.raw ? JSON.stringify(input.raw) : null, toIso(input.received_at, ts), ts, ts,
       );
       const id = Number(lastInsertRowid);
@@ -148,7 +152,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
       params.push(like, like, `%${q.replace(/\D/g, '') || q}%`, like);
     }
     return stmt(`SELECT l.id, l.source, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage,
-                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type, l.booked_services,
+                        l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type, l.booked_services, l.sms_opt_in,
                         l.campaign, l.last_disposition, l.last_contacted_at, l.received_at, l.updated_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -167,7 +171,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
     return lead;
   }
 
-  const EDITABLE = ['first_name', 'last_name', 'full_name', 'email', 'phone', 'message', ...VEHICLE_KEYS];
+  const EDITABLE = ['first_name', 'last_name', 'full_name', 'email', 'phone', 'message', ...VEHICLE_KEYS, 'heard_about'];
 
   function updateLead(id, patch, { user } = {}) {
     const lead = getLead(id);
@@ -192,6 +196,15 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, brand =
         params.push(value);
         if (field !== 'full_name' || !('first_name' in patch || 'last_name' in patch)) {
           changes.push(`${FIELD_LABELS[field]}: ${lead[field] || '(blank)'} → ${value || '(blank)'}`);
+        }
+      }
+      if ('sms_opt_in' in patch) {
+        const value = patch.sms_opt_in == null ? null : Number(Boolean(patch.sms_opt_in));
+        if (value !== lead.sms_opt_in) {
+          sets.push('sms_opt_in = ?');
+          params.push(value);
+          const word = (v) => (v === 1 ? 'yes' : v === 0 ? 'no' : '(unknown)');
+          changes.push(`OK to text: ${word(lead.sms_opt_in)} → ${word(value)}`);
         }
       }
       if ('booked_services' in patch) {

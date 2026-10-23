@@ -23,8 +23,9 @@ npm test                  # runs the test suite
 ## Company branding
 
 The company name, city, phone, address and website live in `.env` (`BRAND_NAME`, `BRAND_SHORT_NAME`,
-`BRAND_CITY`, `BRAND_PHONE`, `BRAND_ADDRESS`, `BRAND_WEBSITE`). `.env.example` is filled in with the
-Las Vegas shop's public listing; confirm the phone and address with the shop before going live. They appear in the header, the browser tab, the phone app name, and
+`BRAND_CITY`, `BRAND_PHONE`, `BRAND_ADDRESS`, `BRAND_WEBSITE`). `.env.example` is filled in from the
+Las Vegas page on bobmosescc.com: 3120 W Sirius Ave Ste 103, (702) 600-1128, open 6 AM–2:30 PM
+Monday–Friday. They appear in the header, the browser tab, the phone app name, and
 the default follow-up email. `TZ=America/Los_Angeles` keeps reminder times on Las Vegas time.
 
 - **Colors:** glossy black header with a gold accent. All colors are tokens at the top of
@@ -71,8 +72,8 @@ To change the stages or dispositions, edit `src/pipeline.js`.
 ## Lead info and vehicle details
 
 Each lead has a **Lead info** section that anyone can edit: first and last name, phone, email, and
-the **vehicle type** (Car, SUV, Truck, Van, Motorcycle, Semi, Coach / RV, Trailer / Toy Hauler, Boat, Jet Ski,
-Plane, Other) and
+the **vehicle type** (Car, SUV, Truck, Van, Motorcycle, SXS / OHV, Semi, Coach / RV, Trailer / Toy Hauler, Boat,
+Jet Ski, Plane, Other), **how they heard about us**, whether they **agreed to texts**, and
 the vehicle's **year, make, model and color**. The vehicle shows on the lead's card, for example
 "Boat · 2021 Sea Ray SLX 400 · White", and the search box finds leads by vehicle too.
 
@@ -84,6 +85,21 @@ loosely, so Facebook questions like "What is the year, make and model of your ve
 color is your car?" land in the right place, and answers like "motorhome" or "pontoon" become
 "Coach / RV" or "Boat". A combined year/make/model answer is kept together in the Model field. To
 change the vehicle types, edit `VEHICLE_TYPES` in `src/vehicle.js`.
+
+### From their quote form
+
+The quote form on bobmosescc.com asks "How did you hear about us?" (Searched on the internet, Saw an ad
+on social media, Word of mouth referral, Radio, Other), has a text-message opt-in checkbox, a
+"Services" choice of Auto / RV / Boat, and "Tell us about your vehicle". All of these are picked up when
+the form is connected: the answer lands in **How they heard about us**, **OK to text**, **Vehicle
+type** and the lead's message. Facebook leads are marked "Saw an ad on social media". Only text leads
+marked **OK to text**.
+
+### 24-hour call-back promise
+
+Their site tells customers "if we don't pick up right away, leave a message and we'll call you back
+within 24 hours". New leads that haven't been called show a countdown on their card ("Call back ·
+18h left"), turning amber under 4 hours and red ("24h call-back missed") after that.
 
 ## Follow-up email after a voicemail
 

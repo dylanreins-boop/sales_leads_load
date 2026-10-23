@@ -1,8 +1,8 @@
 // Service worker: lets the app be installed on phones and open without a
 // connection. Lead data always comes from the network; only the app's own
 // files are cached.
-const CACHE = 'lead-pipeline-v2';
-const SHELL = ['/', '/app.js', '/styles.css', '/manifest.webmanifest', '/icons/icon-192.png'];
+const CACHE = 'lead-pipeline-v3';
+const SHELL = ['/', '/app.js', '/styles.css', '/manifest.webmanifest', '/icons/icon-192.png', '/brand/logo.png', '/brand/logo-white.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

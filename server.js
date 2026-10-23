@@ -11,6 +11,7 @@ const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES } = require('./src/vehicle');
 const { BOOKING_SERVICES } = require('./src/services');
+const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -152,6 +153,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     vehicleFields: VEHICLE_FIELDS,
     vehicleTypes: VEHICLE_TYPES,
     bookingServices: BOOKING_SERVICES,
+    heardAboutOptions: HEARD_ABOUT_OPTIONS,
   }));
   route('GET', '/api/leads', ({ query }) => leads.listLeads({ q: query.get('q'), source: query.get('source') }));
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
@@ -206,8 +208,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
       start_url: '/',
       scope: '/',
       display: 'standalone',
-      background_color: '#0f1114',
-      theme_color: '#121417',
+      background_color: '#00142b',
+      theme_color: '#00142b',
       icons: [
         { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -271,7 +273,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
       const match = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
       if (!match) {
         if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
-          if (!url.pathname.startsWith('/icons/') && !authenticate(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
+          const openAsset = url.pathname.startsWith('/icons/') || url.pathname.startsWith('/brand/');
+          if (!openAsset && !authenticate(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
           return serveStatic(req, res, url.pathname);
         }
         return send(res, 404, { error: 'Not found' });

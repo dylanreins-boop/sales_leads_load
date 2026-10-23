@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS leads (
   vehicle_color     TEXT,
   vehicle_type      TEXT,
   booked_services   TEXT,                       -- JSON list of service ids
+  heard_about       TEXT,                       -- "How did you hear about us?"
+  sms_opt_in        INTEGER,                    -- 1 agreed to texts, 0 did not, null unknown
   stage             TEXT NOT NULL DEFAULT 'new',
   last_disposition  TEXT,
   last_contacted_at TEXT,
@@ -91,7 +93,8 @@ function openDatabase(file) {
 function migrate(db) {
   const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
-  for (const column of ['vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'booked_services']) {
+  if (!has('leads', 'sms_opt_in')) db.exec('ALTER TABLE leads ADD COLUMN sms_opt_in INTEGER');
+  for (const column of ['vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'booked_services', 'heard_about']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }
 }

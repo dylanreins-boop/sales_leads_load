@@ -10,7 +10,8 @@ const VEHICLE_FIELDS = [
 
 // Choices for the Vehicle type dropdown. Edit this list to change them.
 const VEHICLE_TYPES = [
-  'Car', 'SUV', 'Truck', 'Van', 'Motorcycle', 'Semi', 'Coach / RV', 'Trailer / Toy Hauler', 'Boat', 'Jet Ski', 'Plane', 'Other',
+  'Car', 'SUV', 'Truck', 'Van', 'Motorcycle', 'SXS / OHV', 'Semi', 'Coach / RV', 'Trailer / Toy Hauler', 'Boat', 'Jet Ski',
+  'Plane', 'Other',
 ];
 
 // Words in a form answer that point to one of the types above (checked in order).
@@ -21,11 +22,13 @@ const TYPE_WORDS = [
   ['Trailer / Toy Hauler', ['toy hauler', 'toyhauler', 'fifth wheel', '5th wheel', 'travel trailer', 'trailer', 'airstream']],
   ['Semi', ['semi', 'tractor', 'big rig', '18 wheeler', '18-wheeler', 'peterbilt', 'kenworth', 'freightliner']],
   ['Coach / RV', ['coach', 'rv', 'motorhome', 'motor home', 'camper', 'bus']],
+  ['SXS / OHV', ['sxs', 'side by side', 'side-by-side', 'utv', 'atv', 'ohv', 'rzr', 'quad', 'dune buggy']],
   ['Motorcycle', ['motorcycle', 'motorbike', 'bike']],
   ['Truck', ['truck', 'pickup']],
   ['SUV', ['suv', 'crossover']],
   ['Van', ['van', 'minivan']],
-  ['Car', ['car', 'sedan', 'coupe', 'hatchback', 'convertible', 'wagon']],
+  // Their quote form offers "Auto", "RV" and "Boat".
+  ['Car', ['car', 'auto', 'automobile', 'sedan', 'coupe', 'hatchback', 'convertible', 'wagon']],
 ];
 
 // Turns a free-text answer like "motorhome" into "Coach / RV". Unknown answers are kept as typed.
@@ -45,7 +48,7 @@ const MATCHERS = [
   ['vehicle_make', ['make', 'brand', 'manufacturer']],
   ['vehicle_model', ['model']],
   ['vehicle_color', ['color', 'colour', 'paint']],
-  ['vehicle_type', ['type', 'kind']],
+  ['vehicle_type', ['type', 'kind', 'services']],
 ];
 
 const words = (name) => String(name).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -70,7 +73,15 @@ function extractVehicle(answers) {
     const text = value == null ? '' : String(value).trim();
     if (!text) continue;
     const field = classify(name);
-    if (field && !vehicle[field]) vehicle[field] = field === 'vehicle_type' ? normalizeVehicleType(text) : text;
+    if (!field || vehicle[field]) continue;
+    if (field === 'vehicle_type') {
+      const type = normalizeVehicleType(text);
+      // A loosely named question like "Services" only counts if the answer is a vehicle type.
+      if (words(name).includes('services') && !VEHICLE_TYPES.includes(type)) continue;
+      vehicle[field] = type;
+    } else {
+      vehicle[field] = text;
+    }
   }
   return vehicle;
 }
