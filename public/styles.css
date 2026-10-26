@@ -228,7 +228,7 @@ table.customers-table { min-width: 860px; }
 .customers-table th:nth-child(6) { width: 16%; }
 .customers-table th:nth-child(7) { width: 8%; }
 .customers-table th:nth-child(8) { width: 9%; }
-.customers-table td:nth-child(2), .customers-table td:nth-child(6) { white-space: normal; }
+.customers-table td:nth-child(2), .customers-table td:nth-child(4), .customers-table td:nth-child(6) { white-space: normal; }
 .customers-table td.num, .customers-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .customers-summary { margin: 0; }
 .old-table th:nth-child(9) { width: 9%; }
@@ -595,7 +595,7 @@ table.rev-table { width: 100%; min-width: 0; }
 .review-settings > .muted { margin: 0 0 10px; }
 
 /* Past Customers: maintenance due */
-.status-pill.due { margin-left: 8px; color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.status-pill.due { display: inline-block; margin: 2px 0 0 0; color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
 .rev-grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rev-sources { margin-top: 6px; }
 .rev-sources select { width: auto; }
