@@ -221,13 +221,13 @@ table.old-table { table-layout: fixed; min-width: 960px; }
 /* Past Customers: its own column widths; vehicle and services wrap instead of cutting off. */
 table.customers-table { min-width: 860px; }
 .customers-table th:nth-child(1) { width: 16%; }
-.customers-table th:nth-child(2) { width: 24%; }
+.customers-table th:nth-child(2) { width: 22%; }
 .customers-table th:nth-child(3) { width: 12%; }
 .customers-table th:nth-child(4) { width: 11%; }
 .customers-table th:nth-child(5) { width: 6%; }
 .customers-table th:nth-child(6) { width: 16%; }
 .customers-table th:nth-child(7) { width: 8%; }
-.customers-table th:nth-child(8) { width: 7%; }
+.customers-table th:nth-child(8) { width: 9%; }
 .customers-table td:nth-child(2), .customers-table td:nth-child(6) { white-space: normal; }
 .customers-table td.num, .customers-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .customers-summary { margin: 0; }
