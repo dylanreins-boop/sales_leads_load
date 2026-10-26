@@ -496,6 +496,28 @@ body:not([data-role="admin"]) .admin-only { display: none !important; }
 .update-item .meta { font-size: 12px; color: var(--muted); }
 #olderUpdates { width: 100%; margin-top: 8px; }
 
+/* Team panel (admins) */
+.team-add { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.team-add h3 { font-size: 15px; margin-bottom: 10px; }
+.team-add .muted { margin: 0 0 10px; }
+.password-row { display: flex; gap: 6px; margin-top: 4px; }
+.password-row input { flex: 1; min-width: 0; margin: 0; }
+.team-list, .team-history { list-style: none; margin: 0; padding: 0; }
+.team-person { padding: 12px 0; border-bottom: 1px solid var(--border); display: grid; gap: 6px; }
+.team-person:last-child { border-bottom: 0; }
+.team-person .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.team-person .name { font-weight: 700; font-size: 15px; }
+.team-person.inactive .name { color: var(--muted); text-decoration: line-through; }
+.level { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+.level-admin { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.level-shop { background: #c47a00; border-color: #c47a00; color: #fff; }
+.team-person .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.team-person .tools select { width: auto; margin: 0; }
+.team-person .tools input { flex: 1 1 160px; min-width: 0; margin: 0; }
+.team-person .danger { color: var(--danger); border-color: var(--danger); }
+.team-history li { padding: 6px 0; font-size: 13px; border-bottom: 1px dashed var(--border); }
+.team-history li:last-child { border-bottom: 0; }
+
 /* Job status colors, used by chips, cards, the legend and the status picker. */
 .status-scheduled { --st: var(--accent); }
 .status-in_shop { --st: #c47a00; }

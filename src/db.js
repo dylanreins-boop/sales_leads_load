@@ -120,6 +120,31 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- Logins the admins add from the Team panel. Names never change, so the activity
+-- history stays tied to the right person; people leave by being deactivated.
+CREATE TABLE IF NOT EXISTS users (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  name           TEXT NOT NULL,
+  name_norm      TEXT NOT NULL UNIQUE,
+  password_hash  TEXT NOT NULL,
+  role           TEXT NOT NULL,
+  active         INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT NOT NULL,
+  created_by     TEXT,
+  updated_at     TEXT NOT NULL,
+  last_seen_at   TEXT
+);
+
+-- Who added, changed or deactivated each login.
+CREATE TABLE IF NOT EXISTS user_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_name   TEXT NOT NULL,
+  action      TEXT NOT NULL,
+  detail      TEXT,
+  by_user     TEXT,
+  created_at  TEXT NOT NULL
+);
 `;
 
 function openDatabase(file) {

@@ -369,7 +369,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel'), $('#updatesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -793,6 +793,103 @@ function renderUpdates() {
   list.replaceChildren(...items);
 }
 
+// ---------- team (admins) ----------
+const LEVEL_LABEL = { admin: 'Admin', sales: 'Sales', shop: 'Shop' };
+const TEAM_ACTION = { created: 'Added', level: 'Level changed', password: 'Password', deactivated: 'Deactivated', reactivated: 'Reactivated' };
+
+async function openTeam() {
+  try {
+    await loadTeam();
+    showPanel($('#teamPanel'));
+  } catch (err) { fail(err); }
+}
+
+async function loadTeam() {
+  state.team = await api('/api/users');
+  renderTeam();
+}
+
+async function addUser(e) {
+  e.preventDefault();
+  const f = e.target;
+  const body = { name: f.name.value, password: f.password.value, role: f.role.value };
+  try {
+    const user = await api('/api/users', { method: 'POST', body });
+    f.reset();
+    toast(`${user.name} can now sign in as ${LEVEL_LABEL[user.role]}.`);
+    await loadTeam();
+  } catch (err) {
+    $('#addUserError').textContent = err.message;
+    $('#addUserError').hidden = false;
+  }
+}
+
+async function changeUser(user, patch, message) {
+  try {
+    await api(`/api/users/${user.id}`, { method: 'PATCH', body: patch });
+    toast(message);
+    await loadTeam();
+  } catch (err) { fail(err); }
+}
+
+function teamPerson(u) {
+  const me = u.name === state.meta.currentUser;
+  const fromServer = u.source === 'server';
+  const tools = h('div', { class: 'tools' });
+  const showTools = () => {
+    if (fromServer) {
+      tools.replaceChildren(h('span', { class: 'muted' }, 'Set on the server (APP_USERS). Change it there.'));
+      return;
+    }
+    const level = h('select', { 'aria-label': `Level for ${u.name}`, disabled: me || !u.active },
+      ...Object.entries(LEVEL_LABEL).map(([id, label]) => h('option', { value: id, selected: id === u.role }, label)));
+    level.addEventListener('change', () => changeUser(u, { role: level.value }, `${u.name} is now ${LEVEL_LABEL[level.value]}.`));
+    const reset = h('button', { type: 'button', onclick: () => askPassword() }, me ? 'Change my password' : 'Reset password');
+    const toggle = me ? null : u.active
+      ? h('button', { type: 'button', class: 'danger', onclick: () => confirmDeactivate() }, 'Deactivate')
+      : h('button', { type: 'button', onclick: () => changeUser(u, { active: true }, `${u.name} can sign in again.`) }, 'Reactivate');
+    tools.replaceChildren(...[!me && level, reset, toggle].filter(Boolean));
+  };
+  const askPassword = () => {
+    const input = h('input', { type: 'text', minlength: 8, placeholder: 'New password (8+ characters)', 'aria-label': `New password for ${u.name}`, autocomplete: 'new-password' });
+    const save = h('button', { type: 'button', class: 'primary', onclick: () => {
+      if (input.value.length < 8) return toast('Passwords need at least 8 characters.', 'error');
+      changeUser(u, { password: input.value }, me ? 'Password changed. Your browser will ask you to sign in again.' : `New password saved for ${u.name}. Let them know.`);
+    } }, 'Save');
+    tools.replaceChildren(input, save, h('button', { type: 'button', onclick: showTools }, 'Cancel'));
+    input.focus();
+  };
+  const confirmDeactivate = () => {
+    tools.replaceChildren(
+      h('span', { class: 'muted' }, `${u.name} won't be able to sign in. Their history stays.`),
+      h('button', { type: 'button', class: 'danger', onclick: () => changeUser(u, { active: false }, `${u.name} is deactivated.`) }, 'Deactivate'),
+      h('button', { type: 'button', onclick: showTools }, 'Cancel'));
+  };
+  showTools();
+  const meta = fromServer
+    ? 'Server login'
+    : [u.created_by ? `Added by ${u.created_by}` : 'Added', fmtDateTime(u.created_at)].join(' · ');
+  return h('li', { class: `team-person${u.active ? '' : ' inactive'}` },
+    h('div', { class: 'top' },
+      h('span', { class: 'name' }, u.name),
+      h('span', { class: `level level-${u.role}` }, LEVEL_LABEL[u.role]),
+      me && h('span', { class: 'muted' }, '(you)'),
+      !u.active && h('span', { class: 'muted' }, 'Deactivated')),
+    h('div', { class: 'muted' }, meta, !fromServer && ` · ${u.last_seen_at ? `last in the app ${timeAgo(u.last_seen_at)}` : 'hasn\'t signed in yet'}`),
+    tools);
+}
+
+function renderTeam() {
+  const { users, history } = state.team;
+  $('#teamList').replaceChildren(...users.map(teamPerson));
+  $('#teamHistory').replaceChildren(...(history.length
+    ? history.map((ev) => h('li', {},
+      h('strong', {}, `${TEAM_ACTION[ev.action] || ev.action}: ${ev.user_name}`),
+      ev.detail && ` · ${ev.detail}`,
+      h('div', { class: 'muted' }, `${ev.by_user ? `by ${ev.by_user}` : 'No login'} · ${fmtDateTime(ev.created_at)}`)))
+    : [h('li', { class: 'muted' }, 'No changes yet. People added here will show up with who added them.')]));
+}
+
 async function completeReminder(id) {
   try {
     await api(`/api/reminders/${id}/complete`, { method: 'POST' });
@@ -963,6 +1060,16 @@ async function init() {
   $('[data-cancel]').addEventListener('click', () => $('#addLeadDialog').close());
   $('#remindersBtn').addEventListener('click', () => { renderReminders(); showPanel($('#remindersPanel')); updateNotifButton(); });
   $('#updatesBtn').addEventListener('click', openUpdates);
+  $('#teamBtn').addEventListener('click', openTeam);
+  $('#addUserForm').addEventListener('submit', addUser);
+  $('#addUserForm').addEventListener('input', () => { $('#addUserError').hidden = true; });
+  $('#addUserForm .show-pass').addEventListener('click', (e) => {
+    const input = $('#newUserPassword');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    e.target.textContent = show ? 'Hide' : 'Show';
+    e.target.setAttribute('aria-pressed', String(show));
+  });
   $('#olderUpdates').addEventListener('click', () => loadUpdates(true).catch(fail));
   document.querySelectorAll('.updates-filter button').forEach((b) => b.addEventListener('click', () => {
     state.updatesFilter = b.dataset.filter;

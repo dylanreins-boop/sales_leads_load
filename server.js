@@ -15,6 +15,7 @@ const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 const { leadsWorkbook } = require('./src/export');
 const { createJobService, JOB_STATUSES, PHOTO_PHASES } = require('./src/jobs');
 const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
+const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -72,25 +73,6 @@ const safeEqual = (a, b) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 
-// Returns the signed-in user ({ name }), or null if the login is wrong.
-// With no logins configured, everyone is let in without a name.
-function authenticate(req) {
-  if (!config.users.length) return { name: null, role: 'admin' };
-  const [scheme, encoded] = (req.headers.authorization || '').split(' ');
-  if (scheme !== 'Basic' || !encoded) return null;
-  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
-  const sep = decoded.indexOf(':');
-  const name = decoded.slice(0, sep);
-  const password = decoded.slice(sep + 1);
-  // Compare against every user so timing doesn't reveal which names exist.
-  let found = null;
-  for (const u of config.users) {
-    const nameOk = safeEqual(name.toLowerCase(), u.name.toLowerCase());
-    const passwordOk = safeEqual(password, u.password);
-    if (nameOk && passwordOk) found = u;
-  }
-  return found && { name: found.name, role: found.role };
-}
 
 function corsHeaders(req) {
   const origin = req.headers.origin;
@@ -132,7 +114,20 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     leads,
     photosDir: photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos'),
   });
+  const users = createUserService(db, { serverUsers: config.users });
   const routes = [];
+
+  // Returns the signed-in user ({ name, role }), or null if the login is wrong.
+  // With no logins at all, everyone is let in as an admin without a name.
+  function authenticate(req) {
+    if (!users.anyLogins()) return { name: null, role: 'admin' };
+    const [scheme, encoded] = (req.headers.authorization || '').split(' ');
+    if (scheme !== 'Basic' || !encoded) return null;
+    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    const sep = decoded.indexOf(':');
+    if (sep < 0) return null;
+    return users.authenticate(decoded.slice(0, sep), decoded.slice(sep + 1));
+  }
 
   // `pattern` supports ":param" segments; public routes skip dashboard login.
   // `roles` lists which login levels may call it (default: the lead pipeline, for admin and sales).
@@ -225,10 +220,15 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   route('GET', '/api/updates', ({ query, actor }) => {
     const feed = leads.listUpdates({ before: Number(query.get('before')) || null, limit: Number(query.get('limit')) || 100, user: actor.user });
     // Tag each change with the login level of whoever made it (sales vs shop).
-    const roleOf = new Map(config.users.map((u) => [u.name, u.role]));
+    const roleOf = new Map(users.list().map((u) => [u.name, u.role]));
     for (const u of feed.updates) u.user_role = roleOf.get(u.user_name) ?? null;
     return feed;
   }, { roles: ADMIN });
+  // ---- Team (admin): add logins, change levels, reset passwords, deactivate ----
+  route('GET', '/api/users', () => ({ users: users.list(), history: users.history(), roles: ROLES, minPassword: MIN_PASSWORD }), { roles: ADMIN });
+  route('POST', '/api/users', ({ body, actor }) => users.create(body, actor), { roles: ADMIN });
+  route('PATCH', '/api/users/:id', ({ params, body, actor }) => users.update(Number(params.id), body, actor), { roles: ADMIN });
+
   route('GET', '/api/updates/count', ({ actor }) => ({ unseen: leads.countUnseenUpdates(actor.user) }), { roles: ADMIN });
   route('POST', '/api/updates/seen', ({ actor }) => leads.markUpdatesSeen(actor.user), { roles: ADMIN });
 
@@ -404,7 +404,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
 }
 
 if (require.main === module) {
-  if (!config.users.length) console.warn('Warning: no APP_USERS or APP_PASSWORD set, so the dashboard has no login.');
+  if (!config.users.length) console.warn('Note: no APP_USERS or APP_PASSWORD set. Until an admin adds a login on the Team panel, the dashboard has no login.');
   if (!config.facebook.appSecret) console.warn('Warning: FB_APP_SECRET is not set, so Facebook webhook signatures are not checked.');
   http.createServer(createApp()).listen(config.port, () => {
     console.log(`Lead Pipeline running at http://localhost:${config.port}`);

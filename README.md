@@ -211,11 +211,32 @@ To send the email for other dispositions too, add `email: true` to them in `src/
 
 ## Logins and who did what
 
-Give each person their own login in `.env`:
+Everyone gets their own login. Set up the first admin on the server, then admins add everyone else from
+the **Team** panel in the app:
 
 ```
-APP_USERS=Dylan:their-password:admin,Sam:another-password:sales,Mike:shop-password:shop
+APP_USERS=Dylan:their-password:admin
 ```
+
+### Team panel (admins)
+
+Admins open **Team** to:
+
+- **Add a person:** type their name, a password (8+ characters) and a level (Admin, Sales or Shop). Admins
+  can add other admins.
+- **Change a level**, **reset a password**, or **deactivate** someone who left. A deactivated person can't
+  sign in, but everything they did stays in the history under their name. Reactivate them any time.
+- See **who added each person and when**, when each person was last in the app, and a **Team changes**
+  log of every add, level change, password reset and deactivation, with the admin who did it.
+
+Names can't be changed after a login is created, so the activity history always points to the right
+person. Two people can't share a name (add a last initial). Admins can't change their own level or
+deactivate themselves, and there is always at least one admin. Passwords are stored hashed (scrypt), never
+as plain text.
+
+Logins set in `APP_USERS` show on the Team panel as server logins and are changed on the server. With no
+`APP_USERS` and no Team logins at all, the app is open; the first login added there has to be an admin,
+and from then on everyone signs in.
 
 The browser asks for a name and password when the app opens. From then on, every note, call outcome,
 stage move, completed reminder and email in a lead's activity log shows **who did it and when**
@@ -240,8 +261,8 @@ It opens a feed of every change, newest first: calls logged, notes, lead info ed
 (status changes, job notes, checklist ticks, photos added or deleted), each with who did it and when. Filter
 it to Sales or Shop, and tap a change to open that lead or job.
 
-This is a simple browser login. A proper login page, password resets, and an admin screen for adding
-people come next. Those will use the same names, so the history recorded now carries over.
+Sign-in uses the browser's own name-and-password box. A branded login page can come later and will use
+the same logins.
 
 ## Using it on a phone
 

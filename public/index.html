@@ -45,6 +45,7 @@
       <button id="updatesBtn" type="button" class="admin-only">
         Updates <span id="updatesBadge" class="badge" hidden></span>
       </button>
+      <button id="teamBtn" type="button" class="admin-only">Team</button>
       <button id="syncFb" type="button" class="lead-only admin-only">Sync Facebook</button>
       <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
       <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Email template</button>
@@ -235,6 +236,51 @@
       </div>
       <ol id="updatesList" class="updates-list"></ol>
       <button id="olderUpdates" type="button" hidden>Show older</button>
+    </div>
+  </aside>
+
+  <!-- Team panel (admins): who can sign in, at what level -->
+  <aside id="teamPanel" class="drawer" aria-label="Team" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Team</h2>
+        <div class="muted">Everyone's notes, calls and shop work are logged under their name.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <section class="team-add" aria-labelledby="addUserTitle">
+        <h3 id="addUserTitle">Add a person</h3>
+        <form id="addUserForm" autocomplete="off">
+          <label>Name <input id="newUserName" name="name" maxlength="40" required placeholder="Sam Ortega" autocomplete="off"></label>
+          <label>Password
+            <span class="password-row">
+              <input id="newUserPassword" name="password" type="password" minlength="8" required autocomplete="new-password">
+              <button type="button" class="show-pass" aria-pressed="false">Show</button>
+            </span>
+          </label>
+          <label>Level
+            <select id="newUserRole" name="role">
+              <option value="sales">Sales: leads, calls and booking</option>
+              <option value="shop">Shop: the job calendar only</option>
+              <option value="admin">Admin: everything, including the team</option>
+            </select>
+          </label>
+          <p class="muted">They sign in with this name and password. The name can't be changed later, so every note and call stays tied to them.</p>
+          <p id="addUserError" class="field-error" hidden></p>
+          <button type="submit" class="primary">Add login</button>
+        </form>
+      </section>
+
+      <section class="card-section">
+        <h3>People</h3>
+        <ul id="teamList" class="team-list"></ul>
+      </section>
+
+      <section class="card-section">
+        <h3>Team changes</h3>
+        <ol id="teamHistory" class="team-history"></ol>
+      </section>
     </div>
   </aside>
 
