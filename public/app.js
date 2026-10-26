@@ -6,6 +6,9 @@ const state = {
   reminders: [],
   openLeadId: null,
   openLead: null,
+  updates: [],
+  updatesSeenId: 0,
+  updatesFilter: '',
   emailSettings: null,
   pipeline: 'other',
   section: 'leads', // leads | calendar
@@ -67,6 +70,8 @@ function fmtDateTime(iso) {
   return new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+const isAdmin = () => state.meta?.currentRole === 'admin';
+
 function timeAgo(iso) {
   const mins = Math.round((Date.now() - new Date(iso)) / 60000);
   if (mins < 1) return 'just now';
@@ -124,8 +129,8 @@ function pickPipeline() {
 
 // ---------- sections: Leads / Calendar ----------
 function showSection(name) {
-  // Shop logins only have the calendar.
-  const section = state.meta.currentRole === 'shop' ? 'calendar' : name;
+  // Shop logins only have the calendar, sales logins only the leads.
+  const section = { shop: 'calendar', sales: 'leads' }[state.meta.currentRole] || name;
   state.section = section;
   document.body.dataset.section = section;
   $('#leadsSection').hidden = section !== 'leads';
@@ -162,7 +167,7 @@ function renderTabs() {
     ...state.meta.pipelines.map((p) => tab(p.id, p.label, state.leads.filter((l) => l.pipeline === p.id).length)),
     tab('old', 'Old & Dead Leads', state.oldLeads.length, 'old-tab'),
     h('span', { class: 'spacer' }),
-    h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
+    isAdmin() && h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
       h('span', { class: 'long-label' }, 'Export to Excel'), h('span', { class: 'short-label' }, 'Excel')),
   );
 }
@@ -284,7 +289,7 @@ function renderLeadJob(lead) {
         h('span', { class: `job-status status-${open.status}` }, state.meta.jobStatuses.find((s) => s.id === open.status)?.label || open.status),
         h('div', { class: 'lead-job-when' }, `Drop-off ${fmtDateTime(open.start_at)}`),
         h('div', { class: 'muted' }, `Pick-up ${fmtDateTime(open.end_at)}`)),
-      h('button', { type: 'button', onclick: () => showJobOnCalendar(open.id, open.start_at) }, 'Open on calendar'))
+      isAdmin() && h('button', { type: 'button', onclick: () => showJobOnCalendar(open.id, open.start_at) }, 'Open on calendar'))
     : h('div', { class: 'lead-job' },
       h('span', { class: 'muted' }, 'Booked, but not on the shop calendar yet.'),
       h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')));
@@ -364,7 +369,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel'), $('#updatesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -554,6 +559,8 @@ function activityItem(a) {
     archived: 'Moved to Old & Dead Leads',
     restored: 'Back on the board',
     job: 'Shop job',
+    checklist: 'Shop checklist',
+    photo: 'Job photos',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -722,6 +729,70 @@ function renderReminders() {
   ]));
 }
 
+// ---------- updates feed (admins) ----------
+// Changes by shop logins are shop work; everyone else's is lead work.
+const SHOP_TYPES = ['job', 'checklist', 'photo'];
+const byShop = (u) => (u.user_role ? u.user_role === 'shop' : ['checklist', 'photo'].includes(u.type));
+
+async function loadUpdatesCount() {
+  try {
+    const { unseen } = await api('/api/updates/count');
+    $('#updatesBadge').hidden = !unseen;
+    $('#updatesBadge').textContent = unseen > 99 ? '99+' : unseen;
+  } catch { /* try again on the next refresh */ }
+}
+
+async function loadUpdates(older = false) {
+  const before = older && state.updates.length ? `&before=${state.updates.at(-1).id}` : '';
+  const { updates, seenId } = await api(`/api/updates?limit=100${before}`);
+  if (older) state.updates.push(...updates);
+  else {
+    state.updates = updates;
+    state.updatesSeenId = seenId;
+  }
+  $('#olderUpdates').hidden = updates.length < 100;
+  renderUpdates();
+}
+
+async function openUpdates() {
+  try {
+    await loadUpdates();
+    showPanel($('#updatesPanel'));
+    await api('/api/updates/seen', { method: 'POST' });
+    $('#updatesBadge').hidden = true;
+  } catch (err) { fail(err); }
+}
+
+function renderUpdates() {
+  const filter = state.updatesFilter || '';
+  const shown = state.updates.filter((u) => !filter || (filter === 'shop') === byShop(u));
+  const list = $('#updatesList');
+  if (!shown.length) {
+    list.replaceChildren(h('p', { class: 'muted' }, 'No changes yet.'));
+    return;
+  }
+  const items = [];
+  let day = '';
+  for (const u of shown) {
+    const d = new Date(u.created_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    if (d !== day) items.push(h('li', { class: 'updates-day' }, (day = d)));
+    const mine = u.user_name && u.user_name === state.meta.currentUser;
+    const isNew = u.id > state.updatesSeenId && !mine;
+    const shopWork = byShop(u);
+    const what = activityItem(u).querySelector('.what').textContent;
+    items.push(h('li', {
+      class: `update-item${isNew ? ' unseen' : ''}`,
+      onclick: () => (SHOP_TYPES.includes(u.type) && u.job_id ? showJobOnCalendar(u.job_id, u.job_start) : openLead(u.lead_id)),
+    },
+    h('span', { class: `who-badge${shopWork ? ' shop' : ''}`, title: `${u.user_name || 'Automatic'}${u.user_role ? ` (${u.user_role})` : ''}` }, (u.user_name || '•').slice(0, 1).toUpperCase()),
+    h('div', { class: 'head' }, `${u.user_name || 'Automatic'} · ${what}`),
+    h('div', {}, leadName(u), u.vehicle_type && h('span', { class: 'muted' }, ` · ${u.vehicle_type}`)),
+    u.note && h('div', { class: 'note' }, u.note),
+    h('div', { class: 'meta' }, `${new Date(u.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${timeAgo(u.created_at)}`)));
+  }
+  list.replaceChildren(...items);
+}
+
 async function completeReminder(id) {
   try {
     await api(`/api/reminders/${id}/complete`, { method: 'POST' });
@@ -868,9 +939,9 @@ function debounce(fn, ms) {
 async function init() {
   state.meta = await api('/api/meta');
   const shop = state.meta.currentRole === 'shop';
-  document.body.dataset.role = shop ? 'shop' : 'sales';
+  document.body.dataset.role = state.meta.currentRole;
   if (!shop) state.emailSettings = await api('/api/settings/email');
-  $('#syncFb').hidden = !state.meta.facebookConfigured;
+  $('#syncFb').hidden = !state.meta.facebookConfigured || !isAdmin();
   applyBrand(state.meta.brand);
   pickPipeline();
   initCalendar();
@@ -891,6 +962,13 @@ async function init() {
   $('#addLeadForm').addEventListener('submit', addLead);
   $('[data-cancel]').addEventListener('click', () => $('#addLeadDialog').close());
   $('#remindersBtn').addEventListener('click', () => { renderReminders(); showPanel($('#remindersPanel')); updateNotifButton(); });
+  $('#updatesBtn').addEventListener('click', openUpdates);
+  $('#olderUpdates').addEventListener('click', () => loadUpdates(true).catch(fail));
+  document.querySelectorAll('.updates-filter button').forEach((b) => b.addEventListener('click', () => {
+    state.updatesFilter = b.dataset.filter;
+    document.querySelectorAll('.updates-filter button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    renderUpdates();
+  }));
   $('#dueBanner').addEventListener('click', () => $('#remindersBtn').click());
   $('#enableNotifs').addEventListener('click', () => Notification.requestPermission().then(updateNotifButton));
   $('#scrim').addEventListener('click', () => showPanel(null));
@@ -919,6 +997,10 @@ async function init() {
   }
 
   if (shop) return showSection('calendar');
+  if (isAdmin()) {
+    loadUpdatesCount();
+    setInterval(loadUpdatesCount, 60_000);
+  }
   await Promise.all([loadLeads(), loadReminders()]);
   showSection(location.hash === '#calendar' ? 'calendar' : 'leads');
   // Refresh so new Facebook/website leads and due reminders show up on their own.

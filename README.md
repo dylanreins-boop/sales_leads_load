@@ -85,11 +85,7 @@ uploading, so they're quick on a phone connection (about 200–400 KB each). Tap
 size with who added it and when, flip through with the arrows, or delete it (tap twice). Photos are stored
 in `PHOTOS_DIR` (by default a `photos` folder next to the database, so on Fly they're on the same volume).
 
-### Shop logins
-
-Add `:shop` to the end of a login in `APP_USERS` (e.g. `Mike:his-password:shop`). Shop logins only see
-the **calendar**: they can open jobs, change status, edit times and notes, tick the checklist and add
-photos, but can't see the lead pipeline, reminders, emails or Excel export.
+Shop logins only see the calendar. See [Login levels](#login-levels).
 
 ## Old & Dead Leads
 
@@ -218,13 +214,31 @@ To send the email for other dispositions too, add `email: true` to them in `src/
 Give each person their own login in `.env`:
 
 ```
-APP_USERS=Dylan:their-password,Sam:another-password
+APP_USERS=Dylan:their-password:admin,Sam:another-password:sales,Mike:shop-password:shop
 ```
 
 The browser asks for a name and password when the app opens. From then on, every note, call outcome,
 stage move, completed reminder and email in a lead's activity log shows **who did it and when**
 (for example "Sam · Fri, Oct 23, 3:07 PM"). Leads that arrive from Facebook or the website have no
 name, since nobody entered them.
+
+### Login levels
+
+The word after the password sets what that person can do:
+
+| Level | Sees | Can |
+|---|---|---|
+| `admin` | Everything: both pipelines, Old & Dead Leads, the shop calendar | Everything sales and shop can, plus the **Updates** feed, Excel export, the follow-up email template and Facebook sync |
+| `sales` | The lead pipelines and their call reminders | Work leads, log calls, edit lead info, and **book** jobs (the booking time goes on the shop calendar, and the lead shows its drop-off/pick-up and job status). No calendar, export or settings |
+| `shop` | The job calendar only | Open jobs, change status, times and notes, tick the checklist, add photos |
+
+A login with no level is `sales`. The single shared `APP_USER`/`APP_PASSWORD` login is `admin`, and with no
+logins set at all, everyone is treated as `admin`.
+
+**Updates (admins).** The **Updates** button shows a count of changes made by others since you last looked.
+It opens a feed of every change, newest first: calls logged, notes, lead info edits, bookings, and shop work
+(status changes, job notes, checklist ticks, photos added or deleted), each with who did it and when. Filter
+it to Sales or Shop, and tap a change to open that lead or job.
 
 This is a simple browser login. A proper login page, password resets, and an admin screen for adding
 people come next. Those will use the same names, so the history recorded now carries over.
@@ -288,7 +302,7 @@ with the [Fly CLI](https://fly.io/docs/flyctl/install/) installed and `fly auth 
 ```bash
 fly launch --copy-config --no-deploy          # creates the app from fly.toml (pick a new name if asked)
 fly volumes create leads_data --region lax --size 1
-fly secrets set APP_USERS='Dylan:a-strong-password,Sam:another-strong-password,Mike:shop-password:shop'
+fly secrets set APP_USERS='Dylan:a-strong-password:admin,Sam:another-strong-password:sales,Mike:shop-password:shop'
 fly deploy
 fly open                                      # opens https://<app-name>.fly.dev
 ```

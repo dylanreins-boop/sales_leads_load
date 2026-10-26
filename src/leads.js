@@ -353,6 +353,38 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     return getLead(id);
   }
 
+  // ---- Updates feed for admins: every change by anyone, newest first ----
+  const seenKey = (user) => `updates_seen:${user || 'admin'}`;
+  const lastActivityId = () => stmt('SELECT MAX(id) AS id FROM activities').get().id || 0;
+  function seenId(user) {
+    const row = stmt('SELECT value FROM settings WHERE key = ?').get(seenKey(user));
+    if (row) return Number(row.value) || 0;
+    // A new admin starts caught up rather than with the whole history marked new.
+    markUpdatesSeen(user);
+    return lastActivityId();
+  }
+
+  function listUpdates({ before = null, limit = 100, user } = {}) {
+    const rows = stmt(`SELECT a.*, l.full_name, l.first_name, l.last_name, l.phone, l.vehicle_type, l.source,
+                         (SELECT j.id FROM jobs j WHERE j.lead_id = a.lead_id ORDER BY j.start_at DESC LIMIT 1) AS job_id,
+                         (SELECT j.start_at FROM jobs j WHERE j.lead_id = a.lead_id ORDER BY j.start_at DESC LIMIT 1) AS job_start
+                       FROM activities a JOIN leads l ON l.id = a.lead_id
+                       ${before ? 'WHERE a.id < ?' : ''}
+                       ORDER BY a.id DESC LIMIT ?`).all(...(before ? [before] : []), Math.min(Math.max(limit, 1), 300));
+    return { updates: rows, seenId: seenId(user) };
+  }
+
+  // Changes since this admin last opened the feed, not counting their own.
+  function countUnseenUpdates(user) {
+    return stmt("SELECT COUNT(*) AS n FROM activities WHERE id > ? AND coalesce(user_name, '') != ?").get(seenId(user), user || '').n;
+  }
+
+  function markUpdatesSeen(user) {
+    stmt('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+      .run(seenKey(user), String(lastActivityId()));
+    return { ok: true };
+  }
+
   // Every lead matching the filters, with its full activity history (for Excel export).
   function exportLeads(filters = {}) {
     const rows = listLeads({ ...filters, view: filters.view || 'all' });
@@ -446,7 +478,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail,
-    archiveOldLeads, restoreLead, exportLeads, logActivity,
+    archiveOldLeads, restoreLead, exportLeads, logActivity, listUpdates, countUnseenUpdates, markUpdatesSeen,
   };
 }
 

@@ -75,7 +75,7 @@ const safeEqual = (a, b) => {
 // Returns the signed-in user ({ name }), or null if the login is wrong.
 // With no logins configured, everyone is let in without a name.
 function authenticate(req) {
-  if (!config.users.length) return { name: null, role: 'sales' };
+  if (!config.users.length) return { name: null, role: 'admin' };
   const [scheme, encoded] = (req.headers.authorization || '').split(' ');
   if (scheme !== 'Basic' || !encoded) return null;
   const decoded = Buffer.from(encoded, 'base64').toString('utf8');
@@ -135,10 +135,13 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const routes = [];
 
   // `pattern` supports ":param" segments; public routes skip dashboard login.
-  // `roles` lists which logins may call it (shop logins only get the job calendar).
+  // `roles` lists which login levels may call it (default: the lead pipeline, for admin and sales).
   // `rawBody` routes get the request bytes as-is (photo uploads) up to `bodyLimit`.
-  const ANY_LOGIN = ['sales', 'shop'];
-  function route(method, pattern, handler, { isPublic = false, roles = ['sales'], rawBody = false, bodyLimit } = {}) {
+  const ANY_LOGIN = ['admin', 'sales', 'shop'];
+  const LEADS = ['admin', 'sales'];
+  const CALENDAR = ['admin', 'shop'];
+  const ADMIN = ['admin'];
+  function route(method, pattern, handler, { isPublic = false, roles = LEADS, rawBody = false, bodyLimit } = {}) {
     const keys = [];
     const source = pattern.replace(/:(\w+)/g, (_, key) => {
       keys.push(key);
@@ -188,23 +191,23 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return leads.listLeads(leadFilters(query));
   });
   // ---- Shop calendar ----
-  route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
-  route('GET', '/api/jobs/unscheduled', () => jobs.listUnscheduled());
+  route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: CALENDAR });
+  route('GET', '/api/jobs/unscheduled', () => jobs.listUnscheduled(), { roles: ADMIN });
   route('POST', '/api/leads/:id/job', ({ params, body, actor }) => {
     const lead = leads.getLead(Number(params.id));
     if (lead.stage !== 'booked') throw new HttpError(400, 'Only booked leads go on the calendar. Log "Appointment Booked" first.');
     return jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
   });
-  route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: ANY_LOGIN });
-  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => jobs.updateJob(Number(params.id), body, actor), { roles: ANY_LOGIN });
-  route('POST', '/api/jobs/:id/checklist', ({ params, body }) => jobs.addItem(Number(params.id), body), { roles: ANY_LOGIN });
+  route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: CALENDAR });
+  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => jobs.updateJob(Number(params.id), body, actor), { roles: CALENDAR });
+  route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
-    jobs.updateItem(Number(params.id), Number(params.item), body, actor), { roles: ANY_LOGIN });
-  route('DELETE', '/api/jobs/:id/checklist/:item', ({ params }) => jobs.deleteItem(Number(params.id), Number(params.item)), { roles: ANY_LOGIN });
+    jobs.updateItem(Number(params.id), Number(params.item), body, actor), { roles: CALENDAR });
+  route('DELETE', '/api/jobs/:id/checklist/:item', ({ params, actor }) => jobs.deleteItem(Number(params.id), Number(params.item), actor), { roles: CALENDAR });
   // Photos arrive as the raw image bytes (the browser shrinks them first).
   route('POST', '/api/jobs/:id/photos', ({ params, raw, query, actor }) =>
     jobs.addPhoto(Number(params.id), raw, { phase: query.get('phase'), caption: query.get('caption') }, actor),
-  { roles: ANY_LOGIN, rawBody: true, bodyLimit: 15_000_000 });
+  { roles: CALENDAR, rawBody: true, bodyLimit: 15_000_000 });
   route('GET', '/api/jobs/:id/photos/:photo', ({ params, res }) => {
     const photo = jobs.getPhoto(Number(params.id), Number(params.photo));
     const data = fs.readFileSync(photo.path);
@@ -215,8 +218,19 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       'X-Content-Type-Options': 'nosniff',
     });
     res.end(data);
-  }, { roles: ANY_LOGIN });
-  route('DELETE', '/api/jobs/:id/photos/:photo', ({ params }) => jobs.deletePhoto(Number(params.id), Number(params.photo)), { roles: ANY_LOGIN });
+  }, { roles: CALENDAR });
+  route('DELETE', '/api/jobs/:id/photos/:photo', ({ params, actor }) => jobs.deletePhoto(Number(params.id), Number(params.photo), actor), { roles: CALENDAR });
+
+  // ---- Updates feed (admin) ----
+  route('GET', '/api/updates', ({ query, actor }) => {
+    const feed = leads.listUpdates({ before: Number(query.get('before')) || null, limit: Number(query.get('limit')) || 100, user: actor.user });
+    // Tag each change with the login level of whoever made it (sales vs shop).
+    const roleOf = new Map(config.users.map((u) => [u.name, u.role]));
+    for (const u of feed.updates) u.user_role = roleOf.get(u.user_name) ?? null;
+    return feed;
+  }, { roles: ADMIN });
+  route('GET', '/api/updates/count', ({ actor }) => ({ unseen: leads.countUnseenUpdates(actor.user) }), { roles: ADMIN });
+  route('POST', '/api/updates/seen', ({ actor }) => leads.markUpdatesSeen(actor.user), { roles: ADMIN });
 
   route('POST', '/api/leads/:id/restore', ({ params, actor }) => leads.restoreLead(Number(params.id), actor));
 
@@ -232,7 +246,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       'Content-Disposition': `attachment; filename="${label.replace(/\W+/g, '-')}-${stamp}.xlsx"`,
     });
     res.end(leadsWorkbook(rows, { title: label }));
-  });
+  }, { roles: ADMIN });
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
   route('GET', '/api/leads/:id', ({ params }) => leads.getLead(Number(params.id)));
   route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));
@@ -262,7 +276,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   });
   route('POST', '/api/leads/:id/notes', ({ params, body, actor }) => leads.addNote(Number(params.id), body.note, actor));
   route('GET', '/api/settings/email', () => leads.getEmailSettings());
-  route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body));
+  route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body), { roles: ADMIN });
   route('GET', '/api/reminders', ({ query }) => leads.listReminders({ status: query.get('status') || 'open' }));
   route('POST', '/api/reminders/:id/complete', ({ params, actor }) => leads.completeReminder(Number(params.id), actor));
   route('POST', '/api/reminders/:id/snooze', ({ params, body }) => leads.snoozeReminder(Number(params.id), body.due_at));
@@ -279,7 +293,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       }
     }
     return { fetched, created };
-  });
+  }, { roles: ADMIN });
 
   // Phone install details, named after the company.
   route('GET', '/manifest.webmanifest', ({ res }) => {
@@ -371,7 +385,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
         return send(res, 401, { error: 'Login required' }, { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
       }
       if (!match.isPublic && !match.roles.includes(user.role)) {
-        return send(res, 403, { error: 'Your login can only use the job calendar.' });
+        return send(res, 403, { error: `A ${user.role} login can't do that.` });
       }
       const actor = { user: user?.name ?? null, role: user?.role ?? null };
       const values = url.pathname.match(match.re).slice(1);

@@ -457,8 +457,44 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 }
 .main-nav button[aria-current="page"] { background: var(--accent); color: var(--accent-text); }
 body[data-section="calendar"] .lead-only { display: none !important; }
+/* Login levels: shop sees only the calendar, sales only the leads, admin everything. */
 body[data-role="shop"] .main-nav,
-body[data-role="shop"] #remindersBtn { display: none !important; }
+body[data-role="shop"] #remindersBtn,
+body[data-role="sales"] .main-nav,
+body:not([data-role="admin"]) .admin-only { display: none !important; }
+
+/* Admin Updates feed */
+.updates-filter { display: flex; gap: 6px; margin-bottom: 12px; }
+.updates-filter button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.updates-list { list-style: none; margin: 0; padding: 0; }
+.updates-day { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin: 14px 0 6px; }
+.update-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  padding: 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.update-item:hover { border-color: var(--accent); }
+.update-item.unseen { border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.update-item > * { grid-column: 2; }
+.update-item > .who-badge {
+  grid-column: 1;
+  grid-row: 1 / span 4;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 13px;
+  background: var(--accent); color: var(--accent-text);
+}
+.update-item .who-badge.shop { background: #c47a00; color: #fff; }
+.update-item .head { font-weight: 600; }
+.update-item .note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.update-item .meta { font-size: 12px; color: var(--muted); }
+#olderUpdates { width: 100%; margin-top: 8px; }
 
 /* Job status colors, used by chips, cards, the legend and the status picker. */
 .status-scheduled { --st: var(--accent); }

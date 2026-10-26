@@ -42,9 +42,12 @@
       </select>
     </div>
     <div class="actions">
-      <button id="syncFb" type="button" class="lead-only">Sync Facebook</button>
+      <button id="updatesBtn" type="button" class="admin-only">
+        Updates <span id="updatesBadge" class="badge" hidden></span>
+      </button>
+      <button id="syncFb" type="button" class="lead-only admin-only">Sync Facebook</button>
       <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
-      <button id="emailSettingsBtn" type="button" class="lead-only">Email template</button>
+      <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Email template</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
       </button>
@@ -215,6 +218,23 @@
         </form>
         <ul id="timeline" class="timeline"></ul>
       </section>
+    </div>
+  </aside>
+
+  <!-- Updates panel (admins): every change anyone made, newest first -->
+  <aside id="updatesPanel" class="drawer" aria-label="Updates" hidden>
+    <div class="drawer-head">
+      <h2>Updates</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <div class="updates-filter" role="group" aria-label="Show updates from">
+        <button type="button" data-filter="" aria-pressed="true">Everything</button>
+        <button type="button" data-filter="leads" aria-pressed="false">Sales</button>
+        <button type="button" data-filter="shop" aria-pressed="false">Shop</button>
+      </div>
+      <ol id="updatesList" class="updates-list"></ol>
+      <button id="olderUpdates" type="button" hidden>Show older</button>
     </div>
   </aside>
 

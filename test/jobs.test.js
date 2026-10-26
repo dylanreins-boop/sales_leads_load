@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 // Runs in its own process, so these logins don't affect the other test files.
-process.env.APP_USERS = 'Dylan:sales-pass,Mike:shop-pass:shop';
+process.env.APP_USERS = 'Dylan:admin-pass:admin,Sam:sales-pass:sales,Mike:shop-pass:shop';
 process.env.APP_PASSWORD = '';
 process.env.WEBSITE_API_KEY = '';
 
@@ -29,10 +29,11 @@ after(() => {
 });
 
 const login = (name, password) => `Basic ${Buffer.from(`${name}:${password}`).toString('base64')}`;
-const SALES = login('Dylan', 'sales-pass');
+const ADMIN = login('Dylan', 'admin-pass');
+const SALES = login('Sam', 'sales-pass');
 const SHOP = login('Mike', 'shop-pass');
 
-async function call(method, url, body, auth = SALES, headers = {}) {
+async function call(method, url, body, auth = ADMIN, headers = {}) {
   const isRaw = Buffer.isBuffer(body);
   const res = await fetch(base + url, {
     method,
@@ -152,8 +153,51 @@ test('a shop login only reaches the calendar', async () => {
   for (const [method, url] of [['GET', '/api/leads'], ['GET', '/api/reminders'], ['GET', `/api/leads/${coachLeadId}`], ['GET', '/api/export.xlsx'], ['GET', '/api/jobs/unscheduled']]) {
     assert.equal((await call(method, url, undefined, SHOP)).status, 403, `${method} ${url}`);
   }
-  assert.equal((await call('GET', '/api/meta', undefined, SALES)).data.currentRole, 'sales');
+  assert.equal((await call('GET', '/api/meta', undefined, ADMIN)).data.currentRole, 'admin');
   assert.equal((await fetch(`${base}/`, { headers: { Authorization: SHOP } })).status, 200, 'shop can load the app');
+});
+
+test('a sales login works leads and books jobs but has no calendar, export or settings', async () => {
+  assert.equal((await call('GET', '/api/meta', undefined, SALES)).data.currentRole, 'sales');
+  const { lead } = (await call('POST', '/api/leads', { full_name: 'Sales Booked', phone: '702-555-3333', vehicle_type: 'Car' }, SALES)).data;
+  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, {
+    disposition: 'booked', note: 'Booked by Sam', services: ['full_decon_coat'], job_start: '2026-11-12T15:00:00Z', job_end: '2026-11-12T22:00:00Z',
+  }, SALES);
+  assert.equal(booked.status, 201);
+  assert.ok(booked.data.job.id, 'sales can put the booking on the calendar');
+  assert.equal(booked.data.lead.jobs.length, 1, 'and sees the job time on the lead');
+  for (const [method, url] of [['GET', '/api/jobs?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z'], ['GET', `/api/jobs/${booked.data.job.id}`],
+    ['PATCH', `/api/jobs/${booked.data.job.id}`], ['GET', '/api/jobs/unscheduled'], ['GET', '/api/export.xlsx'], ['PUT', '/api/settings/email'],
+    ['POST', '/api/facebook/sync'], ['GET', '/api/updates'], ['GET', '/api/updates/count']]) {
+    assert.equal((await call(method, url, method === 'GET' ? undefined : {}, SALES)).status, 403, `${method} ${url}`);
+  }
+  assert.equal((await call('GET', '/api/settings/email', undefined, SALES)).status, 200, 'sales can see whether follow-up email is on');
+});
+
+test('admins get an Updates feed of everyone else\'s changes', async () => {
+  await call('POST', '/api/updates/seen', {});
+  assert.equal((await call('GET', '/api/updates/count')).data.unseen, 0);
+  const jobLead = (await call('GET', `/api/leads/${coachLeadId}`)).data;
+  const item = jobLead.jobs[0] && (await call('GET', `/api/jobs/${jobId}`, undefined, SHOP)).data.checklist[1];
+  await call('PATCH', `/api/jobs/${jobId}/checklist/${item.id}`, { done: true }, SHOP);
+  await call('POST', `/api/leads/${coachLeadId}/notes`, { note: 'Customer asked about ceramic on the awning' }, SALES);
+  await call('POST', `/api/leads/${coachLeadId}/notes`, { note: 'My own note' }, ADMIN);
+  assert.equal((await call('GET', '/api/updates/count')).data.unseen, 2, 'the admin\'s own changes are not counted');
+
+  const { updates, seenId } = (await call('GET', '/api/updates?limit=3')).data;
+  assert.equal(updates.length, 3);
+  assert.equal(updates[0].note, 'My own note');
+  assert.equal(updates[1].user_name, 'Sam');
+  assert.equal(updates[1].full_name, 'Jess Morgan');
+  assert.equal(updates[2].user_name, 'Mike');
+  assert.equal(updates[2].type, 'checklist');
+  assert.match(updates[2].note, /^Checked off: /);
+  assert.ok(updates.every((u) => u.id > seenId), 'all three are newer than the last visit');
+  const older = (await call('GET', `/api/updates?before=${updates[2].id}&limit=5`)).data.updates;
+  assert.ok(older.every((u) => u.id < updates[2].id));
+
+  await call('POST', '/api/updates/seen', {});
+  assert.equal((await call('GET', '/api/updates/count')).data.unseen, 0);
 });
 
 test('booked leads without a job show as needing a time and can be scheduled', async () => {

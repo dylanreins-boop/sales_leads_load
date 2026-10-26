@@ -22,19 +22,22 @@ module.exports = {
   port: Number(process.env.PORT) || 3000,
   dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'leads.db'),
 
-  // Dashboard logins (HTTP Basic auth). APP_USERS="Dylan:pass1,Sam:pass2,Mike:pass3:shop" gives
-  // each person their own login so the activity log shows who did what. A ":shop" ending makes a
-  // shop login: it only sees the job calendar. Everyone else is "sales" and sees everything.
-  // APP_USER/APP_PASSWORD still work for a single shared login.
-  // With neither set, the dashboard has no login.
+  // Dashboard logins (HTTP Basic auth): APP_USERS="Dylan:pass1:admin,Sam:pass2:sales,Mike:pass3:shop".
+  // Each person gets their own login so the activity log shows who did what. Levels:
+  //   admin - sees everything, plus the Updates feed of every change
+  //   sales - the lead pipelines: work leads, log calls, book jobs (no calendar, export or settings)
+  //   shop  - the job calendar only
+  // A login without a level is "sales". APP_USER/APP_PASSWORD (a single shared login) is an admin.
+  // With neither set, the dashboard has no login and everyone is treated as an admin.
   users: [
     ...list(process.env.APP_USERS).map((entry) => {
-      const role = /:shop$/i.test(entry) ? 'shop' : 'sales';
-      const rest = entry.replace(/:(shop|sales)$/i, '');
+      const level = entry.match(/:(admin|sales|shop)$/i);
+      const role = level ? level[1].toLowerCase() : 'sales';
+      const rest = entry.replace(/:(admin|sales|shop)$/i, '');
       const sep = rest.indexOf(':');
       return { name: rest.slice(0, sep).trim(), password: rest.slice(sep + 1), role };
     }).filter((u) => u.name && u.password),
-    ...(process.env.APP_PASSWORD ? [{ name: process.env.APP_USER || 'admin', password: process.env.APP_PASSWORD, role: 'sales' }] : []),
+    ...(process.env.APP_PASSWORD ? [{ name: process.env.APP_USER || 'admin', password: process.env.APP_PASSWORD, role: 'admin' }] : []),
   ],
   // Job photos are saved here (next to the database by default, so they land on the same volume).
   photosDir: process.env.PHOTOS_DIR || '',

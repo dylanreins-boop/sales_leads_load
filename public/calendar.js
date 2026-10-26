@@ -14,7 +14,6 @@ const cal = {
 };
 
 const DAY_MS = 86400000;
-const isShop = () => state.meta?.currentRole === 'shop';
 const jobStatusLabel = (id) => state.meta.jobStatuses.find((s) => s.id === id)?.label ?? id;
 const PHASE_LABEL = { before: 'Before', during: 'During', after: 'After' };
 
@@ -75,7 +74,7 @@ async function loadCalendar() {
   const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
   const [jobs, unscheduled] = await Promise.all([
     api(`/api/jobs?${params}`),
-    isShop() ? Promise.resolve([]) : api('/api/jobs/unscheduled'),
+    isAdmin() ? api('/api/jobs/unscheduled') : Promise.resolve([]),
   ]);
   cal.jobs = jobs;
   cal.unscheduled = unscheduled;
@@ -297,7 +296,7 @@ function renderJob() {
       job.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
       job.message && h('div', { class: 'message' }, job.message),
       job.services.length > 0 && h('div', { class: 'service-chips' }, ...job.services.map((id) => h('span', { class: 'service-chip' }, serviceLabels([id])))),
-      !isShop() && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
+      isAdmin() && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
 
     // Notes
     h('section', { class: 'card-section' },

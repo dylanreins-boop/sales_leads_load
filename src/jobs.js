@@ -199,8 +199,10 @@ function createJobService(db, { leads, photosDir }) {
       notes.push(`Job: ${STATUS_LABEL[job.status]} → ${STATUS_LABEL[patch.status]}`);
     }
     if ('notes' in patch) {
+      const text = String(patch.notes ?? '').trim() || null;
       sets.push('notes = ?');
-      params.push(String(patch.notes ?? '').trim() || null);
+      params.push(text);
+      if (text !== (job.notes ?? null)) notes.push(text ? `Job notes: ${text}` : 'Job notes cleared');
     }
     if ('services' in patch) {
       sets.push('services = ?');
@@ -223,8 +225,8 @@ function createJobService(db, { leads, photosDir }) {
     return item;
   }
 
-  function addItem(jobId, { label, section } = {}) {
-    getJob(jobId);
+  function addItem(jobId, { label, section } = {}, { user } = {}) {
+    const job = getJob(jobId);
     const text = String(label ?? '').trim();
     if (!text) throw new HttpError(400, 'Type what needs checking.');
     const where = SECTIONS.includes(section) ? section : 'Work';
@@ -234,11 +236,13 @@ function createJobService(db, { leads, photosDir }) {
     stmt('UPDATE job_checklist SET position = position + 1 WHERE job_id = ? AND position > ?').run(jobId, last);
     stmt('INSERT INTO job_checklist (job_id, section, label, position, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(jobId, where, text.slice(0, 200), last + 1, now());
+    leads.logActivity(job.lead_id, 'checklist', { note: `Checklist item added (${where}): ${text.slice(0, 200)}`, user });
     return getJob(jobId).checklist;
   }
 
   function updateItem(jobId, itemId, { done, label } = {}, { user } = {}) {
-    getItem(jobId, itemId);
+    const before = getItem(jobId, itemId);
+    const leadId = getJob(jobId).lead_id;
     if (label !== undefined) {
       const text = String(label).trim();
       if (!text) throw new HttpError(400, 'A checklist item needs text.');
@@ -247,19 +251,23 @@ function createJobService(db, { leads, photosDir }) {
     if (done !== undefined) {
       if (done) stmt('UPDATE job_checklist SET done_at = ?, done_by = ? WHERE id = ?').run(now(), user ?? null, itemId);
       else stmt('UPDATE job_checklist SET done_at = NULL, done_by = NULL WHERE id = ?').run(itemId);
+      if (Boolean(done) !== Boolean(before.done_at)) {
+        leads.logActivity(leadId, 'checklist', { note: `${done ? 'Checked off' : 'Unchecked'}: ${before.label}`, user });
+      }
     }
     return getItem(jobId, itemId);
   }
 
-  function deleteItem(jobId, itemId) {
-    getItem(jobId, itemId);
+  function deleteItem(jobId, itemId, { user } = {}) {
+    const item = getItem(jobId, itemId);
     stmt('DELETE FROM job_checklist WHERE id = ?').run(itemId);
+    leads.logActivity(getJob(jobId).lead_id, 'checklist', { note: `Checklist item removed: ${item.label}`, user });
     return { ok: true };
   }
 
   // ---- photos ----
   function addPhoto(jobId, buffer, { phase, caption } = {}, { user } = {}) {
-    getJob(jobId);
+    const job = getJob(jobId);
     if (!buffer?.length) throw new HttpError(400, 'No photo was sent.');
     const type = imageType(buffer);
     if (!type) throw new HttpError(415, 'That file is not a JPEG, PNG or WebP photo.');
@@ -271,6 +279,7 @@ function createJobService(db, { leads, photosDir }) {
       jobId, file, type.mime, PHOTO_PHASES.includes(phase) ? phase : 'during',
       String(caption ?? '').trim().slice(0, 300) || null, buffer.length, user ?? null, now(),
     );
+    leads.logActivity(job.lead_id, 'photo', { note: `Added a ${PHOTO_PHASES.includes(phase) ? phase : 'during'} photo`, user });
     return stmt('SELECT id, phase, caption, size, uploaded_by, created_at FROM job_photos WHERE id = ?').get(Number(lastInsertRowid));
   }
 
@@ -280,9 +289,10 @@ function createJobService(db, { leads, photosDir }) {
     return { ...photo, path: path.join(photosDir, path.basename(photo.file)) };
   }
 
-  function deletePhoto(jobId, photoId) {
+  function deletePhoto(jobId, photoId, { user } = {}) {
     const photo = getPhoto(jobId, photoId);
     stmt('DELETE FROM job_photos WHERE id = ?').run(photoId);
+    leads.logActivity(getJob(jobId).lead_id, 'photo', { note: `Deleted a ${photo.phase} photo`, user });
     fs.rm(photo.path, { force: true }, () => {});
     return { ok: true };
   }
