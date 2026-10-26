@@ -20,6 +20,16 @@ if [[ $EUID -ne 0 ]]; then echo "Run this with sudo." >&2; exit 1; fi
 if [[ -z "$DOMAIN" ]]; then echo "Usage: sudo bash $0 leads.yourdomain.com" >&2; exit 1; fi
 if [[ ! -f "$APP_DIR/server.js" ]]; then echo "Can't find server.js in $APP_DIR." >&2; exit 1; fi
 
+# Small servers (512 MB, like the $5 Lightsail plan) get a swap file so installs don't run out of memory.
+if [[ $(awk '/MemTotal/ {print $2}' /proc/meminfo) -lt 1500000 && ! -f /swapfile ]]; then
+  echo "==> Adding a 1 GB swap file (this server has under 1.5 GB of memory)"
+  fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 echo "==> Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
