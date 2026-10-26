@@ -194,7 +194,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     lead.activities = stmt('SELECT * FROM activities WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
-    lead.jobs = stmt('SELECT id, start_at, end_at, status FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id);
+    lead.jobs = stmt('SELECT id, start_at, end_at, status, amount_cents, amount_by, amount_at FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id);
     return lead;
   }
 

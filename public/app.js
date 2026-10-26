@@ -71,6 +71,40 @@ function fmtDateTime(iso) {
 }
 
 const isAdmin = () => state.meta?.currentRole === 'admin';
+const money = (cents, { cents: showCents = true } = {}) => (cents == null ? '' : (cents / 100).toLocaleString('en-US', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: showCents ? 2 : 0, maximumFractionDigits: showCents ? 2 : 0,
+}));
+
+// The job's dollar amount, with an inline editor (sales and admins).
+function amountEditor(job, { editable, onSaved }) {
+  const box = h('div', { class: 'job-amount' });
+  const show = () => {
+    box.replaceChildren(
+      h('span', { class: 'amount-label' }, 'Job amount'),
+      job.amount_cents == null
+        ? h('span', { class: 'amount-missing' }, 'Not set')
+        : h('span', { class: 'amount-value' }, money(job.amount_cents)),
+      job.amount_by && h('span', { class: 'muted' }, `by ${job.amount_by}`),
+      editable && h('button', { type: 'button', class: 'amount-edit', onclick: edit }, job.amount_cents == null ? 'Add amount' : 'Edit'));
+  };
+  const edit = () => {
+    const input = h('input', { inputmode: 'decimal', placeholder: '$1,250', 'aria-label': 'Job amount in dollars', value: job.amount_cents == null ? '' : (job.amount_cents / 100).toFixed(2) });
+    const form = h('form', { class: 'amount-form', onsubmit: async (e) => {
+      e.preventDefault();
+      try {
+        const saved = await api(`/api/jobs/${job.id}/amount`, { method: 'PATCH', body: { amount: input.value } });
+        Object.assign(job, { amount_cents: saved.amount_cents, amount_by: saved.amount_by });
+        toast(saved.amount_cents == null ? 'Job amount cleared' : `Job amount saved: ${money(saved.amount_cents)}`);
+        show();
+        onSaved?.(saved);
+      } catch (err) { fail(err); }
+    } }, h('span', { class: 'amount-label' }, 'Job amount'), input, h('button', { type: 'submit', class: 'primary' }, 'Save'), h('button', { type: 'button', onclick: show }, 'Cancel'));
+    box.replaceChildren(form);
+    input.focus();
+  };
+  show();
+  return box;
+}
 
 function timeAgo(iso) {
   const mins = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -135,13 +169,15 @@ function showSection(name) {
   document.body.dataset.section = section;
   $('#leadsSection').hidden = section !== 'leads';
   $('#calendarSection').hidden = section !== 'calendar';
-  $('#brandSection').textContent = section === 'calendar' ? 'Shop Calendar' : 'Lead Pipeline';
+  $('#revenueSection').hidden = section !== 'revenue';
+  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue' }[section] || 'Lead Pipeline';
   document.querySelectorAll('.main-nav button').forEach((b) => {
     if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
-  history.replaceState(null, '', `#${section === 'calendar' ? 'calendar' : state.pipeline}`);
+  history.replaceState(null, '', `#${section === 'leads' ? state.pipeline : section}`);
   if (section === 'calendar') loadCalendar().catch(fail);
+  else if (section === 'revenue') loadRevenue().catch(fail);
   else renderBoard();
 }
 
@@ -283,7 +319,7 @@ function renderLeadJob(lead) {
   const section = $('#leadJobSection');
   section.hidden = !open && lead.stage !== 'booked';
   if (section.hidden) return;
-  $('#leadJob').replaceChildren(open
+  $('#leadJob').replaceChildren(...[open
     ? h('div', { class: 'lead-job' },
       h('div', {},
         h('span', { class: `job-status status-${open.status}` }, state.meta.jobStatuses.find((s) => s.id === open.status)?.label || open.status),
@@ -292,7 +328,8 @@ function renderLeadJob(lead) {
       h('button', { type: 'button', onclick: () => showJobOnCalendar(open.id, open.start_at) }, 'Open on calendar'))
     : h('div', { class: 'lead-job' },
       h('span', { class: 'muted' }, 'Booked, but not on the shop calendar yet.'),
-      h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')));
+      h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')),
+    open && open.status !== 'cancelled' && amountEditor(open, { editable: true, onSaved: () => loadLeads().catch(() => {}) })].filter(Boolean));
 }
 
 // ---------- old & dead leads ----------
@@ -561,6 +598,7 @@ function activityItem(a) {
     job: 'Shop job',
     checklist: 'Shop checklist',
     photo: 'Job photos',
+    amount: 'Job amount',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -657,7 +695,7 @@ async function saveDisposition(e) {
   if (form.reminder.checked) body.reminder_at = new Date(form.reminder_at.value).toISOString();
   if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
   if (needsServices) body.services = services;
-  if (needsSchedule) Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString() });
+  if (needsSchedule) Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_amount: form.job_amount.value });
   try {
     const { lead, reminder, email, job } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
     if (job) toast(`Booked. On the shop calendar for ${fmtDateTime(job.start_at)}`);

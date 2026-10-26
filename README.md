@@ -87,6 +87,26 @@ in `PHOTOS_DIR` (by default a `photos` folder next to the database, so on Fly th
 
 Shop logins only see the calendar; sales logins see it view only. See [Login levels](#login-levels).
 
+## Job amounts and Revenue
+
+Sales and admins put a **dollar amount** on each job: in the **Job amount** box when logging "Appointment
+Booked" (optional), or later from the lead's Shop job box (sales and admins) or the job on the calendar
+(admins). Every set or change is logged on the lead with who did it ("Job amount: $1,400.00 (was
+$1,250.50)"). **Shop logins never see amounts**; the server removes them from everything it sends a
+shop login.
+
+Admins get a **Revenue** page (next to Leads and Calendar):
+
+- **Today, This week, This month, Year to date** totals, each with the job count and average job, how much
+  is still scheduled, and a warning when jobs in that period have no amount yet.
+- **Count by job date** (drop-off day) or **by booking date** (the day the rep booked it), and filter to
+  the RV pipeline or all other vehicles.
+- A **breakdown table** by day (this month), week (Sunday to Saturday) or month (this year), with totals.
+- **By sales rep, year to date**: jobs and revenue for whoever booked each job.
+- A list of jobs with **no amount yet**, with a box to add each one.
+
+Jobs marked Cancelled / Rescheduled don't count. The Excel export includes a Job amount column.
+
 ## Old & Dead Leads
 
 **14 days after a lead comes in**, it leaves its board and moves to the **Old & Dead Leads** tab, unless

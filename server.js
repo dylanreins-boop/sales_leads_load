@@ -13,7 +13,7 @@ const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 const { leadsWorkbook } = require('./src/export');
-const { createJobService, JOB_STATUSES, PHOTO_PHASES } = require('./src/jobs');
+const { createJobService, JOB_STATUSES, PHOTO_PHASES, parseAmount, hideAmount } = require('./src/jobs');
 const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
 const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 
@@ -195,6 +195,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
   });
   route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: ANY_LOGIN });
+  // The job's price: sales and admins set it; shop logins never see it.
+  route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
+  route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
   route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => jobs.updateJob(Number(params.id), body, actor), { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
@@ -254,9 +257,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   route('POST', '/api/leads/:id/disposition', async ({ params, body, actor }) => {
     const id = Number(params.id);
     const schedule = DISPOSITIONS_BY_ID[body.disposition]?.schedules ? jobs.parseSchedule(body) : null;
+    const amount = schedule ? parseAmount(body.job_amount) : null;
     const result = leads.dispositionLead(id, body, actor);
     if (schedule) {
       result.job = jobs.scheduleLead(id, schedule, actor);
+      if (amount != null) result.job = jobs.setAmount(result.job.id, body.job_amount, actor);
       result.lead = leads.getLead(id);
     }
     // The rep can untick "send follow-up email" for a single call.
@@ -393,7 +398,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       const params = Object.fromEntries(match.keys.map((k, i) => [k, decodeURIComponent(values[i])]));
       const raw = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readBody(req, match.bodyLimit) : Buffer.alloc(0);
       const body = match.rawBody ? {} : parseBody(raw, req.headers['content-type']);
-      const result = await match.handler({ req, res, params, query: url.searchParams, body, raw, actor });
+      let result = await match.handler({ req, res, params, query: url.searchParams, body, raw, actor });
+      if (actor.role === 'shop') result = hideAmount(result);
       if (!res.headersSent) send(res, req.method === 'POST' ? 201 : 200, result ?? { ok: true });
     } catch (err) {
       const status = err.status || 500;

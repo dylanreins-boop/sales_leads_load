@@ -95,6 +95,28 @@ function imageType(buf) {
 
 const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
+const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// "$1,250", "1250.5" or 1250 -> cents. Blank clears the amount (null).
+function parseAmount(value) {
+  if (value == null || String(value).trim() === '') return null;
+  const text = String(value).replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) throw new HttpError(400, 'Enter the job amount in dollars, like 1250 or 1,250.00.');
+  const cents = Math.round(Number(text) * 100);
+  if (cents > 100_000_000) throw new HttpError(400, 'That amount looks too big. Check the number.');
+  return cents;
+}
+
+// Job prices are for sales and admins; shop logins never get them.
+const AMOUNT_KEYS = ['amount_cents', 'amount_by', 'amount_at'];
+function hideAmount(value) {
+  if (Array.isArray(value)) return value.map(hideAmount);
+  if (value && typeof value === 'object' && 'amount_cents' in value) {
+    return Object.fromEntries(Object.entries(value).filter(([k]) => !AMOUNT_KEYS.includes(k)));
+  }
+  return value;
+}
+
 function createJobService(db, { leads, photosDir }) {
   const stmt = (sql) => db.prepare(sql);
   const now = () => new Date().toISOString();
@@ -175,6 +197,28 @@ function createJobService(db, { leads, photosDir }) {
       leads.logActivity(leadId, 'job', { note: `Job on the calendar: drop-off ${when(start)}, pick-up ${when(end)}${what ? ` · ${what}` : ''}`, user });
       return getJob(jobId);
     });
+  }
+
+  function setAmount(id, value, { user } = {}) {
+    const job = getJob(id);
+    const cents = parseAmount(value);
+    if (cents === job.amount_cents) return job;
+    stmt('UPDATE jobs SET amount_cents = ?, amount_by = ?, amount_at = ?, updated_at = ? WHERE id = ?')
+      .run(cents, user ?? null, now(), now(), id);
+    const was = job.amount_cents == null ? '' : ` (was ${money(job.amount_cents)})`;
+    leads.logActivity(job.lead_id, 'amount', { note: cents == null ? `Job amount cleared${was}` : `Job amount: ${money(cents)}${was}`, user });
+    return getJob(id);
+  }
+
+  // Every job dropped off or booked in [from, to), for the admin Revenue page.
+  function revenueJobs({ from, to } = {}) {
+    const start = parseTime(from, 'start');
+    const end = parseTime(to, 'end');
+    return stmt(`SELECT j.id, j.lead_id, j.start_at, j.end_at, j.status, j.created_at, j.created_by, j.amount_cents, j.services,
+                   l.full_name, l.first_name, l.last_name, l.vehicle_type, l.vehicle_year, l.vehicle_make, l.vehicle_model
+                 FROM jobs j JOIN leads l ON l.id = j.lead_id
+                 WHERE (j.start_at >= ? AND j.start_at < ?) OR (j.created_at >= ? AND j.created_at < ?)
+                 ORDER BY j.start_at`).all(start, end, start, end).map(shape);
   }
 
   function updateJob(id, patch = {}, { user } = {}) {
@@ -298,9 +342,9 @@ function createJobService(db, { leads, photosDir }) {
   }
 
   return {
-    parseSchedule, scheduleLead, listJobs, listUnscheduled, getJob, updateJob,
+    parseSchedule, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };
 }
 
-module.exports = { createJobService, checklistFor, JOB_STATUSES, PHOTO_PHASES, CLOSED };
+module.exports = { createJobService, checklistFor, parseAmount, hideAmount, JOB_STATUSES, PHOTO_PHASES, CLOSED };

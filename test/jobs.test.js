@@ -208,6 +208,39 @@ test('admins get an Updates feed of everyone else\'s changes', async () => {
   assert.equal((await call('GET', '/api/updates/count')).data.unseen, 0);
 });
 
+test('sales and admins put a dollar amount on jobs; the shop never sees it', async () => {
+  const { lead } = (await call('POST', '/api/leads', { full_name: 'Paid Job', phone: '702-555-4444', vehicle_type: 'SUV' }, SALES)).data;
+  const booking = { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'], job_start: '2026-11-16T15:00:00Z', job_end: '2026-11-16T23:00:00Z' };
+  const bad = await call('POST', `/api/leads/${lead.id}/disposition`, { ...booking, job_amount: '12 hundred' }, SALES);
+  assert.equal(bad.status, 400);
+  assert.match(bad.data.error, /job amount/);
+  assert.equal((await call('GET', `/api/leads/${lead.id}`)).data.stage, 'new', 'nothing saved with a bad amount');
+
+  const res = await call('POST', `/api/leads/${lead.id}/disposition`, { ...booking, job_amount: '$1,250.50' }, SALES);
+  assert.equal(res.status, 201);
+  const id = res.data.job.id;
+  assert.equal(res.data.job.amount_cents, 125050);
+  assert.equal(res.data.job.amount_by, 'Sam');
+  assert.equal(res.data.lead.jobs[0].amount_cents, 125050, 'the lead shows the amount');
+
+  const shopView = (await call('GET', `/api/jobs/${id}`, undefined, SHOP)).data;
+  assert.ok(!('amount_cents' in shopView) && !('amount_by' in shopView), 'shop job view has no amount');
+  const shopWeek = (await call('GET', '/api/jobs?from=2026-11-15T00:00:00Z&to=2026-11-22T00:00:00Z', undefined, SHOP)).data;
+  assert.ok(shopWeek.length && shopWeek.every((j) => !('amount_cents' in j)), 'shop calendar has no amounts');
+  assert.ok(!('amount_cents' in (await call('PATCH', `/api/jobs/${id}`, { notes: 'Bay 1' }, SHOP)).data), 'or in job updates');
+  assert.equal((await call('PATCH', `/api/jobs/${id}/amount`, { amount: 1 }, SHOP)).status, 403, 'shop can\'t set it');
+  assert.equal((await call('GET', `/api/jobs/${id}`, undefined, SALES)).data.amount_cents, 125050, 'sales sees it on the calendar');
+
+  assert.equal((await call('PATCH', `/api/jobs/${id}/amount`, { amount: '1400' }, SALES)).data.amount_cents, 140000);
+  assert.equal((await call('PATCH', `/api/jobs/${id}/amount`, { amount: '-5' }, SALES)).status, 400);
+  const notes = (await call('GET', `/api/leads/${lead.id}`)).data.activities.filter((a) => a.type === 'amount').map((a) => [a.note, a.user_name]);
+  assert.deepEqual(notes, [['Job amount: $1,400.00 (was $1,250.50)', 'Sam'], ['Job amount: $1,250.50', 'Sam']]);
+
+  assert.equal((await call('GET', '/api/revenue?from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z', undefined, SALES)).status, 403, 'revenue is admin only');
+  const revenue = (await call('GET', '/api/revenue?from=2026-11-16T00:00:00Z&to=2026-11-17T00:00:00Z')).data;
+  assert.ok(revenue.some((j) => j.id === id && j.amount_cents === 140000 && j.full_name === 'Paid Job'));
+});
+
 test('booked leads without a job show as needing a time and can be scheduled', async () => {
   const { lead } = (await call('POST', '/api/leads', { full_name: 'Old Booking', phone: '702-555-1111', vehicle_type: 'Boat' })).data;
   // Simulate a lead booked before the calendar existed.
@@ -235,5 +268,5 @@ test('the Excel export includes each lead\'s shop job', async () => {
   const res = await call('GET', '/api/export.xlsx');
   assert.equal(res.status, 200);
   const text = res.data.toString('utf8');
-  for (const part of ['Job drop-off', 'Job status', 'In the shop', 'Keys in lockbox 4']) assert.ok(text.includes(part), part);
+  for (const part of ['Job drop-off', 'Job status', 'Job amount', 'In the shop', 'Keys in lockbox 4']) assert.ok(text.includes(part), part);
 });

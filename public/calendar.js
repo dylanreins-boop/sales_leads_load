@@ -308,6 +308,7 @@ function renderJob() {
       job.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
       job.message && h('div', { class: 'message' }, job.message),
       job.services.length > 0 && h('div', { class: 'service-chips' }, ...job.services.map((id) => h('span', { class: 'service-chip' }, serviceLabels([id])))),
+      state.meta.currentRole !== 'shop' && amountEditor(job, { editable: isAdmin() }),
       state.meta.currentRole !== 'shop' && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
 
     // Notes

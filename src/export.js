@@ -63,6 +63,7 @@ const COLUMNS = [
   ['Job drop-off', 17, (l) => when(l.job?.start_at)],
   ['Job pick-up', 17, (l) => when(l.job?.end_at)],
   ['Job status', 16, (l) => (l.job ? JOB_STATUSES.find((s) => s.id === l.job.status)?.label : '')],
+  ['Job amount', 12, (l) => (l.job?.amount_cents != null ? l.job.amount_cents / 100 : '')],
   ['Checklist', 10, (l) => (l.job ? `${l.job.checklist_done}/${l.job.checklist_total}` : '')],
   ['Job photos', 10, (l) => (l.job ? l.job.photo_count : '')],
   ['Job notes', 30, (l) => l.job?.notes],

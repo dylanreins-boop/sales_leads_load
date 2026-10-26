@@ -456,7 +456,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   color: var(--bar-muted);
 }
 .main-nav button[aria-current="page"] { background: var(--accent); color: var(--accent-text); }
-body[data-section="calendar"] .lead-only { display: none !important; }
+body[data-section="calendar"] .lead-only,
+body[data-section="revenue"] .lead-only { display: none !important; }
 /* Login levels: shop sees only the calendar, sales the leads plus a view-only calendar, admin everything. */
 body[data-role="shop"] .main-nav,
 body[data-role="shop"] #remindersBtn,
@@ -494,6 +495,55 @@ body:not([data-role="admin"]) .admin-only { display: none !important; }
 .update-item .note { white-space: pre-wrap; overflow-wrap: anywhere; }
 .update-item .meta { font-size: 12px; color: var(--muted); }
 #olderUpdates { width: 100%; margin-top: 8px; }
+
+/* Job amount (sales and admins) */
+.job-amount { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 10px; }
+.job-amount .amount-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.job-amount .amount-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.job-amount .amount-missing { color: var(--warn); font-weight: 600; }
+.job-amount .amount-edit { margin-left: auto; }
+.amount-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
+.amount-form input { flex: 1 1 110px; min-width: 0; margin: 0; }
+#leadJob { display: grid; gap: 8px; }
+.optional { font-weight: 400; }
+
+/* Revenue page (admins) */
+.revenue { overflow: auto; padding: 14px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); gap: 14px; }
+.revenue > * { flex-shrink: 0; }
+.rev-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.rev-title { font-family: var(--font-brand); font-size: 22px; }
+.rev-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rev-controls select { width: auto; }
+.rev-note { margin: 0; }
+.rev-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.rev-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 2px; align-content: start; }
+.rev-tile h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.rev-range { font-size: 12px; color: var(--muted); }
+.rev-total { font-family: var(--font-brand); font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 6px 0 2px; color: var(--text); }
+.rev-sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rev-flag { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--warn); }
+.rev-missing { background: var(--panel); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: 12px; padding: 10px 14px; }
+.rev-missing summary { cursor: pointer; font-weight: 600; color: var(--warn); }
+.rev-missing ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.rev-missing li { display: grid; gap: 6px; }
+.rev-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.rev-block { display: grid; gap: 8px; min-width: 0; }
+.rev-block-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.rev-block-head h3 { font-size: 15px; }
+table.rev-table { width: 100%; min-width: 0; }
+.rev-table caption { text-align: left; padding: 8px 10px; font-size: 12px; color: var(--muted); caption-side: top; }
+.rev-table tr.empty td { color: var(--muted); }
+.rev-table tr.current td { background: color-mix(in srgb, var(--accent) 8%, transparent); font-weight: 600; }
+.rev-table tfoot th { border-top: 2px solid var(--border); border-bottom: none; color: var(--text); background: var(--panel); }
+.rev-now { margin-left: 8px; font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent); border-radius: 8px; padding: 1px 6px; }
+.rev-flag-inline { color: var(--warn); font-size: 12px; }
+@media (max-width: 900px) {
+  .rev-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rev-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 420px) {
+  .rev-total { font-size: 24px; }
+}
 
 /* View-only job panel (sales) */
 .view-only { margin: 0 0 4px; }

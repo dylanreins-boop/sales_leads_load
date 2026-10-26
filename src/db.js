@@ -86,7 +86,10 @@ CREATE TABLE IF NOT EXISTS jobs (
   services   TEXT,                              -- JSON list of service ids
   created_by TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  amount_cents INTEGER,                         -- job price; sales and admins only
+  amount_by    TEXT,
+  amount_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_time ON jobs (start_at, end_at);
 CREATE INDEX IF NOT EXISTS jobs_lead ON jobs (lead_id);
@@ -161,6 +164,9 @@ function migrate(db) {
   const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
   if (!has('leads', 'sms_opt_in')) db.exec('ALTER TABLE leads ADD COLUMN sms_opt_in INTEGER');
+  if (!has('jobs', 'amount_cents')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN amount_cents INTEGER; ALTER TABLE jobs ADD COLUMN amount_by TEXT; ALTER TABLE jobs ADD COLUMN amount_at TEXT');
+  }
   for (const column of ['vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'booked_services', 'heard_about', 'archived_at', 'restored_at']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }

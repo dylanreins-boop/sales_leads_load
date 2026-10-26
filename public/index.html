@@ -30,6 +30,7 @@
     <nav class="main-nav" aria-label="Sections">
       <button type="button" data-section="leads" aria-current="page">Leads</button>
       <button type="button" data-section="calendar">Calendar</button>
+      <button type="button" data-section="revenue" class="admin-only">Revenue</button>
     </nav>
     <span id="currentUser" class="muted" hidden></span>
     <div class="filters lead-only">
@@ -92,6 +93,45 @@
   </section>
 
   </div>
+
+  <!-- Revenue (admins): job amounts added up by day, week, month and year to date -->
+  <section id="revenueSection" class="section revenue" aria-labelledby="revTitle" hidden>
+    <div class="rev-toolbar">
+      <h2 id="revTitle" class="rev-title">Revenue</h2>
+      <div class="rev-controls">
+        <div id="revBasis" class="segmented" role="group" aria-label="Count jobs by">
+          <button type="button" data-basis="job" aria-pressed="true">By job date</button>
+          <button type="button" data-basis="booked" aria-pressed="false">By booking date</button>
+        </div>
+        <select id="revPipeline" aria-label="Pipeline">
+          <option value="">All vehicles</option>
+          <option value="rv">RV Pipeline</option>
+          <option value="other">All Other Vehicles</option>
+        </select>
+      </div>
+    </div>
+    <p id="revBasisNote" class="muted rev-note"></p>
+    <div id="revTiles" class="rev-tiles"></div>
+    <div id="revMissing"></div>
+    <div class="rev-grid">
+      <section class="rev-block" aria-labelledby="revBreakTitle">
+        <div class="rev-block-head">
+          <h3 id="revBreakTitle">Breakdown</h3>
+          <div id="revBreak" class="segmented" role="group" aria-label="Breakdown by">
+            <button type="button" data-break="day" aria-pressed="true">Days</button>
+            <button type="button" data-break="week" aria-pressed="false">Weeks</button>
+            <button type="button" data-break="month" aria-pressed="false">Months</button>
+          </div>
+        </div>
+        <div class="table-scroll"><table id="revTable" class="matrix rev-table"></table></div>
+      </section>
+      <section class="rev-block" aria-labelledby="revRepTitle">
+        <div class="rev-block-head"><h3 id="revRepTitle">By sales rep, year to date</h3></div>
+        <div class="table-scroll"><table id="revReps" class="matrix rev-table"></table></div>
+      </section>
+    </div>
+    <p class="muted rev-note">Every job counts except ones marked Cancelled / Rescheduled. Jobs still scheduled count toward their day, week and month. Year to date runs through today.</p>
+  </section>
 
   <!-- Shop calendar -->
   <section id="calendarSection" class="section calendar" aria-labelledby="calTitle" hidden>
@@ -176,6 +216,9 @@
             <div class="info-grid">
               <label>Drop-off <input type="datetime-local" name="job_start"></label>
               <label>Pick-up <input type="datetime-local" name="job_end"></label>
+              <label class="span-2">Job amount <span class="optional">(optional, shop never sees it)</span>
+                <input name="job_amount" inputmode="decimal" placeholder="$1,250" autocomplete="off">
+              </label>
             </div>
           </fieldset>
           <p id="scheduleError" class="field-error" hidden>Pick a drop-off and a pick-up time after it.</p>
@@ -398,5 +441,6 @@
 
   <script src="app.js"></script>
   <script src="calendar.js"></script>
+  <script src="revenue.js"></script>
 </body>
 </html>
