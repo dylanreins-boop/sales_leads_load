@@ -16,6 +16,8 @@ const { leadsWorkbook } = require('./src/export');
 const { createJobService, JOB_STATUSES, PHOTO_PHASES, parseAmount, hideAmount } = require('./src/jobs');
 const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
 const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
+const { createQuoteService } = require('./src/quotes');
+const { createReviewService } = require('./src/reviews');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -74,6 +76,36 @@ const safeEqual = (a, b) => {
 };
 
 
+const SESSION_COOKIE = 'bm_session';
+
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return decodeURIComponent(rest.join('='));
+  }
+  return null;
+}
+
+// Secure on HTTPS (Fly sends x-forwarded-proto), so it also works on http://localhost.
+function sessionCookie(req, value, maxAge) {
+  const secure = req.headers['x-forwarded-proto'] === 'https' || req.socket?.encrypted;
+  return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+}
+
+// Slows down password guessing: a few wrong tries per name and address, then a 15-minute wait.
+const loginFailures = new Map();
+const LOGIN_WINDOW = 15 * 60000;
+const LOGIN_MAX_TRIES = 8;
+function loginKey(req, name) {
+  const ip = String(req.headers['fly-client-ip'] || req.socket?.remoteAddress || '');
+  return `${ip}|${String(name || '').trim().toLowerCase()}`;
+}
+function tooManyTries(key) {
+  const recent = (loginFailures.get(key) || []).filter((t) => Date.now() - t < LOGIN_WINDOW);
+  loginFailures.set(key, recent);
+  return recent.length >= LOGIN_MAX_TRIES;
+}
+
 function corsHeaders(req) {
   const origin = req.headers.origin;
   const allowed = config.website.corsOrigins;
@@ -115,12 +147,17 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     photosDir: photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos'),
   });
   const users = createUserService(db, { serverUsers: config.users });
+  const quotes = createQuoteService(db, { leads, brand: config.brand });
+  const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
   const routes = [];
 
   // Returns the signed-in user ({ name, role }), or null if the login is wrong.
+  // The sign-in page sets a session cookie; scripts can still use HTTP Basic auth.
   // With no logins at all, everyone is let in as an admin without a name.
   function authenticate(req) {
     if (!users.anyLogins()) return { name: null, role: 'admin' };
+    const session = users.sessionUser(readCookie(req, SESSION_COOKIE));
+    if (session) return session;
     const [scheme, encoded] = (req.headers.authorization || '').split(' ');
     if (scheme !== 'Basic' || !encoded) return null;
     const decoded = Buffer.from(encoded, 'base64').toString('utf8');
@@ -164,6 +201,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     reminderHour: config.reminderHour,
     reminderSkipWeekends: config.reminderSkipWeekends,
     archiveDays: config.archiveDays,
+    recoatMonths: config.recoatMonths,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
     facebookFormIds: config.facebook.formIds,
     emailConfigured: mailer.configured,
@@ -282,6 +320,47 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   });
   route('POST', '/api/leads/:id/notes', ({ params, body, actor }) => leads.addNote(Number(params.id), body.note, actor));
   route('GET', '/api/settings/email', () => leads.getEmailSettings());
+  route('GET', '/api/settings/reviews', () => ({ ...reviews.getSettings(), emailConfigured: mailer.configured }), { roles: ADMIN });
+  route('PUT', '/api/settings/reviews', ({ body }) => reviews.saveSettings(body), { roles: ADMIN });
+
+  // ---- Sign in / sign out ----
+  route('POST', '/api/login', ({ req, res, body }) => {
+    const key = loginKey(req, body.name);
+    if (tooManyTries(key)) throw new HttpError(429, 'Too many wrong tries. Wait 15 minutes, or ask an admin to reset your password.');
+    const user = users.authenticate(String(body.name || '').trim(), String(body.password || ''));
+    if (!user) {
+      loginFailures.get(key).push(Date.now());
+      throw new HttpError(401, 'That name and password don\'t match. Check them and try again.');
+    }
+    loginFailures.delete(key);
+    const { token, maxAge } = users.createSession(user.name);
+    send(res, 200, { name: user.name, role: user.role }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
+  }, { isPublic: true });
+  route('POST', '/api/logout', ({ req, res }) => {
+    const token = readCookie(req, SESSION_COOKIE);
+    if (token) users.endSession(token);
+    send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
+  }, { isPublic: true });
+
+  // ---- Quotes (sales and admins) ----
+  route('GET', '/api/settings/prices', () => quotes.getPrices());
+  route('PUT', '/api/settings/prices', ({ body }) => quotes.savePrices(body), { roles: ADMIN });
+  route('POST', '/api/quotes/preview', ({ body }) => quotes.priceQuote(body));
+  route('POST', '/api/leads/:id/quotes', ({ params, body, actor }) => quotes.saveQuote(Number(params.id), body, actor));
+  route('POST', '/api/quotes/:id/email', async ({ params, actor }) => {
+    const { quote, message } = quotes.quoteEmail(Number(params.id));
+    try {
+      await mailer.send(message);
+    } catch (err) {
+      leads.recordEmail(quote.lead_id, message, { status: 'failed', error: err.message, trigger: 'quote', user: actor.user, label: 'Quote email' });
+      throw new HttpError(502, `The quote email didn't send: ${err.message}`);
+    }
+    leads.recordEmail(quote.lead_id, message, { status: 'sent', trigger: 'quote', user: actor.user, label: 'Quote email' });
+    return { quote: quotes.markEmailed(quote.id, message.to), lead: leads.getLead(quote.lead_id) };
+  });
+
+  // ---- Lead source report (admin) ----
+  route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
   route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body), { roles: ADMIN });
   route('GET', '/api/reminders', ({ query }) => leads.listReminders({ status: query.get('status') || 'open' }));
   route('POST', '/api/reminders/:id/complete', ({ params, actor }) => leads.completeReminder(Number(params.id), actor));
@@ -373,6 +452,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   leads.archiveOldLeads();
   const sweep = setInterval(() => leads.archiveOldLeads(), 3600000);
   sweep.unref();
+  // Review-request emails go out every 15 minutes once they're due.
+  const sendReviews = () => reviews.sendDue().catch((err) => console.error('Review requests failed:', err.message));
+  sendReviews();
+  const reviewTimer = setInterval(sendReviews, 15 * 60000);
+  reviewTimer.unref();
 
   return async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');
@@ -380,15 +464,21 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       const match = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
       if (!match) {
         if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
-          const openAsset = url.pathname.startsWith('/icons/') || url.pathname.startsWith('/brand/');
-          if (!openAsset && !authenticate(req)) return send(res, 401, 'Login required', { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
+          // The sign-in page and what it needs load without signing in.
+          if (url.pathname === '/login') {
+            if (users.anyLogins() && authenticate(req)) return send(res, 302, '', { Location: '/' });
+            return serveStatic(req, res, '/login.html');
+          }
+          const openAsset = url.pathname.startsWith('/icons/') || url.pathname.startsWith('/brand/')
+            || ['/styles.css', '/login.html', '/manifest.webmanifest'].includes(url.pathname);
+          if (!openAsset && !authenticate(req)) return send(res, 302, '', { Location: '/login' });
           return serveStatic(req, res, url.pathname);
         }
         return send(res, 404, { error: 'Not found' });
       }
       const user = match.isPublic ? null : authenticate(req);
       if (!match.isPublic && !user) {
-        return send(res, 401, { error: 'Login required' }, { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
+        return send(res, 401, { error: 'Sign in to continue.' });
       }
       if (!match.isPublic && !match.roles.includes(user.role)) {
         return send(res, 403, { error: `A ${user.role} login can't do that.` });

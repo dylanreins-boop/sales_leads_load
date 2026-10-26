@@ -20,6 +20,7 @@ async function loadRevenue() {
   rev.year = year;
   rev.jobs = await api(`/api/revenue?from=${from.toISOString()}&to=${to.toISOString()}`);
   renderRevenue();
+  await loadSources();
 }
 
 function countedJobs() {
@@ -154,7 +155,52 @@ function renderReps(jobs) {
       : [h('tr', {}, h('td', { colspan: 3, class: 'muted' }, 'No jobs booked yet this year.'))])));
 }
 
+// ---------- Where leads come from ----------
+const SOURCE_NAMES = { facebook: 'Facebook', website: 'Website', manual: 'Phone / walk-in' };
+
+function sourceRange() {
+  const now = new Date();
+  const period = $('#srcPeriod').value;
+  if (period === 'month') return [monthStart(now), addDays(startOfDay(now), 1)];
+  if (period === '90') return [addDays(startOfDay(now), -89), addDays(startOfDay(now), 1)];
+  return [new Date(now.getFullYear(), 0, 1), addDays(startOfDay(now), 1)];
+}
+
+async function loadSources() {
+  const [from, to] = sourceRange();
+  const rows = await api(`/api/reports/sources?from=${from.toISOString()}&to=${to.toISOString()}`);
+  const pick = rows.filter((r) => !rev.pipeline || r.pipeline === rev.pipeline);
+  renderSourceTable($('#srcBySource'), 'Lead source', pick, (r) => SOURCE_NAMES[r.source] || r.source);
+  renderSourceTable($('#srcByHeard'), 'How they heard about us', pick, (r) => r.heard_about || 'Not asked');
+}
+
+function renderSourceTable(table, title, rows, keyOf) {
+  const groups = new Map();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const g = groups.get(k) || { leads: 0, booked: 0, revenue: 0 };
+    g.leads += 1;
+    if (r.booked) g.booked += 1;
+    g.revenue += r.revenue_cents || 0;
+    groups.set(k, g);
+  }
+  const sorted = [...groups.entries()].sort((a, b) => b[1].revenue - a[1].revenue || b[1].leads - a[1].leads);
+  const pct = (g) => (g.leads ? `${Math.round((g.booked / g.leads) * 100)}%` : '–');
+  const all = sorted.reduce((t, [, g]) => ({ leads: t.leads + g.leads, booked: t.booked + g.booked, revenue: t.revenue + g.revenue }), { leads: 0, booked: 0, revenue: 0 });
+  table.replaceChildren(
+    h('thead', {}, h('tr', {}, h('th', {}, title), h('th', { class: 'num' }, 'Leads'), h('th', { class: 'num' }, 'Booked'),
+      h('th', { class: 'num' }, 'Booking rate'), h('th', { class: 'num' }, 'Revenue'), h('th', { class: 'num' }, 'Per lead'))),
+    h('tbody', {}, ...(sorted.length ? sorted.map(([k, g]) => h('tr', {},
+      h('td', {}, k), h('td', { class: 'num' }, g.leads), h('td', { class: 'num' }, g.booked), h('td', { class: 'num' }, pct(g)),
+      h('td', { class: 'num' }, money(g.revenue, { cents: false })), h('td', { class: 'num' }, money(Math.round(g.revenue / g.leads), { cents: false }))))
+      : [h('tr', {}, h('td', { colspan: 6, class: 'muted' }, 'No leads came in during this period.'))])),
+    h('tfoot', {}, h('tr', {}, h('th', {}, 'Total'), h('th', { class: 'num' }, all.leads), h('th', { class: 'num' }, all.booked),
+      h('th', { class: 'num' }, pct(all)), h('th', { class: 'num' }, money(all.revenue, { cents: false })),
+      h('th', { class: 'num' }, all.leads ? money(Math.round(all.revenue / all.leads), { cents: false }) : '–'))));
+}
+
 function initRevenue() {
+  $('#srcPeriod').addEventListener('change', () => loadSources().catch(fail));
   $('#revBasis').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) { rev.basis = b.dataset.basis; renderRevenue(); }
@@ -163,7 +209,7 @@ function initRevenue() {
     const b = e.target.closest('button');
     if (b) { rev.breakdown = b.dataset.break; renderRevenue(); }
   });
-  $('#revPipeline').addEventListener('change', (e) => { rev.pipeline = e.target.value; renderRevenue(); });
+  $('#revPipeline').addEventListener('change', (e) => { rev.pipeline = e.target.value; renderRevenue(); loadSources().catch(fail); });
 }
 
 initRevenue();

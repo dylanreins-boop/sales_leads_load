@@ -15,6 +15,7 @@ const state = {
   oldLeads: [],
   customers: [],
   customerVehicle: '',
+  customerDue: '',
   oldFilters: { vehicle: '', source: '', status: '' },
 };
 
@@ -43,6 +44,11 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  // Signed out (or the session ended): go to the sign-in page.
+  if (res.status === 401 && !path.startsWith('/api/login')) {
+    location.href = '/login';
+    throw new Error('Sign in to continue.');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -409,6 +415,14 @@ function renderOld() {
 }
 
 // ---------- past customers ----------
+// Coatings need a yearly maintenance visit: flag customers this many months after pick-up.
+function maintenanceDue(l) {
+  if (!l.last_pickup_at) return false;
+  const due = new Date(l.last_pickup_at);
+  due.setMonth(due.getMonth() + (state.meta.recoatMonths ?? 11));
+  return due <= new Date();
+}
+
 function renderCustomers() {
   $('#customersIntro').textContent = `Booked customers move here ${state.meta.archiveDays} days after their job is picked up. `
     + 'If they inquire again or you log a call, they go back on the board. "Book again" puts them back as a new lead.';
@@ -420,8 +434,12 @@ function renderCustomers() {
   if (select.value !== state.customerVehicle) state.customerVehicle = select.value = '';
 
   const v = state.customerVehicle;
+  $('#customerDue').value = state.customerDue;
+  const dueCount = state.customers.filter(maintenanceDue).length;
+  $('#customerDue').options[1].textContent = `Due for maintenance (${dueCount})`;
   const rows = state.customers
     .filter((l) => !v || (v === 'none' ? !l.vehicle_type : l.vehicle_type === v))
+    .filter((l) => !state.customerDue || maintenanceDue(l))
     .sort((a, b) => String(b.last_pickup_at || '').localeCompare(String(a.last_pickup_at || '')));
   const spent = rows.reduce((n, l) => n + (l.spent_cents || 0), 0);
   const jobs = rows.reduce((n, l) => n + (l.jobs_done || 0), 0);
@@ -435,14 +453,15 @@ function renderCustomers() {
       h('td', {}, h('strong', {}, leadName(l))),
       h('td', {}, [l.vehicle_type, [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ')].filter(Boolean).join(' · ')),
       h('td', {}, l.phone || ''),
-      h('td', {}, shortDate(l.last_pickup_at)),
+      h('td', {}, shortDate(l.last_pickup_at), maintenanceDue(l) && h('span', { class: 'status-pill due' }, 'Maintenance due')),
       h('td', { class: 'num' }, l.jobs_done || 0),
       h('td', {}, serviceLabels(l.booked_services || [])),
       h('td', { class: 'num' }, l.spent_cents != null ? money(l.spent_cents, { cents: false }) : '–'),
       h('td', {}, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); restoreLead(l.id); } }, 'Book again'))))),
-  ] : [h('tbody', {}, h('tr', {}, h('td', { class: 'muted' }, state.customers.length
-    ? 'No past customers with that vehicle type.'
-    : `No past customers yet. Booked customers show up here ${state.meta.archiveDays} days after their job is picked up.`)))]));
+  ] : [h('tbody', {}, h('tr', {}, h('td', { class: 'muted' }, !state.customers.length
+    ? `No past customers yet. Booked customers show up here ${state.meta.archiveDays} days after their job is picked up.`
+    : state.customerDue ? `Nobody here is due for maintenance yet. Customers are flagged ${state.meta.recoatMonths} months after pick-up.`
+      : 'No past customers with that vehicle type.')))]));
 }
 
 async function restoreLead(id) {
@@ -456,7 +475,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -495,6 +514,7 @@ function renderLead(lead) {
 
   fillInfoForm(lead);
   renderLeadJob(lead);
+  renderQuoteSection(lead).catch(fail);
 
   const stageSelect = $('#stageSelect');
   stageSelect.replaceChildren(...state.meta.stages.map((s) => h('option', { value: s.id, selected: s.id === lead.stage }, s.label)));
@@ -1059,7 +1079,36 @@ async function openEmailSettings() {
     },
   }, `{{${p}}}`)));
   renderEmailPreview();
+  await loadReviewSettings();
   showPanel($('#emailPanel'));
+}
+
+async function loadReviewSettings() {
+  try {
+    const s = await api('/api/settings/reviews');
+    const form = $('#reviewForm');
+    form.enabled.checked = s.enabled;
+    form.link.value = s.link;
+    form.delay_days.value = s.delay_days;
+    form.subject.value = s.subject;
+    form.body.value = s.body;
+    $('#reviewError').hidden = true;
+  } catch (err) { fail(err); }
+}
+
+async function saveReviewSettings(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    const s = await api('/api/settings/reviews', {
+      method: 'PUT',
+      body: { enabled: f.enabled.checked, link: f.link.value, delay_days: Number(f.delay_days.value), subject: f.subject.value, body: f.body.value },
+    });
+    toast(s.enabled ? `Saved. Review requests go out ${s.delay_days} day${s.delay_days === 1 ? '' : 's'} after pick-up.` : 'Saved. Review requests are off.');
+  } catch (err) {
+    $('#reviewError').textContent = err.message;
+    $('#reviewError').hidden = false;
+  }
 }
 
 async function saveEmailSettings(e) {
@@ -1190,7 +1239,15 @@ async function init() {
   if (state.meta.currentUser) {
     $('#currentUser').hidden = false;
     $('#currentUser').textContent = `Signed in as ${state.meta.currentUser}`;
+    $('#signOutBtn').hidden = false;
   }
+  $('#signOutBtn').addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/login';
+  });
+  $('#reviewForm').addEventListener('submit', saveReviewSettings);
+  $('#reviewForm').addEventListener('input', () => { $('#reviewError').hidden = true; });
+  $('#customerDue').addEventListener('change', (e) => { state.customerDue = e.target.value; renderBoard(); });
 
   if (shop) return showSection('calendar');
   if (isAdmin()) {

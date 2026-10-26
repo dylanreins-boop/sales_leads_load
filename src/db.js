@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   amount_cents INTEGER,                         -- job price; sales and admins only
   amount_by    TEXT,
   amount_at    TEXT,
-  picked_up_at TEXT                             -- when it was marked Picked up
+  picked_up_at TEXT,                            -- when it was marked Picked up
+  review_sent_at TEXT                           -- when the review-request email went out (or was skipped)
 );
 CREATE INDEX IF NOT EXISTS jobs_time ON jobs (start_at, end_at);
 CREATE INDEX IF NOT EXISTS jobs_lead ON jobs (lead_id);
@@ -140,6 +141,30 @@ CREATE TABLE IF NOT EXISTS users (
   last_seen_at   TEXT
 );
 
+-- Quotes built in the lead drawer from the price list.
+CREATE TABLE IF NOT EXISTS quotes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id     INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  lines       TEXT NOT NULL,                    -- JSON [{ label, detail, cents }]
+  total_cents INTEGER NOT NULL,
+  note        TEXT,
+  created_by  TEXT,
+  created_at  TEXT NOT NULL,
+  emailed_at  TEXT,
+  emailed_to  TEXT
+);
+CREATE INDEX IF NOT EXISTS quotes_lead ON quotes (lead_id);
+
+-- Signed-in browsers (the sign-in page sets a cookie that points here).
+CREATE TABLE IF NOT EXISTS sessions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  token_hash  TEXT NOT NULL UNIQUE,
+  user_norm   TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_norm);
+
 -- Who added, changed or deactivated each login.
 CREATE TABLE IF NOT EXISTS user_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +190,7 @@ function migrate(db) {
   const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
   if (!has('leads', 'sms_opt_in')) db.exec('ALTER TABLE leads ADD COLUMN sms_opt_in INTEGER');
+  if (!has('jobs', 'review_sent_at')) db.exec('ALTER TABLE jobs ADD COLUMN review_sent_at TEXT');
   if (!has('jobs', 'picked_up_at')) {
     db.exec("ALTER TABLE jobs ADD COLUMN picked_up_at TEXT; UPDATE jobs SET picked_up_at = updated_at WHERE status = 'picked_up'");
   }

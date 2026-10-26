@@ -33,6 +33,7 @@
       <button type="button" data-section="revenue" class="admin-only">Revenue</button>
     </nav>
     <span id="currentUser" class="muted" hidden></span>
+    <button type="button" id="signOutBtn" class="link-btn" hidden>Sign out</button>
     <div class="filters lead-only">
       <input id="search" type="search" placeholder="Search name, phone, email, vehicle" aria-label="Search leads">
       <select id="sourceFilter" aria-label="Filter by source">
@@ -49,7 +50,8 @@
       <button id="teamBtn" type="button" class="admin-only">Team</button>
       <button id="syncFb" type="button" class="lead-only admin-only">Sync Facebook</button>
       <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
-      <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Email template</button>
+      <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Emails</button>
+      <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
       </button>
@@ -71,6 +73,12 @@
     </div>
     <div class="old-filters">
       <label>Vehicle type <select id="customerVehicle"></select></label>
+      <label>Show
+        <select id="customerDue">
+          <option value="">All past customers</option>
+          <option value="due">Due for maintenance</option>
+        </select>
+      </label>
     </div>
     <p id="customersSummary" class="customers-summary"></p>
     <div class="table-scroll"><table id="customersTable" class="old-table customers-table"></table></div>
@@ -143,6 +151,21 @@
         <div class="table-scroll"><table id="revReps" class="matrix rev-table"></table></div>
       </section>
     </div>
+    <section class="rev-block rev-sources" aria-labelledby="srcTitle">
+      <div class="rev-block-head">
+        <h3 id="srcTitle">Where leads come from</h3>
+        <select id="srcPeriod" aria-label="Period">
+          <option value="month">This month</option>
+          <option value="90">Last 90 days</option>
+          <option value="ytd" selected>Year to date</option>
+        </select>
+      </div>
+      <p class="muted rev-note">Leads that came in during the period, how many booked, and what their jobs brought in.</p>
+      <div class="rev-grid even">
+        <div class="table-scroll"><table id="srcBySource" class="matrix rev-table"></table></div>
+        <div class="table-scroll"><table id="srcByHeard" class="matrix rev-table"></table></div>
+      </div>
+    </section>
     <p class="muted rev-note">Every job counts except ones marked Cancelled / Rescheduled. Jobs still scheduled count toward their day, week and month. Year to date runs through today.</p>
   </section>
 
@@ -178,6 +201,29 @@
     </div>
     <div class="drawer-body">
       <section class="contact" id="leadContact"></section>
+
+      <section class="card-section quote-section" id="quoteSection">
+        <h3>Quote</h3>
+        <form id="quoteForm" class="quote-form" novalidate>
+          <label>Package or rate
+            <select id="quoteBase" name="base"></select>
+          </label>
+          <label id="quoteFeetField" hidden>Length in feet
+            <input id="quoteFeet" name="feet" inputmode="decimal" placeholder="38">
+          </label>
+          <fieldset class="quote-addons" id="quoteAddons"><legend>Add-ons</legend></fieldset>
+          <div id="quoteCustom" class="quote-custom"></div>
+          <button type="button" id="quoteAddLine" class="link-btn">+ Add a custom line</button>
+          <div class="info-grid">
+            <label>Discount <input id="quoteDiscount" name="discount" inputmode="decimal" placeholder="$0"></label>
+            <label>Note for the customer <input id="quoteNote" name="note" maxlength="300" placeholder="Price good for 30 days"></label>
+          </div>
+          <div class="quote-total" id="quoteTotal" aria-live="polite"></div>
+          <p class="field-error" id="quoteError" hidden></p>
+          <button type="submit" class="primary">Save quote</button>
+        </form>
+        <ul id="quoteList" class="quote-list"></ul>
+      </section>
 
       <section class="card-section" id="leadJobSection" hidden>
         <h3>Shop job</h3>
@@ -383,6 +429,55 @@
           <div id="previewBody" class="preview-body"></div>
         </div>
       </section>
+
+      <section class="card-section review-settings">
+        <h3>Review request</h3>
+        <p class="muted">Emailed to customers a few days after their job is picked up, asking for a review. Only jobs picked up in the last 30 days get one, and each customer gets it once.</p>
+        <form id="reviewForm">
+          <label class="check"><input type="checkbox" name="enabled"> Send review requests automatically</label>
+          <div class="info-grid">
+            <label class="span-2">Review link <input name="link" type="url" placeholder="https://g.page/r/…/review"></label>
+            <label>Days after pick-up <input name="delay_days" type="number" min="0" max="30"></label>
+          </div>
+          <label>Subject <input name="subject" maxlength="200"></label>
+          <label>Message <textarea name="body" rows="9"></textarea></label>
+          <p class="hint">Personalize with the same tags as above, plus {{review_link}}.</p>
+          <p class="field-error" id="reviewError" hidden></p>
+          <button type="submit" class="primary">Save review request</button>
+        </form>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Price list (admins): what the quote builder charges -->
+  <aside id="pricesPanel" class="drawer" aria-label="Price list" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Price list</h2>
+        <div class="muted">Used by the quote builder on every lead.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <form id="pricesForm">
+        <section class="card-section price-group" data-group="vehicle">
+          <h3>Vehicle packages <span class="muted">flat price</span></h3>
+          <div class="price-rows"></div>
+          <button type="button" class="link-btn" data-add="vehicle">+ Add a package</button>
+        </section>
+        <section class="card-section price-group" data-group="rv">
+          <h3>RV &amp; trailer rates <span class="muted">per linear foot</span></h3>
+          <div class="price-rows"></div>
+          <button type="button" class="link-btn" data-add="rv">+ Add a rate</button>
+        </section>
+        <section class="card-section price-group" data-group="addons">
+          <h3>Add-ons <span class="muted">leave blank until you have a price</span></h3>
+          <div class="price-rows"></div>
+          <button type="button" class="link-btn" data-add="addons">+ Add an add-on</button>
+        </section>
+        <p class="field-error" id="pricesError" hidden></p>
+        <button type="submit" class="primary">Save price list</button>
+      </form>
     </div>
   </aside>
 
@@ -455,5 +550,6 @@
   <script src="app.js"></script>
   <script src="calendar.js"></script>
   <script src="revenue.js"></script>
+  <script src="quotes.js"></script>
 </body>
 </html>

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sign in · Bob Moses Leads</title>
+  <meta name="theme-color" content="#00142b">
+  <link rel="icon" href="/icons/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Sign-in: a navy band with the logo, one card with the form. */
+    body.login-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; background: var(--bg); padding: 0 max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
+    .login-band { position: fixed; inset: 0 0 auto; height: 38vh; background: linear-gradient(160deg, #00142b 0%, #0b2a4f 100%); border-bottom: 4px solid var(--highlight); z-index: 0; }
+    .login-wrap { position: relative; z-index: 1; width: 100%; max-width: 400px; margin-top: max(48px, 9vh); display: grid; gap: 20px; }
+    .login-brand { display: grid; justify-items: center; gap: 8px; color: #f1f4f8; text-align: center; }
+    .login-brand img { width: 150px; height: auto; }
+    .login-brand p { margin: 0; font: 600 12px/1.3 var(--font-brand); letter-spacing: 0.14em; text-transform: uppercase; color: #a9b6c7; }
+    .login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px; box-shadow: 0 12px 32px rgba(0, 20, 43, 0.18); }
+    .login-card h1 { font: 700 20px/1.2 var(--font-brand); margin: 0 0 4px; }
+    .login-card .muted { margin: 0 0 18px; font-size: 13px; }
+    .login-card label { font-size: 13px; }
+    .login-card input { font-size: 16px; padding: 10px 12px; }
+    .pass-row { display: flex; gap: 6px; margin-top: 4px; }
+    .pass-row input { flex: 1; min-width: 0; margin: 0; }
+    .login-card button[type="submit"] { width: 100%; padding: 12px; font-size: 15px; font-weight: 700; margin-top: 6px; }
+    .login-error { color: var(--danger); font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+    .forgot { margin-top: 14px; font-size: 13px; }
+    .forgot summary { cursor: pointer; color: var(--link); font-weight: 600; }
+    .forgot p { margin: 8px 0 0; color: var(--muted); }
+  </style>
+</head>
+<body class="login-page">
+  <div class="login-band" aria-hidden="true"></div>
+  <main class="login-wrap">
+    <div class="login-brand">
+      <img src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="150" height="85">
+      <p>Las Vegas · Lead Pipeline</p>
+    </div>
+    <form class="login-card" id="loginForm" novalidate>
+      <h1>Sign in</h1>
+      <p class="muted">Use the name and password your admin gave you.</p>
+      <p class="login-error" id="loginError" role="alert" hidden></p>
+      <label>Name <input id="loginName" name="name" autocomplete="username" autocapitalize="words" required autofocus></label>
+      <label>Password
+        <span class="pass-row">
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" id="showPass" aria-pressed="false">Show</button>
+        </span>
+      </label>
+      <button type="submit" class="primary" id="loginBtn">Sign in</button>
+      <details class="forgot">
+        <summary>Forgot your password?</summary>
+        <p>Ask an admin to reset it. They can do that from the Team button in the app, and you'll sign in with the new one.</p>
+      </details>
+    </form>
+  </main>
+  <script>
+    const form = document.getElementById('loginForm');
+    const error = document.getElementById('loginError');
+    const pass = document.getElementById('loginPassword');
+    document.getElementById('showPass').addEventListener('click', (e) => {
+      const show = pass.type === 'password';
+      pass.type = show ? 'text' : 'password';
+      e.target.textContent = show ? 'Hide' : 'Show';
+      e.target.setAttribute('aria-pressed', String(show));
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      error.hidden = true;
+      const name = form.name.value.trim();
+      if (!name || !pass.value) {
+        error.textContent = 'Enter your name and password.';
+        error.hidden = false;
+        return;
+      }
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password: pass.value }),
+        });
+        if (res.ok) { location.replace('/'); return; }
+        const data = await res.json().catch(() => ({}));
+        error.textContent = data.error || 'Sign-in didn\'t work. Try again.';
+      } catch {
+        error.textContent = 'Can\'t reach the server. Check your connection and try again.';
+      }
+      error.hidden = false;
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+      pass.select();
+    });
+  </script>
+</body>
+</html>

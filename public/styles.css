@@ -558,6 +558,49 @@ table.rev-table { width: 100%; min-width: 0; }
   .rev-total { font-size: 24px; }
 }
 
+/* Small text-style buttons (sign out, add a line) */
+.link-btn { border: none; background: none; padding: 4px 2px; color: var(--link); font-weight: 600; font-size: 13px; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+#signOutBtn { padding: 4px 6px; }
+
+/* Quote builder (lead drawer) */
+.quote-form { display: grid; gap: 4px; }
+.quote-addons { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin: 0 0 6px; display: grid; gap: 4px; }
+.quote-addons legend { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 4px; }
+.quote-addons label { margin: 0; }
+.quote-custom { display: grid; gap: 6px; }
+.custom-line, .price-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto; gap: 6px; align-items: center; }
+.custom-line input, .price-row input { margin: 0; min-width: 0; }
+#quoteAddLine { justify-self: start; }
+.quote-total { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); margin: 4px 0 8px; }
+.quote-lines { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.quote-lines li, .quote-sum { display: flex; justify-content: space-between; gap: 10px; }
+.quote-lines .amt, .quote-sum strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.quote-sum { border-top: 1px solid var(--border); padding-top: 6px; font-size: 15px; }
+.quote-sum strong { font-size: 18px; }
+.quote-form > button[type="submit"] { justify-self: start; }
+.quote-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.quote-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+.quote-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.quote-head strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.quote-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+/* Price list panel (admins) */
+.price-group h3 .muted { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.price-rows { display: grid; gap: 6px; margin-bottom: 6px; }
+.price-input { display: flex; align-items: center; gap: 4px; }
+.price-input input { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
+
+/* Review request settings */
+.review-settings > .muted { margin: 0 0 10px; }
+
+/* Past Customers: maintenance due */
+.status-pill.due { margin-left: 8px; color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.rev-grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rev-sources { margin-top: 6px; }
+.rev-sources select { width: auto; }
+@media (max-width: 900px) { .rev-grid.even { grid-template-columns: minmax(0, 1fr); } }
+
 /* View-only job panel (sales) */
 .view-only { margin: 0 0 4px; }
 .job-times { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }

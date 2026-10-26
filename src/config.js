@@ -59,6 +59,8 @@ module.exports = {
   reminderSkipWeekends: process.env.REMINDER_SKIP_WEEKENDS !== 'false',
   // Leads leave the board for "Old & Dead Leads" this many days after they came in (Booked leads stay).
   archiveDays: Number(process.env.LEAD_ARCHIVE_DAYS ?? 14),
+  // Past customers show as "Due for maintenance" this many months after pick-up.
+  recoatMonths: Number(process.env.RECOAT_MONTHS ?? 11),
 
   website: {
     apiKey: process.env.WEBSITE_API_KEY || '',

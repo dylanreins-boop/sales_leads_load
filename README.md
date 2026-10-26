@@ -107,6 +107,34 @@ Admins get a **Revenue** page (next to Leads and Calendar):
 
 Jobs marked Cancelled / Rescheduled don't count. The Excel export includes a Job amount column.
 
+**Where leads come from** (bottom of the Revenue page): for this month, the last 90 days or the year to
+date, the leads that came in by lead source (Facebook, website, phone / walk-in) and by "How they heard
+about us", with how many booked, the booking rate, the revenue their jobs brought in, and revenue per lead.
+
+## Quotes
+
+Every lead has a **Quote** box (sales and admins). Pick a vehicle package or an RV / trailer rate (enter the
+length in feet), tick add-ons, add custom lines (for example wheels & windows until it has a set price),
+and an optional discount and note. The total updates as you go and always comes from the saved price list.
+
+- **Save quote** keeps it on the lead and logs it ("Quote $6,700.00: RV / trailer coating (42 ft ×
+  $150.00/ft) $6,300.00 + Wheels & windows $400.00").
+- **Email to customer** sends it as a plain email from the shop (needs the email service set up).
+- **Use for booking** fills the "Appointment Booked" form with the quote total as the job amount.
+
+**Price list (admins):** the **Price list** button edits what the quote builder charges. It starts with
+vehicle packages at $800, $1,300, $1,400 and $1,700, RV / trailer coating at $130 and $150 per linear
+foot, and Wheels & windows with no price yet (it can't be ticked until it has one). Rename packages,
+change prices, or add packages, rates and add-ons. Shop logins never see prices.
+
+## Review requests
+
+Under **Emails**, admins can turn on a **review request**: a few days after a job is marked Picked up
+(2 by default), the customer is emailed a link to leave a review. Set your Google review link, the
+wait, and the wording ({{review_link}} drops the link in). Each customer gets it once (at most once every
+six months), only jobs picked up in the last 30 days are emailed so turning it on never emails old
+customers, and every send shows on the lead. It uses the same email service as the follow-up email.
+
 ## Past Customers
 
 Booked leads stay in the Booked column while their job is coming up or in the shop. **14 days after the
@@ -118,6 +146,10 @@ Past Customers lists each customer's vehicle, last pick-up, number of finished j
 spent, filtered by vehicle type and exportable to Excel. Customers go back on the board when they inquire
 again (as a new lead), when someone logs a call on them, or with **Book again**. Adding an "Updated Notes"
 entry keeps them in Past Customers. Their revenue keeps counting on the Revenue page.
+
+**Due for maintenance:** coatings need a yearly maintenance visit, so customers are flagged **Maintenance
+due** 11 months after their last pick-up (change with `RECOAT_MONTHS`). Pick "Due for maintenance" under
+Show to get the call list, then log a call or use Book again.
 
 ## Old & Dead Leads
 
@@ -222,7 +254,7 @@ within 24 hours". New leads that haven't been called show a countdown on their c
 
 ## Follow-up email after a voicemail
 
-Open **Email template** in the top bar, write the subject and message, tick **Send this email
+Open **Emails** in the top bar (admins), write the subject and message, tick **Send this email
 automatically**, and save. From then on, saving "No Answer – Left Voicemail" on a lead that has an
 email address sends that email. The rep can untick "Send follow-up email" on any single call.
 
@@ -293,8 +325,10 @@ It opens a feed of every change, newest first: calls logged, notes, lead info ed
 (status changes, job notes, checklist ticks, photos added or deleted), each with who did it and when. Filter
 it to Sales or Shop, and tap a change to open that lead or job.
 
-Sign-in uses the browser's own name-and-password box. A branded login page can come later and will use
-the same logins.
+**Signing in:** the app opens on a Bob Moses sign-in page. People stay signed in on that device for 30
+days or until they tap **Sign out**. Resetting someone's password or deactivating them signs them out
+everywhere. After 8 wrong passwords for a name, sign-in pauses for 15 minutes. "Forgot your password?"
+tells them to ask an admin, who resets it on the Team panel. Scripts can still use HTTP Basic auth.
 
 ## Using it on a phone
 

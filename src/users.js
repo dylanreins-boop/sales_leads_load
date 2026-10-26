@@ -144,14 +144,55 @@ function createUserService(db, { serverUsers = [] } = {}) {
     params.push(now(), id);
     stmt(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...params);
     for (const [action, detail] of events) log(user.name, action, detail, by);
+    // A new password or a deactivation signs that person out everywhere.
+    if ('password' in patch || patch.active === false) endSessionsFor(user.name);
     return list().find((u) => u.id === id);
   }
+
+  // ---- Sign-in sessions (the sign-in page) ----
+  const SESSION_DAYS = 30;
+  const tokenHash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+
+  // The current level of an active login, by name (server logins and app logins).
+  function lookup(name) {
+    const server = serverUsers.find((u) => norm(u.name) === norm(name));
+    if (server) return { name: server.name, role: server.role };
+    const user = findByName(name);
+    return user && user.active ? { name: user.name, role: user.role } : null;
+  }
+
+  function createSession(name) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const ts = Date.now();
+    stmt('DELETE FROM sessions WHERE expires_at < ?').run(new Date(ts).toISOString());
+    stmt('INSERT INTO sessions (token_hash, user_norm, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(tokenHash(token), norm(name), new Date(ts).toISOString(), new Date(ts + SESSION_DAYS * 86400000).toISOString());
+    return { token, maxAge: SESSION_DAYS * 86400 };
+  }
+
+  function sessionUser(token) {
+    if (!token) return null;
+    const row = stmt('SELECT * FROM sessions WHERE token_hash = ?').get(tokenHash(token));
+    if (!row || row.expires_at < now()) return null;
+    const user = lookup(row.user_norm);
+    if (user) {
+      const found = findByName(user.name);
+      if (found && Date.now() - (seen.get(found.id) || 0) > 60000) {
+        seen.set(found.id, Date.now());
+        stmt('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), found.id);
+      }
+    }
+    return user;
+  }
+
+  const endSession = (token) => stmt('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash(token));
+  const endSessionsFor = (name) => stmt('DELETE FROM sessions WHERE user_norm = ?').run(norm(name));
 
   function history(limit = 50) {
     return stmt('SELECT * FROM user_events ORDER BY id DESC LIMIT ?').all(Math.min(Math.max(Number(limit) || 50, 1), 200));
   }
 
-  return { authenticate, anyLogins, list, create, update, history };
+  return { authenticate, anyLogins, list, create, update, history, lookup, createSession, sessionUser, endSession };
 }
 
 module.exports = { createUserService, ROLES, MIN_PASSWORD, hashPassword, checkPassword };

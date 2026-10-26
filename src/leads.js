@@ -203,6 +203,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     lead.activities = stmt('SELECT * FROM activities WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
+    lead.quotes = stmt('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(id).map((q) => ({ ...q, lines: JSON.parse(q.lines) }));
     lead.jobs = stmt('SELECT id, start_at, end_at, status, amount_cents, amount_by, amount_at FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id);
     return lead;
   }
@@ -488,12 +489,25 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     return { to: lead.email, subject: renderTemplate(settings.subject, lead), text: renderTemplate(settings.body, lead) };
   }
 
-  function recordEmail(leadId, message, { status, error, trigger, user }) {
+  // Leads that came in during [from, to), with whether they booked and what their jobs brought in.
+  function sourceReport({ from, to } = {}) {
+    const start = toIso(from, null);
+    const end = toIso(to, null);
+    if (!start || !end) throw new HttpError(400, 'Pick a date range.');
+    return stmt(`SELECT l.id, l.source, l.heard_about, l.stage, l.vehicle_type, l.received_at,
+                   (l.stage = 'booked' OR EXISTS (SELECT 1 FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled')) AS booked,
+                   (SELECT SUM(j.amount_cents) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled') AS revenue_cents
+                 FROM leads l WHERE l.received_at >= ? AND l.received_at < ?
+                 ORDER BY l.received_at`).all(start, end)
+      .map((r) => ({ ...r, booked: Boolean(r.booked), pipeline: pipelineFor(r.vehicle_type) }));
+  }
+
+  function recordEmail(leadId, message, { status, error, trigger, user, label = 'Follow-up email' }) {
     stmt(`INSERT INTO emails (lead_id, to_email, subject, body, status, error, trigger, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
       leadId, message.to, message.subject, message.text, status, error ?? null, trigger ?? null, now(),
     );
-    const what = status === 'sent' ? `Follow-up email sent to ${message.to}` : `Follow-up email to ${message.to} not sent: ${error}`;
+    const what = status === 'sent' ? `${label} sent to ${message.to}` : `${label} to ${message.to} not sent: ${error}`;
     logActivity(leadId, 'email', { note: what, user });
     return stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(leadId);
   }
@@ -501,7 +515,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   return {
     ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
-    getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail,
+    getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
     archiveOldLeads, restoreLead, exportLeads, logActivity, listUpdates, countUnseenUpdates, markUpdatesSeen,
   };
 }

@@ -34,7 +34,9 @@ test('wrong or missing login is refused', async () => {
   assert.equal((await call('GET', '/api/leads')).status, 401);
   assert.equal((await call('GET', '/api/leads', undefined, login('Dylan', 'sam-pass'))).status, 401);
   assert.equal((await call('GET', '/api/leads', undefined, login('Nobody', 'dylan-pass'))).status, 401);
-  assert.equal((await fetch(`${base}/`)).status, 401);
+  const page = await fetch(`${base}/`, { redirect: 'manual' });
+  assert.equal(page.status, 302, 'signed-out pages go to the sign-in page');
+  assert.equal(page.headers.get('location'), '/login');
 });
 
 test('each action records who did it and when', async () => {
