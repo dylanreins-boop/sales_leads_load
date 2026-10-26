@@ -194,6 +194,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     lead.activities = stmt('SELECT * FROM activities WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
+    lead.jobs = stmt('SELECT id, start_at, end_at, status FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id);
     return lead;
   }
 
@@ -362,7 +363,15 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       if (!history.has(a.lead_id)) history.set(a.lead_id, []);
       history.get(a.lead_id).push(a);
     }
-    return rows.map((r) => ({ ...r, activities: history.get(r.id) || [] }));
+    // Latest shop job per lead, with checklist progress and photo count.
+    const jobs = new Map();
+    for (const j of stmt(`SELECT j.*, (SELECT COUNT(*) FROM job_checklist c WHERE c.job_id = j.id) AS checklist_total,
+                            (SELECT COUNT(*) FROM job_checklist c WHERE c.job_id = j.id AND c.done_at IS NOT NULL) AS checklist_done,
+                            (SELECT COUNT(*) FROM job_photos p WHERE p.job_id = j.id) AS photo_count
+                          FROM jobs j ORDER BY j.start_at`).all()) {
+      if (wanted.has(j.lead_id)) jobs.set(j.lead_id, j);
+    }
+    return rows.map((r) => ({ ...r, activities: history.get(r.id) || [], job: jobs.get(r.id) || null }));
   }
 
   function listReminders({ status = 'open' } = {}) {
@@ -437,7 +446,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail,
-    archiveOldLeads, restoreLead, exportLeads,
+    archiveOldLeads, restoreLead, exportLeads, logActivity,
   };
 }
 

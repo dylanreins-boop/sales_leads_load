@@ -20,13 +20,14 @@ const KEEP_STAGE = 'keep_stage';
 // `stage` is where the lead goes; `reminder` is whether a call-tomorrow
 // reminder is set by default (the user can override it per disposition);
 // `email` sends the follow-up email template, when the user has turned it on;
-// `services` means the rep must pick which services were booked.
+// `services` means the rep must pick which services were booked; `schedules` means the job
+// must be put on the shop calendar (drop-off and pick-up times).
 const DISPOSITIONS = [
   { id: 'no_answer_vm', label: 'No Answer – Left Voicemail', stage: NO_ANSWER, reminder: true, email: true },
   { id: 'no_answer', label: 'No Answer – No Voicemail', stage: NO_ANSWER, reminder: true },
   { id: 'contacted_follow_up', label: 'Contacted – Needs Follow Up', stage: 'contacted', reminder: true },
   { id: 'callback_requested', label: 'Contacted – Call Back Requested', stage: 'contacted', reminder: true },
-  { id: 'booked', label: 'Appointment Booked', stage: 'booked', reminder: true, services: true },
+  { id: 'booked', label: 'Appointment Booked', stage: 'booked', reminder: true, services: true, schedules: true },
   { id: 'updated_notes', label: 'Updated Notes', stage: KEEP_STAGE, reminder: true, call: false },
   { id: 'not_interested', label: 'Not Interested', stage: 'waste', reminder: false },
   { id: 'wrong_number', label: 'Wrong / Bad Number', stage: 'waste', reminder: false },

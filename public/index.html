@@ -25,10 +25,14 @@
         <img class="brand-logo" src="/brand/logo.png" alt="Bob Moses Ceramic Coating" width="81" height="46">
       </picture>
       <h1 class="visually-hidden" id="brandName">Bob Moses Ceramic Coating</h1>
-      <div class="brand-sub"><span id="brandCity">Las Vegas</span><br>Lead Pipeline</div>
+      <div class="brand-sub"><span id="brandCity">Las Vegas</span><br><span id="brandSection">Lead Pipeline</span></div>
     </div>
+    <nav class="main-nav" aria-label="Sections">
+      <button type="button" data-section="leads" aria-current="page">Leads</button>
+      <button type="button" data-section="calendar">Calendar</button>
+    </nav>
     <span id="currentUser" class="muted" hidden></span>
-    <div class="filters">
+    <div class="filters lead-only">
       <input id="search" type="search" placeholder="Search name, phone, email, vehicle" aria-label="Search leads">
       <select id="sourceFilter" aria-label="Filter by source">
         <option value="">All sources</option>
@@ -38,15 +42,16 @@
       </select>
     </div>
     <div class="actions">
-      <button id="syncFb" type="button">Sync Facebook</button>
-      <button id="addLeadBtn" type="button">+ Add lead</button>
-      <button id="emailSettingsBtn" type="button">Email template</button>
+      <button id="syncFb" type="button" class="lead-only">Sync Facebook</button>
+      <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
+      <button id="emailSettingsBtn" type="button" class="lead-only">Email template</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
       </button>
     </div>
   </header>
 
+  <div id="leadsSection" class="section">
   <nav id="pipelineTabs" class="pipeline-tabs" role="tablist" aria-label="Pipelines"></nav>
 
   <div id="dueBanner" class="due-banner" hidden></div>
@@ -82,6 +87,28 @@
     <div id="oldGroups"></div>
   </section>
 
+  </div>
+
+  <!-- Shop calendar -->
+  <section id="calendarSection" class="section calendar" aria-labelledby="calTitle" hidden>
+    <div class="cal-toolbar">
+      <div class="cal-nav">
+        <button type="button" id="calPrev" class="icon-btn nav-arrow" aria-label="Previous">&lsaquo;</button>
+        <button type="button" id="calTodayBtn">Today</button>
+        <button type="button" id="calNext" class="icon-btn nav-arrow" aria-label="Next">&rsaquo;</button>
+      </div>
+      <h2 id="calTitle" class="cal-title"></h2>
+      <div id="calViews" class="segmented" role="group" aria-label="Calendar view">
+        <button type="button" data-view="month">Month</button>
+        <button type="button" data-view="week">Week</button>
+        <button type="button" data-view="list">List</button>
+      </div>
+    </div>
+    <div id="calLegend" class="cal-legend" aria-label="Job status colors"></div>
+    <div id="calUnscheduled" class="cal-unscheduled" hidden></div>
+    <div id="calBody" class="cal-body"></div>
+  </section>
+
   <!-- Lead detail drawer -->
   <div id="scrim" class="scrim" hidden></div>
   <aside id="drawer" class="drawer" aria-label="Lead details" hidden>
@@ -94,6 +121,11 @@
     </div>
     <div class="drawer-body">
       <section class="contact" id="leadContact"></section>
+
+      <section class="card-section" id="leadJobSection" hidden>
+        <h3>Shop job</h3>
+        <div id="leadJob"></div>
+      </section>
 
       <section class="card-section">
         <h3>Lead info</h3>
@@ -135,6 +167,14 @@
             <div id="serviceChecks" class="checks"></div>
           </fieldset>
           <p id="servicesError" class="field-error" hidden>Pick at least one service for this booking.</p>
+          <fieldset id="scheduleField" class="services schedule" hidden aria-describedby="scheduleError">
+            <legend>Put it on the shop calendar</legend>
+            <div class="info-grid">
+              <label>Drop-off <input type="datetime-local" name="job_start"></label>
+              <label>Pick-up <input type="datetime-local" name="job_end"></label>
+            </div>
+          </fieldset>
+          <p id="scheduleError" class="field-error" hidden>Pick a drop-off and a pick-up time after it.</p>
           <label class="check">
             <input type="checkbox" name="reminder" checked> Remind me to call
           </label>
@@ -224,6 +264,46 @@
     </div>
   </aside>
 
+  <!-- Job panel (shop calendar) -->
+  <aside id="jobPanel" class="drawer job-panel" aria-label="Job details" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2 id="jobTitle"></h2>
+        <div id="jobMeta" class="muted"></div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div id="jobBody" class="drawer-body"></div>
+  </aside>
+
+  <dialog id="photoDialog" class="photo-dialog" aria-label="Job photo">
+    <div class="photo-stage">
+      <img id="photoImg" alt="">
+      <button type="button" id="photoPrev" class="photo-nav prev" aria-label="Previous photo">&lsaquo;</button>
+      <button type="button" id="photoNext" class="photo-nav next" aria-label="Next photo">&rsaquo;</button>
+    </div>
+    <div class="photo-bar">
+      <div><div id="photoMeta"></div><div id="photoCount" class="muted"></div></div>
+      <div class="photo-actions">
+        <button type="button" id="photoDelete" class="danger-btn">Delete photo</button>
+        <button type="button" id="photoClose" class="primary">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="scheduleDialog">
+    <form id="scheduleForm">
+      <h2>Put on the calendar</h2>
+      <p id="scheduleFor" class="muted"></p>
+      <label>Drop-off <input type="datetime-local" name="job_start" required></label>
+      <label>Pick-up <input type="datetime-local" name="job_end" required></label>
+      <div class="dialog-actions">
+        <button type="button" id="scheduleCancel">Cancel</button>
+        <button type="submit" class="primary">Add to calendar</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Add lead dialog -->
   <dialog id="addLeadDialog">
     <form id="addLeadForm" method="dialog">
@@ -251,5 +331,6 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="app.js"></script>
+  <script src="calendar.js"></script>
 </body>
 </html>

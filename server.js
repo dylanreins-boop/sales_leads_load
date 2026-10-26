@@ -13,6 +13,8 @@ const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 const { leadsWorkbook } = require('./src/export');
+const { createJobService, JOB_STATUSES, PHOTO_PHASES } = require('./src/jobs');
+const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -73,7 +75,7 @@ const safeEqual = (a, b) => {
 // Returns the signed-in user ({ name }), or null if the login is wrong.
 // With no logins configured, everyone is let in without a name.
 function authenticate(req) {
-  if (!config.users.length) return { name: null };
+  if (!config.users.length) return { name: null, role: 'sales' };
   const [scheme, encoded] = (req.headers.authorization || '').split(' ');
   if (scheme !== 'Basic' || !encoded) return null;
   const decoded = Buffer.from(encoded, 'base64').toString('utf8');
@@ -87,7 +89,7 @@ function authenticate(req) {
     const passwordOk = safeEqual(password, u.password);
     if (nameOk && passwordOk) found = u;
   }
-  return found && { name: found.name };
+  return found && { name: found.name, role: found.role };
 }
 
 function corsHeaders(req) {
@@ -117,7 +119,7 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
+function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = {}) {
   const leads = createLeadService(db, {
     reminderHour: config.reminderHour,
     skipWeekends: config.reminderSkipWeekends,
@@ -126,17 +128,24 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
   });
   const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
   const mailer = createMailer(config.email, fetchImpl);
+  const jobs = createJobService(db, {
+    leads,
+    photosDir: photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos'),
+  });
   const routes = [];
 
   // `pattern` supports ":param" segments; public routes skip dashboard login.
-  function route(method, pattern, handler, { isPublic = false } = {}) {
+  // `roles` lists which logins may call it (shop logins only get the job calendar).
+  // `rawBody` routes get the request bytes as-is (photo uploads) up to `bodyLimit`.
+  const ANY_LOGIN = ['sales', 'shop'];
+  function route(method, pattern, handler, { isPublic = false, roles = ['sales'], rawBody = false, bodyLimit } = {}) {
     const keys = [];
     const source = pattern.replace(/:(\w+)/g, (_, key) => {
       keys.push(key);
       return '([^/]+)';
     });
     const re = new RegExp(`^${source}/?$`);
-    routes.push({ method, re, keys, handler, isPublic });
+    routes.push({ method, re, keys, handler, isPublic, roles, rawBody, bodyLimit });
   }
 
   async function ingestFacebookLead(leadgenId) {
@@ -147,6 +156,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
   // ---- Dashboard API ----
   route('GET', '/api/meta', ({ actor }) => ({
     currentUser: actor.user,
+    currentRole: actor.role,
+    jobStatuses: JOB_STATUSES,
+    photoPhases: PHOTO_PHASES,
     brand: config.brand,
     stages: STAGES,
     dispositions: DISPOSITIONS,
@@ -162,7 +174,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     pipelines: PIPELINES,
     bookingServices: BOOKING_SERVICES,
     heardAboutOptions: HEARD_ABOUT_OPTIONS,
-  }));
+  }), { roles: ANY_LOGIN });
   const leadFilters = (query) => ({
     q: query.get('q'),
     source: query.get('source'),
@@ -175,6 +187,37 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
     leads.archiveOldLeads();
     return leads.listLeads(leadFilters(query));
   });
+  // ---- Shop calendar ----
+  route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
+  route('GET', '/api/jobs/unscheduled', () => jobs.listUnscheduled());
+  route('POST', '/api/leads/:id/job', ({ params, body, actor }) => {
+    const lead = leads.getLead(Number(params.id));
+    if (lead.stage !== 'booked') throw new HttpError(400, 'Only booked leads go on the calendar. Log "Appointment Booked" first.');
+    return jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
+  });
+  route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: ANY_LOGIN });
+  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => jobs.updateJob(Number(params.id), body, actor), { roles: ANY_LOGIN });
+  route('POST', '/api/jobs/:id/checklist', ({ params, body }) => jobs.addItem(Number(params.id), body), { roles: ANY_LOGIN });
+  route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
+    jobs.updateItem(Number(params.id), Number(params.item), body, actor), { roles: ANY_LOGIN });
+  route('DELETE', '/api/jobs/:id/checklist/:item', ({ params }) => jobs.deleteItem(Number(params.id), Number(params.item)), { roles: ANY_LOGIN });
+  // Photos arrive as the raw image bytes (the browser shrinks them first).
+  route('POST', '/api/jobs/:id/photos', ({ params, raw, query, actor }) =>
+    jobs.addPhoto(Number(params.id), raw, { phase: query.get('phase'), caption: query.get('caption') }, actor),
+  { roles: ANY_LOGIN, rawBody: true, bodyLimit: 15_000_000 });
+  route('GET', '/api/jobs/:id/photos/:photo', ({ params, res }) => {
+    const photo = jobs.getPhoto(Number(params.id), Number(params.photo));
+    const data = fs.readFileSync(photo.path);
+    res.writeHead(200, {
+      'Content-Type': photo.mime,
+      'Content-Length': data.length,
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(data);
+  }, { roles: ANY_LOGIN });
+  route('DELETE', '/api/jobs/:id/photos/:photo', ({ params }) => jobs.deletePhoto(Number(params.id), Number(params.photo)), { roles: ANY_LOGIN });
+
   route('POST', '/api/leads/:id/restore', ({ params, actor }) => leads.restoreLead(Number(params.id), actor));
 
   // Excel download of the leads matching the same filters as the board (view=all by default).
@@ -195,7 +238,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
   route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));
   route('POST', '/api/leads/:id/disposition', async ({ params, body, actor }) => {
     const id = Number(params.id);
+    const schedule = DISPOSITIONS_BY_ID[body.disposition]?.schedules ? jobs.parseSchedule(body) : null;
     const result = leads.dispositionLead(id, body, actor);
+    if (schedule) {
+      result.job = jobs.scheduleLead(id, schedule, actor);
+      result.lead = leads.getLead(id);
+    }
     // The rep can untick "send follow-up email" for a single call.
     const message = body.send_email === false ? null : leads.followUpEmailFor(id, body.disposition);
     let email = null;
@@ -322,11 +370,14 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl } = {}) {
       if (!match.isPublic && !user) {
         return send(res, 401, { error: 'Login required' }, { 'WWW-Authenticate': 'Basic realm="Lead Pipeline"' });
       }
-      const actor = { user: user?.name ?? null };
+      if (!match.isPublic && !match.roles.includes(user.role)) {
+        return send(res, 403, { error: 'Your login can only use the job calendar.' });
+      }
+      const actor = { user: user?.name ?? null, role: user?.role ?? null };
       const values = url.pathname.match(match.re).slice(1);
       const params = Object.fromEntries(match.keys.map((k, i) => [k, decodeURIComponent(values[i])]));
-      const raw = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readBody(req) : Buffer.alloc(0);
-      const body = parseBody(raw, req.headers['content-type']);
+      const raw = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readBody(req, match.bodyLimit) : Buffer.alloc(0);
+      const body = match.rawBody ? {} : parseBody(raw, req.headers['content-type']);
       const result = await match.handler({ req, res, params, query: url.searchParams, body, raw, actor });
       if (!res.headersSent) send(res, req.method === 'POST' ? 201 : 200, result ?? { ok: true });
     } catch (err) {

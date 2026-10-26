@@ -22,17 +22,22 @@ module.exports = {
   port: Number(process.env.PORT) || 3000,
   dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'leads.db'),
 
-  // Dashboard logins (HTTP Basic auth). APP_USERS="Dylan:pass1,Sam:pass2" gives
-  // each person their own login so the activity log shows who did what.
+  // Dashboard logins (HTTP Basic auth). APP_USERS="Dylan:pass1,Sam:pass2,Mike:pass3:shop" gives
+  // each person their own login so the activity log shows who did what. A ":shop" ending makes a
+  // shop login: it only sees the job calendar. Everyone else is "sales" and sees everything.
   // APP_USER/APP_PASSWORD still work for a single shared login.
   // With neither set, the dashboard has no login.
   users: [
     ...list(process.env.APP_USERS).map((entry) => {
-      const sep = entry.indexOf(':');
-      return { name: entry.slice(0, sep).trim(), password: entry.slice(sep + 1) };
+      const role = /:shop$/i.test(entry) ? 'shop' : 'sales';
+      const rest = entry.replace(/:(shop|sales)$/i, '');
+      const sep = rest.indexOf(':');
+      return { name: rest.slice(0, sep).trim(), password: rest.slice(sep + 1), role };
     }).filter((u) => u.name && u.password),
-    ...(process.env.APP_PASSWORD ? [{ name: process.env.APP_USER || 'admin', password: process.env.APP_PASSWORD }] : []),
+    ...(process.env.APP_PASSWORD ? [{ name: process.env.APP_USER || 'admin', password: process.env.APP_PASSWORD, role: 'sales' }] : []),
   ],
+  // Job photos are saved here (next to the database by default, so they land on the same volume).
+  photosDir: process.env.PHOTOS_DIR || '',
 
   // Company details shown in the app, the phone app name and the default follow-up email.
   brand: {

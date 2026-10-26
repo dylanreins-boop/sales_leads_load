@@ -8,6 +8,7 @@ const state = {
   openLead: null,
   emailSettings: null,
   pipeline: 'other',
+  section: 'leads', // leads | calendar
   oldLeads: [],
   oldFilters: { vehicle: '', source: '', status: '' },
 };
@@ -119,6 +120,24 @@ function pickPipeline() {
   let saved = null;
   try { saved = localStorage.getItem('pipeline'); } catch { /* storage unavailable */ }
   state.pipeline = [fromLink, saved].find((id) => ids.includes(id) || id === 'old') || 'other';
+}
+
+// ---------- sections: Leads / Calendar ----------
+function showSection(name) {
+  // Shop logins only have the calendar.
+  const section = state.meta.currentRole === 'shop' ? 'calendar' : name;
+  state.section = section;
+  document.body.dataset.section = section;
+  $('#leadsSection').hidden = section !== 'leads';
+  $('#calendarSection').hidden = section !== 'calendar';
+  $('#brandSection').textContent = section === 'calendar' ? 'Shop Calendar' : 'Lead Pipeline';
+  document.querySelectorAll('.main-nav button').forEach((b) => {
+    if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  history.replaceState(null, '', `#${section === 'calendar' ? 'calendar' : state.pipeline}`);
+  if (section === 'calendar') loadCalendar().catch(fail);
+  else renderBoard();
 }
 
 function setPipeline(id) {
@@ -253,6 +272,24 @@ async function moveStage(id, stage) {
   } catch (err) { fail(err); }
 }
 
+// The lead's job on the shop calendar, or a way to add one for booked leads.
+function renderLeadJob(lead) {
+  const open = (lead.jobs || []).find((j) => !['picked_up', 'cancelled'].includes(j.status)) || (lead.jobs || [])[0];
+  const section = $('#leadJobSection');
+  section.hidden = !open && lead.stage !== 'booked';
+  if (section.hidden) return;
+  $('#leadJob').replaceChildren(open
+    ? h('div', { class: 'lead-job' },
+      h('div', {},
+        h('span', { class: `job-status status-${open.status}` }, state.meta.jobStatuses.find((s) => s.id === open.status)?.label || open.status),
+        h('div', { class: 'lead-job-when' }, `Drop-off ${fmtDateTime(open.start_at)}`),
+        h('div', { class: 'muted' }, `Pick-up ${fmtDateTime(open.end_at)}`)),
+      h('button', { type: 'button', onclick: () => showJobOnCalendar(open.id, open.start_at) }, 'Open on calendar'))
+    : h('div', { class: 'lead-job' },
+      h('span', { class: 'muted' }, 'Booked, but not on the shop calendar yet.'),
+      h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')));
+}
+
 // ---------- old & dead leads ----------
 const SOURCE_LABELS = { facebook: 'Facebook', website: 'Website', manual: 'Manual' };
 const vehicleTypeOf = (l) => l.vehicle_type || 'No vehicle type';
@@ -327,7 +364,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -365,6 +402,7 @@ function renderLead(lead) {
   ].filter(Boolean));
 
   fillInfoForm(lead);
+  renderLeadJob(lead);
 
   const stageSelect = $('#stageSelect');
   stageSelect.replaceChildren(...state.meta.stages.map((s) => h('option', { value: s.id, selected: s.id === lead.stage }, s.label)));
@@ -379,6 +417,8 @@ function renderLead(lead) {
   setNoteError(false);
   setServicesError(false);
   $('#servicesField').hidden = true;
+  setScheduleError(false);
+  $('#scheduleField').hidden = true;
   syncDispoForm();
 
   $('#leadReminders').replaceChildren(...(lead.reminders.length
@@ -513,6 +553,7 @@ function activityItem(a) {
     info_updated: 'Lead info updated',
     archived: 'Moved to Old & Dead Leads',
     restored: 'Back on the board',
+    job: 'Shop job',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -549,6 +590,19 @@ function syncDispoForm(fromDispositionChange = false) {
     renderServiceChecks($('#serviceChecks'), state.openLead, state.openLead.booked_services);
   }
   if (!def?.services) setServicesError(false);
+  const scheduleWasHidden = $('#scheduleField').hidden;
+  $('#scheduleField').hidden = !def?.schedules;
+  if (def?.schedules && scheduleWasHidden && state.openLead) {
+    const { start, end } = defaultSlot(state.openLead.vehicle_type);
+    form.job_start.value = toLocalInput(start);
+    form.job_end.value = toLocalInput(end);
+  }
+  if (!def?.schedules) setScheduleError(false);
+}
+
+function setScheduleError(show) {
+  $('#scheduleField').classList.toggle('invalid', show);
+  $('#scheduleError').hidden = !show;
 }
 
 // Shows the "send follow-up email" choice for dispositions that send one.
@@ -575,12 +629,17 @@ async function saveDisposition(e) {
   if (!form.disposition.value) return toast('Pick a call outcome first', 'error');
   const needsServices = !$('#servicesField').hidden;
   const services = needsServices ? checkedServices($('#serviceChecks')) : [];
+  const needsSchedule = !$('#scheduleField').hidden;
+  const jobStart = new Date(form.job_start.value);
+  const jobEnd = new Date(form.job_end.value);
+  const badSchedule = needsSchedule && (Number.isNaN(jobStart.getTime()) || Number.isNaN(jobEnd.getTime()) || jobEnd <= jobStart);
   const missingNote = !form.note.value.trim();
   const missingServices = needsServices && !services.length;
   setNoteError(missingNote);
   setServicesError(missingServices);
-  if (missingNote || missingServices) {
-    (missingNote ? form.note : $('#serviceChecks input'))?.focus();
+  setScheduleError(badSchedule);
+  if (missingNote || missingServices || badSchedule) {
+    (missingNote ? form.note : missingServices ? $('#serviceChecks input') : form.job_start)?.focus();
     return;
   }
   const body = {
@@ -591,11 +650,15 @@ async function saveDisposition(e) {
   if (form.reminder.checked) body.reminder_at = new Date(form.reminder_at.value).toISOString();
   if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
   if (needsServices) body.services = services;
+  if (needsSchedule) Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString() });
   try {
-    const { lead, reminder, email } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
-    toast(reminder
-      ? `Saved. Reminder set for ${fmtDateTime(reminder.due_at)}`
-      : `Saved. Lead moved to ${stageLabel(lead.stage)}`);
+    const { lead, reminder, email, job } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
+    if (job) toast(`Booked. On the shop calendar for ${fmtDateTime(job.start_at)}`);
+    else {
+      toast(reminder
+        ? `Saved. Reminder set for ${fmtDateTime(reminder.due_at)}`
+        : `Saved. Lead moved to ${stageLabel(lead.stage)}`);
+    }
     if (email?.status === 'sent') toast(`Follow-up email sent to ${email.to_email}`);
     else if (email) toast(`Follow-up email not sent: ${email.error}`, 'error');
     renderLead(lead);
@@ -803,10 +866,15 @@ function debounce(fn, ms) {
 }
 
 async function init() {
-  [state.meta, state.emailSettings] = await Promise.all([api('/api/meta'), api('/api/settings/email')]);
+  state.meta = await api('/api/meta');
+  const shop = state.meta.currentRole === 'shop';
+  document.body.dataset.role = shop ? 'shop' : 'sales';
+  if (!shop) state.emailSettings = await api('/api/settings/email');
   $('#syncFb').hidden = !state.meta.facebookConfigured;
   applyBrand(state.meta.brand);
   pickPipeline();
+  initCalendar();
+  document.querySelectorAll('.main-nav button').forEach((b) => b.addEventListener('click', () => showSection(b.dataset.section)));
 
   $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
@@ -827,7 +895,8 @@ async function init() {
   $('#enableNotifs').addEventListener('click', () => Notification.requestPermission().then(updateNotifButton));
   $('#scrim').addEventListener('click', () => showPanel(null));
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => showPanel(null)));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') showPanel(null); });
+  // Escape closes the side panel, unless a dialog (like the photo viewer) is open on top of it.
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) showPanel(null); });
   $('#dispoForm').addEventListener('submit', saveDisposition);
   $('#dispoForm').disposition.addEventListener('change', () => syncDispoForm(true));
   $('#dispoForm').reminder.addEventListener('change', () => syncDispoForm());
@@ -849,7 +918,9 @@ async function init() {
     $('#currentUser').textContent = `Signed in as ${state.meta.currentUser}`;
   }
 
+  if (shop) return showSection('calendar');
   await Promise.all([loadLeads(), loadReminders()]);
+  showSection(location.hash === '#calendar' ? 'calendar' : 'leads');
   // Refresh so new Facebook/website leads and due reminders show up on their own.
   setInterval(() => Promise.all([loadLeads(), loadReminders()]).catch(() => {}), 60_000);
 }

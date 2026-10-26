@@ -76,6 +76,46 @@ CREATE TABLE IF NOT EXISTS emails (
 );
 CREATE INDEX IF NOT EXISTS emails_lead ON emails (lead_id);
 
+CREATE TABLE IF NOT EXISTS jobs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id    INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  start_at   TEXT NOT NULL,                     -- drop-off
+  end_at     TEXT NOT NULL,                     -- pick-up
+  status     TEXT NOT NULL DEFAULT 'scheduled', -- scheduled | in_shop | ready | picked_up | cancelled
+  notes      TEXT,
+  services   TEXT,                              -- JSON list of service ids
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS jobs_time ON jobs (start_at, end_at);
+CREATE INDEX IF NOT EXISTS jobs_lead ON jobs (lead_id);
+
+CREATE TABLE IF NOT EXISTS job_checklist (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id     INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  section    TEXT NOT NULL,                     -- Check-in | Work | Finish
+  label      TEXT NOT NULL,
+  position   INTEGER NOT NULL,
+  done_at    TEXT,
+  done_by    TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_checklist_job ON job_checklist (job_id);
+
+CREATE TABLE IF NOT EXISTS job_photos (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id      INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  file        TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  phase       TEXT NOT NULL DEFAULT 'during',   -- before | during | after
+  caption     TEXT,
+  size        INTEGER,
+  uploaded_by TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_photos_job ON job_photos (job_id);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT

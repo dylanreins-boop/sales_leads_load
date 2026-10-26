@@ -4,6 +4,7 @@ const { buildWorkbook } = require('./xlsx');
 const { STAGES, DISPOSITIONS_BY_ID } = require('./pipeline');
 const { pipelineLabel } = require('./vehicle');
 const { serviceLabels } = require('./services');
+const { JOB_STATUSES } = require('./jobs');
 
 const SOURCES = { facebook: 'Facebook', website: 'Website', manual: 'Manual' };
 const STATUS = { active: 'Active', old: 'Old', dead: 'Dead' };
@@ -21,7 +22,7 @@ function when(iso) {
 const ACTIVITY = {
   created: 'Lead created', reinquiry: 'Submitted again', stage_change: 'Stage changed', disposition: 'Call',
   note: 'Note', reminder_done: 'Reminder done', email: 'Email', info_updated: 'Lead info updated',
-  archived: 'Moved to old leads', restored: 'Restored',
+  archived: 'Moved to old leads', restored: 'Restored', job: 'Shop job',
 };
 
 function historyText(activities) {
@@ -59,6 +60,12 @@ const COLUMNS = [
   ['Received', 17, (l) => when(l.received_at)],
   ['Last contacted', 17, (l) => when(l.last_contacted_at)],
   ['Moved to old leads', 17, (l) => when(l.archived_at)],
+  ['Job drop-off', 17, (l) => when(l.job?.start_at)],
+  ['Job pick-up', 17, (l) => when(l.job?.end_at)],
+  ['Job status', 16, (l) => (l.job ? JOB_STATUSES.find((s) => s.id === l.job.status)?.label : '')],
+  ['Checklist', 10, (l) => (l.job ? `${l.job.checklist_done}/${l.job.checklist_total}` : '')],
+  ['Job photos', 10, (l) => (l.job ? l.job.photo_count : '')],
+  ['Job notes', 30, (l) => l.job?.notes],
   ['Notes & history', 80, (l) => historyText(l.activities || [])],
   ['Lead ID', 8, (l) => l.id],
 ];

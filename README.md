@@ -49,6 +49,48 @@ lead as a Coach / RV. Reminders cover both pipelines; RV leads are tagged "RV". 
 tab with `#rv` or `#other` at the end of the address. To change which types count as RVs, edit
 `PIPELINES` in `src/vehicle.js`. The API also takes `GET /api/leads?pipeline=rv` (or `other`).
 
+## Shop calendar
+
+**Calendar** (next to **Leads** in the header) shows every booked job.
+
+- **Booking puts the job on the calendar.** "Appointment Booked" now also asks for the **drop-off** and
+  **pick-up** times (it suggests 8 AM the next business day, picked up a day later at 2 PM, or two days
+  later for RVs). Booking the same lead again moves its job instead of adding a second one.
+- **Views:** Month, Week and List (List is the default on phones). Jobs are colored by status:
+  Scheduled, In the shop, Ready for pickup, Picked up, Cancelled. Multi-day jobs show on each day
+  ("day 2 of 3"), with drop-off and pick-up times on the first and last day. RV jobs are tagged "RV".
+  Each card shows the customer, vehicle, services, checklist progress and photo count.
+- **Booked leads not on the calendar yet** (e.g. booked before the calendar existed) are listed at the
+  top of the calendar with a button to add them. The lead's panel also shows its job ("Open on
+  calendar") or a "Put on calendar" button.
+- **Job panel** (click any job): change the status, move drop-off/pick-up, call or email the customer,
+  see the services, keep job notes (keys, gate codes), work the **vehicle checklist**, and add **photos**.
+
+### Vehicle checklist
+
+Each job starts with a checklist built from the vehicle type and the services booked: check-in items
+(walk-around for chips and dents, before photos, glass, wheels, mileage/hours), the work (decon wash,
+clay, paint depth readings and correction if booked, wheels/glass/trim/interior/pop-outs/roof/hull if
+booked, panel wipe, coating, cure time) and finish items (final inspection, after photos, customer
+walk-through). Coaches and toy haulers also get roof and slide-out checks; boats get hull and gelcoat;
+planes get tail number and leading edges. Ticking an item records **who** ticked it and **when**. The
+shop can add its own items to any section or remove ones that don't apply. To change the starting list,
+edit `BASE_CHECKLIST`, `TYPE_CHECKLIST` and `SERVICE_CHECKLIST` in `src/jobs.js`.
+
+### Job photos
+
+Pick **Before**, **During** or **After**, then **Add photos**. On a phone this offers the camera or the
+photo library, and several can be added at once. Photos are shrunk to 1600 px JPEGs in the browser before
+uploading, so they're quick on a phone connection (about 200–400 KB each). Tap a photo to see it full
+size with who added it and when, flip through with the arrows, or delete it (tap twice). Photos are stored
+in `PHOTOS_DIR` (by default a `photos` folder next to the database, so on Fly they're on the same volume).
+
+### Shop logins
+
+Add `:shop` to the end of a login in `APP_USERS` (e.g. `Mike:his-password:shop`). Shop logins only see
+the **calendar**: they can open jobs, change status, edit times and notes, tick the checklist and add
+photos, but can't see the lead pipeline, reminders, emails or Excel export.
+
 ## Old & Dead Leads
 
 **14 days after a lead comes in**, it leaves its board and moves to the **Old & Dead Leads** tab, unless
@@ -76,6 +118,9 @@ including the search box and any filters. The workbook has:
   email, OK to text, how they heard about us, year/make/model/color, stage, last call outcome, services
   booked, campaign, message, dates, and the full **notes & history** (who did what, and when).
 - **One sheet per vehicle type**, with the same columns.
+
+The sheets also include each lead's latest shop job: drop-off, pick-up, status, checklist progress,
+photo count and job notes.
 
 Headers are frozen and filterable. `GET /api/export.xlsx` takes the same filters as `/api/leads`
 (`view=active|old|all`, `pipeline`, `vehicle_type`, `source`, `status=old|dead`, `q`).
@@ -243,7 +288,7 @@ with the [Fly CLI](https://fly.io/docs/flyctl/install/) installed and `fly auth 
 ```bash
 fly launch --copy-config --no-deploy          # creates the app from fly.toml (pick a new name if asked)
 fly volumes create leads_data --region lax --size 1
-fly secrets set APP_USERS='Dylan:a-strong-password,Sam:another-strong-password'
+fly secrets set APP_USERS='Dylan:a-strong-password,Sam:another-strong-password,Mike:shop-password:shop'
 fly deploy
 fly open                                      # opens https://<app-name>.fly.dev
 ```
@@ -278,6 +323,11 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead) |
 | POST | `/api/leads/:id/restore` | Put an old or dead lead back on its board |
 | GET | `/api/export.xlsx?…same filters…` | Excel download |
+| GET | `/api/jobs?from=&to=` | Jobs on the calendar between two dates |
+| GET / PATCH | `/api/jobs/:id` | A job with its checklist and photos / change status, times, notes |
+| POST | `/api/leads/:id/job` | Put a booked lead on the calendar `{ job_start, job_end }` |
+| POST / PATCH / DELETE | `/api/jobs/:id/checklist[/:item]` | Add, tick (`{ done }`) or remove checklist items |
+| POST / GET / DELETE | `/api/jobs/:id/photos[/:photo]` | Upload (raw image body, `?phase=before\|during\|after`), view, delete |
 | POST | `/api/leads` | Add a lead manually |
 | GET / PATCH | `/api/leads/:id` | Lead details, or edit fields / stage |
 | POST | `/api/leads/:id/disposition` | `{ disposition, note?, reminder?, reminder_at? }` |
@@ -302,6 +352,8 @@ src/vehicle.js       vehicle fields and matching them in form answers
 src/services.js      services that can be booked
 src/export.js        Excel workbook layout (summary, all leads, sheet per vehicle type)
 src/xlsx.js          writes .xlsx files with no dependencies
+src/jobs.js          shop calendar jobs, vehicle checklist, job photos
+public/calendar.js   calendar views and the job panel
 src/email.js         email templates and sending (Resend / SendGrid / Postmark)
 src/db.js            SQLite schema
 public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons

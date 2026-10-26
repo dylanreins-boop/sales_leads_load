@@ -173,7 +173,7 @@ test('next disposition closes the old reminder and walks through follow-ups', as
   const open = (await call('GET', '/api/reminders')).data.filter((r) => r.lead_id === lead.id);
   assert.equal(open.length, 1, 'only the newest reminder stays open');
 
-  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Test call', services: ['full_decon_coat'] });
+  const booked = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', job_start: '2026-11-03T15:00:00Z', job_end: '2026-11-04T22:00:00Z', note: 'Test call', services: ['full_decon_coat'] });
   assert.equal(booked.data.lead.stage, 'booked');
 });
 
@@ -362,17 +362,18 @@ test('booking requires picking services, which are saved on the lead', async () 
   await call('POST', '/api/leads', { full_name: 'Gil Coach', phone: '555-616-7171', vehicle_type: 'Coach / RV' });
   const lead = await findLead('Gil Coach');
 
-  const none = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Booked Tue', services: [] });
+  const none = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', job_start: '2026-11-03T15:00:00Z', job_end: '2026-11-04T22:00:00Z', note: 'Booked Tue', services: [] });
   assert.equal(none.status, 400);
   assert.match(none.data.error, /service/i);
-  assert.equal((await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'x', services: ['made_up'] })).status, 400);
+  assert.equal((await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', job_start: '2026-11-03T15:00:00Z', job_end: '2026-11-04T22:00:00Z', note: 'x', services: ['made_up'] })).status, 400);
 
   const res = await call('POST', `/api/leads/${lead.id}/disposition`,
-    { disposition: 'booked', note: 'Booked Tue 8am', services: ['pop_outs', 'full_decon_coat', 'pop_outs', 'made_up'] });
+    { disposition: 'booked', job_start: '2026-11-03T15:00:00Z', job_end: '2026-11-04T22:00:00Z', note: 'Booked Tue 8am', services: ['pop_outs', 'full_decon_coat', 'pop_outs', 'made_up'] });
   assert.equal(res.status, 201);
   assert.equal(res.data.lead.stage, 'booked');
   assert.deepEqual(res.data.lead.booked_services, ['full_decon_coat', 'pop_outs'], 'known ids only, list order, no repeats');
-  assert.match(res.data.lead.activities[0].note, /Services booked: Full decon & coat, Pop-outs \/ slide-outs/);
+  assert.match(res.data.lead.activities.find((a) => a.type === 'disposition').note, /Services booked: Full decon & coat, Pop-outs \/ slide-outs/);
+  assert.ok(res.data.job, 'booking puts the job on the calendar');
   assert.deepEqual((await findLead('Gil Coach')).booked_services, ['full_decon_coat', 'pop_outs']);
 
   const edited = await call('PATCH', `/api/leads/${lead.id}`, { booked_services: ['full_decon_coat', 'wheels_windows'] });

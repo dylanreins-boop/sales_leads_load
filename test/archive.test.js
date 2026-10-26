@@ -46,7 +46,7 @@ test('leads move to Old & Dead Leads after two weeks, booked leads stay', async 
   const all = (await call('GET', '/api/leads')).data;
   const id = (n) => all.find((l) => l.full_name === n).id;
   await call('POST', `/api/leads/${id('Dead Boat')}/disposition`, { disposition: 'not_interested', note: 'Sold the boat' });
-  await call('POST', `/api/leads/${id('Booked Truck')}/disposition`, { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'] });
+  await call('POST', `/api/leads/${id('Booked Truck')}/disposition`, { disposition: 'booked', job_start: '2026-11-03T15:00:00Z', job_end: '2026-11-04T22:00:00Z', note: 'Booked', services: ['full_decon_coat'] });
   await call('POST', `/api/leads/${id('Old Car')}/disposition`, { disposition: 'no_answer_vm', note: 'VM' });
   for (const n of ['Old Car', 'Old RV', 'Dead Boat', 'Booked Truck']) backdate(n, 15);
   backdate('Fresh SUV', 13);
