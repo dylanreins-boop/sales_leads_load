@@ -87,7 +87,7 @@ test('a saved quote is logged on the lead and can be emailed to the customer', a
   assert.equal(quote.data.created_by, 'Sam');
   const full = (await call('GET', `/api/leads/${lead.id}`)).data;
   assert.equal(full.quotes.length, 1);
-  assert.ok(full.activities.some((a) => a.type === 'quote' && /^Quote \$5,550\.00: RV \/ trailer coating \(40 ft × \$130\.00\/ft\) \$5,200\.00 \+ Wheels & windows \$350\.00$/.test(a.note)));
+  assert.ok(full.activities.some((a) => a.type === 'quote' && /^Quote \$5,550\.00: RV \/ trailer, no wheels or windows \(40 ft × \$130\.00\/ft\) \$5,200\.00 \+ Wheels & windows \$350\.00$/.test(a.note)));
 
   assert.match((await call('POST', `/api/quotes/${quote.data.id}/email`)).data.error, /customer's email/);
   await call('PATCH', `/api/leads/${lead.id}`, { email: 'quote.me@example.com' });

@@ -117,14 +117,14 @@ Every lead has a **Quote** box (sales and admins). Pick a vehicle package or an 
 length in feet), tick add-ons, add custom lines (for example wheels & windows until it has a set price),
 and an optional discount and note. The total updates as you go and always comes from the saved price list.
 
-- **Save quote** keeps it on the lead and logs it ("Quote $6,700.00: RV / trailer coating (42 ft ×
-  $150.00/ft) $6,300.00 + Wheels & windows $400.00").
+- **Save quote** keeps it on the lead and logs it ("Quote $6,300.00: RV / trailer, windows & slides
+  included (42 ft × $150.00/ft) $6,300.00").
 - **Email to customer** sends it as a plain email from the shop (needs the email service set up).
 - **Use for booking** fills the "Appointment Booked" form with the quote total as the job amount.
 
 **Price list (admins):** the **Price list** button edits what the quote builder charges. It starts with
-vehicle packages at $800, $1,300, $1,400 and $1,700, RV / trailer coating at $130 and $150 per linear
-foot, and Wheels & windows with no price yet (it can't be ticked until it has one). Rename packages,
+vehicle packages at $800, $1,300, $1,400 and $1,700, RV / trailer coating at $130 per linear foot (no wheels or
+windows) and $150 per foot (windows and slide-outs included), and Wheels & windows with no price yet (it can't be ticked until it has one). Rename packages,
 change prices, or add packages, rates and add-ons. Shop logins never see prices.
 
 ## Review requests
@@ -403,6 +403,18 @@ fly certs add leads.bobmosescc.com
 Fly prints the DNS record to add (a CNAME from `leads` to `<app-name>.fly.dev`). Once that's added at
 whoever hosts bobmosescc.com's DNS, `fly certs show leads.bobmosescc.com` shows the certificate is ready,
 usually within minutes.
+
+**On Namecheap** (the company's registrar): Domain List → **Manage** next to bobmosescc.com. Check that
+**Nameservers** says Namecheap BasicDNS (if it says Custom DNS, add the record at that provider instead).
+Then **Advanced DNS** → Host Records → **Add New Record** → **CNAME Record**:
+
+| Type | Host | Value | TTL |
+|---|---|---|---|
+| CNAME Record | `leads` | `bob-moses-leads.fly.dev` | Automatic |
+
+Save it with the green check. If `fly certs add` also lists an `_acme-challenge` CNAME, add it the same
+way with Host `_acme-challenge.leads`. Leave the website (`@`, `www`) and email (MX/TXT) records alone,
+and don't add an A record for `leads`.
 
 Later, add the other secrets the same way when you have them:
 `fly secrets set WEBSITE_API_KEY=… EMAIL_PROVIDER=resend EMAIL_API_KEY=… EMAIL_FROM='Bob Moses Ceramic Coating <…>' FB_VERIFY_TOKEN=… FB_APP_SECRET=… FB_PAGE_ACCESS_TOKEN=… FB_FORM_IDS=…`

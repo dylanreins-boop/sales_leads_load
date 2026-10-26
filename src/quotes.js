@@ -10,8 +10,9 @@ const DEFAULT_PRICES = {
     { id: 'pkg1700', label: 'Coating package', price_cents: 170000 },
   ],
   rv: [
-    { id: 'rv130', label: 'RV / trailer coating', per_foot_cents: 13000 },
-    { id: 'rv150', label: 'RV / trailer coating', per_foot_cents: 15000 },
+    // $130/ft is the body only; $150/ft includes windows and slide-outs.
+    { id: 'rv130', label: 'RV / trailer, no wheels or windows', per_foot_cents: 13000 },
+    { id: 'rv150', label: 'RV / trailer, windows & slides included', per_foot_cents: 15000 },
   ],
   addons: [
     { id: 'wheels_windows', label: 'Wheels & windows', price_cents: null },

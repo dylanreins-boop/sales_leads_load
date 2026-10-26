@@ -64,8 +64,10 @@ function quoteInput() {
 }
 
 function syncQuoteForm() {
-  const isRate = quoting.prices?.rv.some((r) => r.id === $('#quoteBase').value);
-  $('#quoteFeetField').hidden = !isRate;
+  const rate = quoting.prices?.rv.find((r) => r.id === $('#quoteBase').value);
+  $('#quoteFeetField').hidden = !rate;
+  // e.g. "RV / trailer, windows & slides included": don't charge for windows twice.
+  $('#quoteIncludedHint').hidden = !(rate && /windows[^,]*included/i.test(rate.label));
   clearTimeout(quoting.timer);
   quoting.timer = setTimeout(previewQuote, 250);
 }
