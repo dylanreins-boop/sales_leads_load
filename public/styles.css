@@ -457,10 +457,9 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 }
 .main-nav button[aria-current="page"] { background: var(--accent); color: var(--accent-text); }
 body[data-section="calendar"] .lead-only { display: none !important; }
-/* Login levels: shop sees only the calendar, sales only the leads, admin everything. */
+/* Login levels: shop sees only the calendar, sales the leads plus a view-only calendar, admin everything. */
 body[data-role="shop"] .main-nav,
 body[data-role="shop"] #remindersBtn,
-body[data-role="sales"] .main-nav,
 body:not([data-role="admin"]) .admin-only { display: none !important; }
 
 /* Admin Updates feed */
@@ -495,6 +494,14 @@ body:not([data-role="admin"]) .admin-only { display: none !important; }
 .update-item .note { white-space: pre-wrap; overflow-wrap: anywhere; }
 .update-item .meta { font-size: 12px; color: var(--muted); }
 #olderUpdates { width: 100%; margin-top: 8px; }
+
+/* View-only job panel (sales) */
+.view-only { margin: 0 0 4px; }
+.job-times { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+.job-times dt { color: var(--muted); font-size: 12px; font-weight: 600; align-self: center; }
+.job-times dd { margin: 0; font-weight: 600; }
+.job-notes-text { white-space: pre-wrap; margin: 0; }
+.checklist input:disabled { opacity: 1; cursor: default; }
 
 /* Team panel (admins) */
 .team-add { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }

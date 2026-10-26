@@ -129,8 +129,8 @@ function pickPipeline() {
 
 // ---------- sections: Leads / Calendar ----------
 function showSection(name) {
-  // Shop logins only have the calendar, sales logins only the leads.
-  const section = { shop: 'calendar', sales: 'leads' }[state.meta.currentRole] || name;
+  // Shop logins only have the calendar.
+  const section = state.meta.currentRole === 'shop' ? 'calendar' : name;
   state.section = section;
   document.body.dataset.section = section;
   $('#leadsSection').hidden = section !== 'leads';
@@ -289,7 +289,7 @@ function renderLeadJob(lead) {
         h('span', { class: `job-status status-${open.status}` }, state.meta.jobStatuses.find((s) => s.id === open.status)?.label || open.status),
         h('div', { class: 'lead-job-when' }, `Drop-off ${fmtDateTime(open.start_at)}`),
         h('div', { class: 'muted' }, `Pick-up ${fmtDateTime(open.end_at)}`)),
-      isAdmin() && h('button', { type: 'button', onclick: () => showJobOnCalendar(open.id, open.start_at) }, 'Open on calendar'))
+      h('button', { type: 'button', onclick: () => showJobOnCalendar(open.id, open.start_at) }, 'Open on calendar'))
     : h('div', { class: 'lead-job' },
       h('span', { class: 'muted' }, 'Booked, but not on the shop calendar yet.'),
       h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')));

@@ -134,6 +134,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // `rawBody` routes get the request bytes as-is (photo uploads) up to `bodyLimit`.
   const ANY_LOGIN = ['admin', 'sales', 'shop'];
   const LEADS = ['admin', 'sales'];
+  // Sales can look at the calendar (ANY_LOGIN reads) but only admin and shop change jobs.
   const CALENDAR = ['admin', 'shop'];
   const ADMIN = ['admin'];
   function route(method, pattern, handler, { isPublic = false, roles = LEADS, rawBody = false, bodyLimit } = {}) {
@@ -186,14 +187,14 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return leads.listLeads(leadFilters(query));
   });
   // ---- Shop calendar ----
-  route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: CALENDAR });
+  route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
   route('GET', '/api/jobs/unscheduled', () => jobs.listUnscheduled(), { roles: ADMIN });
   route('POST', '/api/leads/:id/job', ({ params, body, actor }) => {
     const lead = leads.getLead(Number(params.id));
     if (lead.stage !== 'booked') throw new HttpError(400, 'Only booked leads go on the calendar. Log "Appointment Booked" first.');
     return jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
   });
-  route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: CALENDAR });
+  route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: ANY_LOGIN });
   route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => jobs.updateJob(Number(params.id), body, actor), { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
@@ -213,7 +214,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       'X-Content-Type-Options': 'nosniff',
     });
     res.end(data);
-  }, { roles: CALENDAR });
+  }, { roles: ANY_LOGIN });
   route('DELETE', '/api/jobs/:id/photos/:photo', ({ params, actor }) => jobs.deletePhoto(Number(params.id), Number(params.photo), actor), { roles: CALENDAR });
 
   // ---- Updates feed (admin) ----

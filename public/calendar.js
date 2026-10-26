@@ -252,22 +252,31 @@ async function patchJob(patch, message) {
   } catch (err) { fail(err); }
 }
 
+// Sales logins can look at jobs but not change them.
+const canEditJobs = () => state.meta?.currentRole !== 'sales';
+const fmtWhen = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 function renderJob() {
   const job = cal.job;
+  const edit = canEditJobs();
+  const status = state.meta.jobStatuses.find((s) => s.id === job.status);
   $('#jobTitle').textContent = customer(job);
   $('#jobMeta').replaceChildren(
     [job.vehicle_type, vehicleText(job) !== job.vehicle_type && vehicleText(job), job.vehicle_color].filter(Boolean).join(' · '),
-    job.pipeline === 'rv' && ' ', job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV'));
+    ...(job.pipeline === 'rv' ? [' ', h('span', { class: 'chip-rv' }, 'RV')] : []));
 
   const done = job.checklist.filter((c) => c.done_at).length;
   const sections = [...new Set(job.checklist.map((c) => c.section))];
   const byPhase = Object.fromEntries(state.meta.photoPhases.map((p) => [p, job.photos.filter((ph) => ph.phase === p)]));
 
-  $('#jobBody').replaceChildren(
+  $('#jobBody').replaceChildren(...[
+    !edit && h('p', { class: 'notice view-only' }, 'View only. The shop or an admin can change this job.'),
+
     // Status
     h('section', { class: 'card-section' },
       h('h3', {}, 'Status'),
-      h('div', { class: 'status-picker', role: 'radiogroup', 'aria-label': 'Job status' },
+      !edit && h('span', { class: `job-status status-${job.status}` }, status?.label || job.status),
+      edit && h('div', { class: 'status-picker', role: 'radiogroup', 'aria-label': 'Job status' },
         ...state.meta.jobStatuses.map((s) => h('button', {
           type: 'button',
           role: 'radio',
@@ -279,7 +288,10 @@ function renderJob() {
     // Schedule
     h('section', { class: 'card-section' },
       h('h3', {}, 'Drop-off and pick-up'),
-      h('form', { class: 'schedule-form', onsubmit: (e) => {
+      !edit && h('dl', { class: 'job-times' },
+        h('dt', {}, 'Drop-off'), h('dd', {}, fmtWhen(job.start_at)),
+        h('dt', {}, 'Pick-up'), h('dd', {}, fmtWhen(job.end_at))),
+      edit && h('form', { class: 'schedule-form', onsubmit: (e) => {
         e.preventDefault();
         const f = e.target;
         patchJob({ start_at: new Date(f.start.value).toISOString(), end_at: new Date(f.end.value).toISOString() }, 'Job times saved');
@@ -296,12 +308,13 @@ function renderJob() {
       job.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
       job.message && h('div', { class: 'message' }, job.message),
       job.services.length > 0 && h('div', { class: 'service-chips' }, ...job.services.map((id) => h('span', { class: 'service-chip' }, serviceLabels([id])))),
-      isAdmin() && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
+      state.meta.currentRole !== 'shop' && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
 
     // Notes
     h('section', { class: 'card-section' },
       h('h3', {}, 'Job notes'),
-      h('form', { class: 'notes-form', onsubmit: (e) => { e.preventDefault(); patchJob({ notes: e.target.notes.value }, 'Notes saved'); } },
+      !edit && h('p', { class: job.notes ? 'job-notes-text' : 'muted' }, job.notes || 'No job notes.'),
+      edit && h('form', { class: 'notes-form', onsubmit: (e) => { e.preventDefault(); patchJob({ notes: e.target.notes.value }, 'Notes saved'); } },
         h('textarea', { name: 'notes', rows: '3', placeholder: 'Keys, gate codes, anything the shop should know' }, job.notes || ''),
         h('button', { type: 'submit' }, 'Save notes'))),
 
@@ -312,7 +325,7 @@ function renderJob() {
       ...sections.map((section) => h('div', { class: 'check-group' },
         h('div', { class: 'check-group-title' }, section),
         h('ul', { class: 'checklist' }, ...job.checklist.filter((c) => c.section === section).map(checkItem)))),
-      h('form', { class: 'add-check', onsubmit: addCheckItem },
+      edit && h('form', { class: 'add-check', onsubmit: addCheckItem },
         h('select', { name: 'section', 'aria-label': 'Section' }, ...['Check-in', 'Work', 'Finish'].map((s) => h('option', { value: s, selected: s === 'Check-in' }, s))),
         h('input', { name: 'label', placeholder: 'Add something to check', 'aria-label': 'New checklist item', maxlength: '200' }),
         h('button', { type: 'submit' }, 'Add'))),
@@ -320,7 +333,7 @@ function renderJob() {
     // Photos
     h('section', { class: 'card-section' },
       h('div', { class: 'section-head' }, h('h3', {}, 'Photos'), h('span', { class: 'muted' }, `${job.photos.length} total`)),
-      h('div', { class: 'photo-upload' },
+      edit && h('div', { class: 'photo-upload' },
         h('div', { class: 'phase-picker', role: 'radiogroup', 'aria-label': 'Photo stage' },
           ...state.meta.photoPhases.map((p) => h('button', {
             type: 'button', role: 'radio', 'aria-checked': String(cal.phase === p),
@@ -335,17 +348,17 @@ function renderJob() {
           type: 'button', class: 'photo-thumb', title: ph.caption || `${PHASE_LABEL[p]} photo`,
           onclick: () => openPhoto(job.photos.indexOf(ph)),
         }, h('img', { src: photoUrl(ph), alt: ph.caption || `${PHASE_LABEL[p]} photo`, loading: 'lazy' })))))),
-      !job.photos.length && h('p', { class: 'muted' }, 'No photos yet. Take before photos at check-in.')),
-  );
+      !job.photos.length && h('p', { class: 'muted' }, edit ? 'No photos yet. Take before photos at check-in.' : 'No photos yet.')),
+  ].filter(Boolean));
 }
 
 function checkItem(item) {
   const meta = item.done_at ? `${item.done_by ? `${item.done_by} · ` : ''}${new Date(item.done_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : '';
   return h('li', { class: item.done_at ? 'done' : '' },
     h('label', { class: 'check-item' },
-      h('input', { type: 'checkbox', checked: Boolean(item.done_at), onchange: (e) => toggleItem(item, e.target.checked) }),
+      h('input', { type: 'checkbox', checked: Boolean(item.done_at), disabled: !canEditJobs(), onchange: (e) => toggleItem(item, e.target.checked) }),
       h('span', { class: 'check-text' }, item.label, meta && h('span', { class: 'check-meta' }, meta))),
-    h('button', { type: 'button', class: 'icon-btn remove', title: 'Remove from this job', 'aria-label': `Remove ${item.label}`, onclick: () => removeItem(item) }, '×'));
+    canEditJobs() && h('button', { type: 'button', class: 'icon-btn remove', title: 'Remove from this job', 'aria-label': `Remove ${item.label}`, onclick: () => removeItem(item) }, '×'));
 }
 
 async function toggleItem(item, done) {
@@ -435,6 +448,7 @@ function renderPhoto() {
   const ph = cal.job.photos[cal.photoIndex];
   if (!ph) { $('#photoDialog').close(); return; }
   $('#photoImg').src = photoUrl(ph);
+  $('#photoDelete').hidden = !canEditJobs();
   $('#photoImg').alt = ph.caption || `${PHASE_LABEL[ph.phase]} photo`;
   $('#photoMeta').textContent = [PHASE_LABEL[ph.phase], ph.uploaded_by, new Date(ph.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })].filter(Boolean).join(' · ');
   $('#photoCount').textContent = `${cal.photoIndex + 1} of ${cal.job.photos.length}`;

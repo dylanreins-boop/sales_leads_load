@@ -157,7 +157,7 @@ test('a shop login only reaches the calendar', async () => {
   assert.equal((await fetch(`${base}/`, { headers: { Authorization: SHOP } })).status, 200, 'shop can load the app');
 });
 
-test('a sales login works leads and books jobs but has no calendar, export or settings', async () => {
+test('a sales login works leads, books jobs and views the calendar, but can\'t change jobs, export or settings', async () => {
   assert.equal((await call('GET', '/api/meta', undefined, SALES)).data.currentRole, 'sales');
   const { lead } = (await call('POST', '/api/leads', { full_name: 'Sales Booked', phone: '702-555-3333', vehicle_type: 'Car' }, SALES)).data;
   const booked = await call('POST', `/api/leads/${lead.id}/disposition`, {
@@ -166,11 +166,19 @@ test('a sales login works leads and books jobs but has no calendar, export or se
   assert.equal(booked.status, 201);
   assert.ok(booked.data.job.id, 'sales can put the booking on the calendar');
   assert.equal(booked.data.lead.jobs.length, 1, 'and sees the job time on the lead');
-  for (const [method, url] of [['GET', '/api/jobs?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z'], ['GET', `/api/jobs/${booked.data.job.id}`],
-    ['PATCH', `/api/jobs/${booked.data.job.id}`], ['GET', '/api/jobs/unscheduled'], ['GET', '/api/export.xlsx'], ['PUT', '/api/settings/email'],
+  const jid = booked.data.job.id;
+  const week = (await call('GET', '/api/jobs?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z', undefined, SALES)).data;
+  assert.ok(week.some((j) => j.id === jid), 'sales sees the calendar');
+  const job = (await call('GET', `/api/jobs/${jid}`, undefined, SALES)).data;
+  assert.ok(job.checklist.length > 0, 'and can open a job');
+  const item = job.checklist[0].id;
+  for (const [method, url] of [['PATCH', `/api/jobs/${jid}`], ['POST', `/api/jobs/${jid}/checklist`], ['PATCH', `/api/jobs/${jid}/checklist/${item}`],
+    ['DELETE', `/api/jobs/${jid}/checklist/${item}`], ['POST', `/api/jobs/${jid}/photos`], ['GET', '/api/jobs/unscheduled'], ['GET', '/api/export.xlsx'], ['PUT', '/api/settings/email'],
     ['POST', '/api/facebook/sync'], ['GET', '/api/updates'], ['GET', '/api/updates/count']]) {
-    assert.equal((await call(method, url, method === 'GET' ? undefined : {}, SALES)).status, 403, `${method} ${url}`);
+    assert.equal((await call(method, url, ['GET', 'DELETE'].includes(method) ? undefined : {}, SALES)).status, 403, `${method} ${url}`);
   }
+  const after = (await call('GET', `/api/jobs/${jid}`, undefined, SALES)).data;
+  assert.deepEqual([after.status, after.start_at, after.checklist.length], [job.status, job.start_at, job.checklist.length], 'nothing on the job changed');
   assert.equal((await call('GET', '/api/settings/email', undefined, SALES)).status, 200, 'sales can see whether follow-up email is on');
 });
 

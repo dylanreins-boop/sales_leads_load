@@ -85,7 +85,7 @@ uploading, so they're quick on a phone connection (about 200–400 KB each). Tap
 size with who added it and when, flip through with the arrows, or delete it (tap twice). Photos are stored
 in `PHOTOS_DIR` (by default a `photos` folder next to the database, so on Fly they're on the same volume).
 
-Shop logins only see the calendar. See [Login levels](#login-levels).
+Shop logins only see the calendar; sales logins see it view only. See [Login levels](#login-levels).
 
 ## Old & Dead Leads
 
@@ -250,7 +250,7 @@ The word after the password sets what that person can do:
 | Level | Sees | Can |
 |---|---|---|
 | `admin` | Everything: both pipelines, Old & Dead Leads, the shop calendar | Everything sales and shop can, plus the **Updates** feed, Excel export, the follow-up email template and Facebook sync |
-| `sales` | The lead pipelines and their call reminders | Work leads, log calls, edit lead info, and **book** jobs (the booking time goes on the shop calendar, and the lead shows its drop-off/pick-up and job status). No calendar, export or settings |
+| `sales` | The lead pipelines, their call reminders, and the shop calendar (view only) | Work leads, log calls, edit lead info, and **book** jobs (the booking time goes on the shop calendar). On the calendar they can open any job to see times, status, notes, the checklist and photos, but can't change anything. No export or settings |
 | `shop` | The job calendar only | Open jobs, change status, times and notes, tick the checklist, add photos |
 
 A login with no level is `sales`. The single shared `APP_USER`/`APP_PASSWORD` login is `admin`, and with no
