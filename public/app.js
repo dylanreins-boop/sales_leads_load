@@ -781,7 +781,7 @@ async function loadUpdatesCount() {
 }
 
 async function loadUpdates(older = false) {
-  const before = older && state.updates.length ? `&before=${state.updates.at(-1).id}` : '';
+  const before = older && state.updates.length ? `&before=${state.updates[state.updates.length - 1].id}` : '';
   const { updates, seenId } = await api(`/api/updates?limit=100${before}`);
   if (older) state.updates.push(...updates);
   else {
@@ -1152,7 +1152,9 @@ async function init() {
   setInterval(() => Promise.all([loadLeads(), loadReminders()]).catch(() => {}), 60_000);
 }
 
-init().catch(fail);
+// calendar.js and revenue.js load after this file; start once every script has run.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => init().catch(fail));
+else init().catch(fail);
 
 // Makes the app installable ("Add to Home Screen") and able to open offline.
 if ('serviceWorker' in navigator) {
