@@ -804,3 +804,4 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
   .schedule-form { grid-template-columns: 1fr; }
   .schedule-form button { justify-self: start; }
 }
+.quote-note { font-size: 13px; font-style: italic; }

@@ -118,6 +118,7 @@ function renderQuoteList(lead) {
       i === 0 && h('span', { class: 'tag' }, 'Latest'),
       h('span', { class: 'muted' }, `${q.created_by ? `${q.created_by} · ` : ''}${fmtDateTime(q.created_at)}`)),
     h('div', { class: 'muted' }, q.lines.map((l) => l.label).join(' + ')),
+    q.note && h('div', { class: 'quote-note' }, `“${q.note}”`),
     q.emailed_at && h('div', { class: 'muted' }, `Emailed to ${q.emailed_to} · ${fmtDateTime(q.emailed_at)}`),
     h('div', { class: 'quote-actions' },
       h('button', { type: 'button', disabled: !lead.email, title: lead.email ? '' : 'Add an email in Lead info first', onclick: () => emailQuote(q) },
