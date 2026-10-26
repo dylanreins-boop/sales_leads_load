@@ -394,6 +394,10 @@ fly deploy
 fly open                                      # opens https://<app-name>.fly.dev
 ```
 
+**Prefer your own server?** Oracle Cloud's free tier, AWS Lightsail or EC2 work too. See
+[deploy/oracle/README.md](deploy/oracle/README.md): one setup script installs everything. Static-site
+hosting (AWS Amplify, S3 + CloudFront, Netlify) can't run this app.
+
 Then put it on the company's domain:
 
 ```bash

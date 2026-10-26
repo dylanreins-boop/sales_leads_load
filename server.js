@@ -97,7 +97,8 @@ const loginFailures = new Map();
 const LOGIN_WINDOW = 15 * 60000;
 const LOGIN_MAX_TRIES = 8;
 function loginKey(req, name) {
-  const ip = String(req.headers['fly-client-ip'] || req.socket?.remoteAddress || '');
+  const forwarded = config.trustProxy ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() : '';
+  const ip = String(req.headers['fly-client-ip'] || forwarded || req.socket?.remoteAddress || '');
   return `${ip}|${String(name || '').trim().toLowerCase()}`;
 }
 function tooManyTries(key) {
@@ -503,7 +504,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
 if (require.main === module) {
   if (!config.users.length) console.warn('Note: no APP_USERS or APP_PASSWORD set. Until an admin adds a login on the Team panel, the dashboard has no login.');
   if (!config.facebook.appSecret) console.warn('Warning: FB_APP_SECRET is not set, so Facebook webhook signatures are not checked.');
-  http.createServer(createApp()).listen(config.port, () => {
+  http.createServer(createApp()).listen(config.port, config.host, () => {
     console.log(`Lead Pipeline running at http://localhost:${config.port}`);
   });
 }

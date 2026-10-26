@@ -20,6 +20,10 @@ const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 module.exports = {
   port: Number(process.env.PORT) || 3000,
+  // Set HOST=127.0.0.1 when a web server (like Caddy) sits in front, so the app isn't reachable directly.
+  host: process.env.HOST || undefined,
+  // Behind your own web server, read the visitor's address from X-Forwarded-For.
+  trustProxy: process.env.TRUST_PROXY === 'true',
   dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'leads.db'),
 
   // Dashboard logins (HTTP Basic auth): APP_USERS="Dylan:pass1:admin,Sam:pass2:sales,Mike:pass3:shop".
