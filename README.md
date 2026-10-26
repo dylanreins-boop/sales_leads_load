@@ -107,6 +107,18 @@ Admins get a **Revenue** page (next to Leads and Calendar):
 
 Jobs marked Cancelled / Rescheduled don't count. The Excel export includes a Job amount column.
 
+## Past Customers
+
+Booked leads stay in the Booked column while their job is coming up or in the shop. **14 days after the
+job is marked Picked up** (with nothing else on the calendar for them), the customer moves to the **Past
+Customers** tab, so the Booked column only holds work that's still happening. A job marked Cancelled /
+Rescheduled keeps the lead on the board until it's rescheduled.
+
+Past Customers lists each customer's vehicle, last pick-up, number of finished jobs, services and total
+spent, filtered by vehicle type and exportable to Excel. Customers go back on the board when they inquire
+again (as a new lead), when someone logs a call on them, or with **Book again**. Adding an "Updated Notes"
+entry keeps them in Past Customers. Their revenue keeps counting on the Revenue page.
+
 ## Old & Dead Leads
 
 **14 days after a lead comes in**, it leaves its board and moves to the **Old & Dead Leads** tab, unless

@@ -63,6 +63,19 @@
 
   <main id="board" class="board" aria-label="Pipeline board"></main>
 
+  <!-- Past Customers: booked customers whose job was picked up a while ago -->
+  <section id="customersView" class="old-view" aria-labelledby="customersTitle" hidden>
+    <div class="old-head">
+      <h2 id="customersTitle">Past Customers</h2>
+      <p id="customersIntro" class="muted"></p>
+    </div>
+    <div class="old-filters">
+      <label>Vehicle type <select id="customerVehicle"></select></label>
+    </div>
+    <p id="customersSummary" class="customers-summary"></p>
+    <div class="table-scroll"><table id="customersTable" class="old-table customers-table"></table></div>
+  </section>
+
   <!-- Old & Dead Leads: leads that left the boards after two weeks -->
   <section id="oldView" class="old-view" aria-labelledby="oldTitle" hidden>
     <div class="old-head">

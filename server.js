@@ -243,7 +243,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     leads.archiveOldLeads();
     const filters = leadFilters(query);
     const rows = leads.exportLeads(filters);
-    const label = { active: 'Active Leads', old: 'Old & Dead Leads' }[filters.view] || 'All Leads';
+    const label = { active: 'Active Leads', old: 'Old & Dead Leads', customers: 'Past Customers' }[filters.view] || 'All Leads';
     const stamp = new Date().toISOString().slice(0, 10);
     res.writeHead(200, {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

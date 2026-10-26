@@ -13,6 +13,8 @@ const state = {
   pipeline: 'other',
   section: 'leads', // leads | calendar
   oldLeads: [],
+  customers: [],
+  customerVehicle: '',
   oldFilters: { vehicle: '', source: '', status: '' },
 };
 
@@ -147,8 +149,12 @@ async function loadLeads() {
   if (q) params.set('q', q);
   const oldParams = new URLSearchParams(params);
   oldParams.set('view', 'old');
+  const customerParams = new URLSearchParams(params);
+  customerParams.set('view', 'customers');
   if (source) params.set('source', source);
-  [state.leads, state.oldLeads] = await Promise.all([api(`/api/leads?${params}`), api(`/api/leads?${oldParams}`)]);
+  [state.leads, state.oldLeads, state.customers] = await Promise.all([
+    api(`/api/leads?${params}`), api(`/api/leads?${oldParams}`), api(`/api/leads?${customerParams}`),
+  ]);
   renderBoard();
 }
 
@@ -158,7 +164,7 @@ function pickPipeline() {
   const fromLink = location.hash.slice(1);
   let saved = null;
   try { saved = localStorage.getItem('pipeline'); } catch { /* storage unavailable */ }
-  state.pipeline = [fromLink, saved].find((id) => ids.includes(id) || id === 'old') || 'other';
+  state.pipeline = [fromLink, saved].find((id) => ids.includes(id) || id === 'old' || id === 'customers') || 'other';
 }
 
 // ---------- sections: Leads / Calendar ----------
@@ -190,7 +196,7 @@ function setPipeline(id) {
 
 function renderTabs() {
   // Phones show the short names so all tabs and the export button fit.
-  const SHORT = { rv: 'RVs', other: 'Other', old: 'Old & Dead' };
+  const SHORT = { rv: 'RVs', other: 'Other', customers: 'Customers', old: 'Old & Dead' };
   const tab = (id, label, count, extra = '') => h('button', {
     type: 'button',
     role: 'tab',
@@ -201,6 +207,7 @@ function renderTabs() {
   }, h('span', { class: 'long-label' }, label), h('span', { class: 'short-label' }, SHORT[id] || label), h('span', { class: 'count' }, count));
   $('#pipelineTabs').replaceChildren(
     ...state.meta.pipelines.map((p) => tab(p.id, p.label, state.leads.filter((l) => l.pipeline === p.id).length)),
+    tab('customers', 'Past Customers', state.customers.length, 'old-tab'),
     tab('old', 'Old & Dead Leads', state.oldLeads.length, 'old-tab'),
     h('span', { class: 'spacer' }),
     isAdmin() && h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
@@ -213,7 +220,10 @@ function exportUrl() {
   const params = new URLSearchParams();
   const q = $('#search').value.trim();
   if (q) params.set('q', q);
-  if (state.pipeline === 'old') {
+  if (state.pipeline === 'customers') {
+    params.set('view', 'customers');
+    if (state.customerVehicle) params.set('vehicle_type', state.customerVehicle);
+  } else if (state.pipeline === 'old') {
     params.set('view', 'old');
     const f = state.oldFilters;
     if (f.vehicle) params.set('vehicle_type', f.vehicle);
@@ -232,10 +242,13 @@ const pipelineLabel = (id) => state.meta.pipelines.find((p) => p.id === id)?.lab
 function renderBoard() {
   renderTabs();
   const showingOld = state.pipeline === 'old';
-  $('#board').hidden = showingOld;
+  const showingCustomers = state.pipeline === 'customers';
+  $('#board').hidden = showingOld || showingCustomers;
   $('#oldView').hidden = !showingOld;
-  $('#sourceFilter').hidden = showingOld;
+  $('#customersView').hidden = !showingCustomers;
+  $('#sourceFilter').hidden = showingOld || showingCustomers;
   if (showingOld) return renderOld();
+  if (showingCustomers) return renderCustomers();
   const board = $('#board');
   board.setAttribute('aria-label', pipelineLabel(state.pipeline));
   const inPipeline = state.leads.filter((l) => l.pipeline === state.pipeline);
@@ -395,6 +408,43 @@ function renderOld() {
     : [h('p', { class: 'muted' }, state.oldLeads.length ? 'No old leads match these filters.' : 'No old or dead leads yet. Leads show up here two weeks after they come in.')]));
 }
 
+// ---------- past customers ----------
+function renderCustomers() {
+  $('#customersIntro').textContent = `Booked customers move here ${state.meta.archiveDays} days after their job is picked up. `
+    + 'If they inquire again or you log a call, they go back on the board. "Book again" puts them back as a new lead.';
+  const types = [...new Set(state.customers.map(vehicleTypeOf))].sort();
+  const select = $('#customerVehicle');
+  select.replaceChildren(h('option', { value: '' }, 'All vehicle types'),
+    ...types.map((t) => h('option', { value: t === 'No vehicle type' ? 'none' : t }, t)));
+  select.value = state.customerVehicle;
+  if (select.value !== state.customerVehicle) state.customerVehicle = select.value = '';
+
+  const v = state.customerVehicle;
+  const rows = state.customers
+    .filter((l) => !v || (v === 'none' ? !l.vehicle_type : l.vehicle_type === v))
+    .sort((a, b) => String(b.last_pickup_at || '').localeCompare(String(a.last_pickup_at || '')));
+  const spent = rows.reduce((n, l) => n + (l.spent_cents || 0), 0);
+  const jobs = rows.reduce((n, l) => n + (l.jobs_done || 0), 0);
+  $('#customersSummary').replaceChildren(rows.length
+    ? h('span', {}, h('strong', {}, `${rows.length} customer${rows.length === 1 ? '' : 's'}`), ` · ${jobs} finished job${jobs === 1 ? '' : 's'} · `, h('strong', {}, money(spent, { cents: false })), ' spent')
+    : '');
+
+  $('#customersTable').replaceChildren(...(rows.length ? [
+    h('thead', {}, h('tr', {}, ...['Name', 'Vehicle', 'Phone', 'Last pick-up', 'Jobs', 'Services', 'Spent', ''].map((c, i) => h('th', { class: [4, 6].includes(i) ? 'num' : '' }, c)))),
+    h('tbody', {}, ...rows.map((l) => h('tr', { onclick: () => openLead(l.id) },
+      h('td', {}, h('strong', {}, leadName(l))),
+      h('td', {}, [l.vehicle_type, [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ')].filter(Boolean).join(' · ')),
+      h('td', {}, l.phone || ''),
+      h('td', {}, shortDate(l.last_pickup_at)),
+      h('td', { class: 'num' }, l.jobs_done || 0),
+      h('td', {}, serviceLabels(l.booked_services || [])),
+      h('td', { class: 'num' }, l.spent_cents != null ? money(l.spent_cents, { cents: false }) : '–'),
+      h('td', {}, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); restoreLead(l.id); } }, 'Book again'))))),
+  ] : [h('tbody', {}, h('tr', {}, h('td', { class: 'muted' }, state.customers.length
+    ? 'No past customers with that vehicle type.'
+    : `No past customers yet. Booked customers show up here ${state.meta.archiveDays} days after their job is picked up.`)))]));
+}
+
 async function restoreLead(id) {
   try {
     const lead = await api(`/api/leads/${id}/restore`, { method: 'POST' });
@@ -435,8 +485,8 @@ function renderLead(lead) {
 
   $('#leadContact').replaceChildren(...[
     lead.status && lead.status !== 'active' && h('div', { class: 'notice archived-notice' },
-      h('span', {}, `${lead.status === 'dead' ? 'Dead lead' : 'Old lead'} · moved off the board ${shortDate(lead.archived_at)}`),
-      h('button', { type: 'button', onclick: () => restoreLead(lead.id) }, 'Restore to pipeline')),
+      h('span', {}, `${{ dead: 'Dead lead', customer: 'Past customer' }[lead.status] || 'Old lead'} · moved off the board ${shortDate(lead.archived_at)}`),
+      h('button', { type: 'button', onclick: () => restoreLead(lead.id) }, lead.status === 'customer' ? 'Book again' : 'Restore to pipeline')),
     lead.phone && h('a', { href: `tel:${lead.phone.replace(/[^\d+]/g, '')}`, class: 'call-btn' }, `Call ${lead.phone}`),
     lead.email && h('a', { href: `mailto:${lead.email}` }, lead.email),
     lead.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
@@ -1125,6 +1175,7 @@ async function init() {
   $('#dispoForm').reminder.addEventListener('change', () => syncDispoForm());
   $('#stageSelect').addEventListener('change', (e) => moveStage(state.openLeadId, e.target.value));
   $('#noteForm').addEventListener('submit', addNote);
+  $('#customerVehicle').addEventListener('change', (e) => { state.customerVehicle = e.target.value; renderBoard(); });
   for (const [id, key] of [['#oldVehicle', 'vehicle'], ['#oldSource', 'source'], ['#oldStatus', 'status']]) {
     $(id).addEventListener('change', (e) => { state.oldFilters[key] = e.target.value; renderBoard(); });
   }

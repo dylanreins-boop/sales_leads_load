@@ -112,3 +112,63 @@ test('leads export to a real Excel file', async () => {
   const oldOnly = (await call('GET', '/api/export.xlsx?view=old')).data.toString('utf8');
   assert.ok(!oldOnly.includes('Booked Truck'));
 });
+
+test('booked customers move to Past Customers 14 days after pick-up, and come back when they call or inquire', async () => {
+  const { createLeadService } = require('../src/leads');
+  const { createJobService } = require('../src/jobs');
+  const { openDatabase } = require('../src/db');
+  const db = openDatabase(':memory:');
+  const leads = createLeadService(db, { archiveDays: 14 });
+  const jobs = createJobService(db, { leads, photosDir: require('node:os').tmpdir() });
+  const DAY = 86400000;
+  const book = (name, phone) => {
+    const { lead } = leads.ingest({ source: 'website', full_name: name, phone, vehicle_type: 'Car' });
+    leads.dispositionLead(lead.id, { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'] }, { user: 'Sam' });
+    return { lead, job: jobs.scheduleLead(lead.id, { start: '2026-09-01T15:00:00.000Z', end: '2026-09-02T22:00:00.000Z' }, { user: 'Sam' }) };
+  };
+  const done = book('Done Customer', '702-555-7001');
+  const open = book('Still In Shop', '702-555-7002');
+  const cancelled = book('Needs Reschedule', '702-555-7003');
+  jobs.setAmount(done.job.id, '2400', { user: 'Sam' });
+  jobs.updateJob(done.job.id, { status: 'picked_up' }, { user: 'Mike' });
+  jobs.updateJob(cancelled.job.id, { status: 'cancelled' }, { user: 'Mike' });
+
+  const pickedUp = new Date(jobs.getJob(done.job.id).picked_up_at).getTime();
+  assert.equal(leads.archiveOldLeads(new Date(pickedUp + 13 * DAY)), 0, 'still on the board 13 days after pick-up');
+  assert.equal(leads.archiveOldLeads(new Date(pickedUp + 15 * DAY)), 1, 'only the picked-up customer moves');
+
+  const customers = leads.listLeads({ view: 'customers' });
+  assert.deepEqual(customers.map((l) => [l.full_name, l.status, l.jobs_done, l.spent_cents]), [['Done Customer', 'customer', 1, 240000]]);
+  assert.ok(customers[0].last_pickup_at);
+  assert.ok(!leads.listLeads({ view: 'old' }).some((l) => l.id === done.lead.id), 'past customers are not Old & Dead');
+  assert.ok(!leads.listLeads({ view: 'active' }).some((l) => l.id === done.lead.id), 'and are off the board');
+  assert.ok(leads.listLeads({ view: 'active' }).some((l) => l.id === open.lead.id));
+  assert.ok(leads.listLeads({ view: 'active' }).some((l) => l.id === cancelled.lead.id), 'a cancelled job keeps the lead on the board');
+
+  // A note stays a note; a new inquiry brings them back as a new lead.
+  leads.dispositionLead(done.lead.id, { disposition: 'updated_notes', note: 'Sent a thank-you card', reminder: false }, { user: 'Sam' });
+  assert.equal(leads.getLead(done.lead.id).status, 'customer');
+  leads.ingest({ source: 'website', full_name: 'Done Customer', phone: '702-555-7001', message: 'Want my boat done too' });
+  const back = leads.getLead(done.lead.id);
+  assert.equal(back.status, 'active');
+  assert.equal(back.stage, 'new');
+  assert.ok(back.activities.some((a) => a.note === 'Back from Past Customers: new inquiry'));
+});
+
+test('restoring a past customer puts them back as a new lead', () => {
+  const { createLeadService } = require('../src/leads');
+  const { createJobService } = require('../src/jobs');
+  const { openDatabase } = require('../src/db');
+  const db = openDatabase(':memory:');
+  const leads = createLeadService(db, { archiveDays: 14 });
+  const jobs = createJobService(db, { leads, photosDir: require('node:os').tmpdir() });
+  const { lead } = leads.ingest({ source: 'manual', full_name: 'Repeat Buyer', phone: '702-555-7010' });
+  leads.dispositionLead(lead.id, { disposition: 'booked', note: 'Booked', services: ['wheels'] });
+  const job = jobs.scheduleLead(lead.id, { start: '2026-09-01T15:00:00.000Z', end: '2026-09-01T22:00:00.000Z' });
+  jobs.updateJob(job.id, { status: 'picked_up' });
+  leads.archiveOldLeads(new Date(Date.now() + 20 * 86400000));
+  const restored = leads.restoreLead(lead.id, { user: 'Dylan' });
+  assert.equal(restored.stage, 'new');
+  assert.equal(restored.status, 'active');
+  assert.ok(restored.activities.some((a) => a.note === 'Back on the board: repeat customer' && a.user_name === 'Dylan'));
+});

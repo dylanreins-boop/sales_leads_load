@@ -218,6 +218,19 @@ table.old-table { table-layout: fixed; min-width: 960px; }
 .old-table th:nth-child(5) { width: 17%; }
 .old-table th:nth-child(6) { width: 15%; }
 .old-table th:nth-child(7), .old-table th:nth-child(8) { width: 9%; }
+/* Past Customers: its own column widths; vehicle and services wrap instead of cutting off. */
+table.customers-table { min-width: 860px; }
+.customers-table th:nth-child(1) { width: 16%; }
+.customers-table th:nth-child(2) { width: 24%; }
+.customers-table th:nth-child(3) { width: 12%; }
+.customers-table th:nth-child(4) { width: 11%; }
+.customers-table th:nth-child(5) { width: 6%; }
+.customers-table th:nth-child(6) { width: 16%; }
+.customers-table th:nth-child(7) { width: 8%; }
+.customers-table th:nth-child(8) { width: 7%; }
+.customers-table td:nth-child(2), .customers-table td:nth-child(6) { white-space: normal; }
+.customers-table td.num, .customers-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.customers-summary { margin: 0; }
 .old-table th:nth-child(9) { width: 9%; }
 .matrix th, .matrix td, .old-table th, .old-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .matrix th, .old-table th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--bg); }

@@ -238,8 +238,8 @@ function createJobService(db, { leads, photosDir }) {
     }
     if ('status' in patch && patch.status !== job.status) {
       if (!STATUS_LABEL[patch.status]) throw new HttpError(400, `Unknown job status: ${patch.status}`);
-      sets.push('status = ?');
-      params.push(patch.status);
+      sets.push('status = ?', 'picked_up_at = ?');
+      params.push(patch.status, patch.status === 'picked_up' ? now() : null);
       notes.push(`Job: ${STATUS_LABEL[job.status]} → ${STATUS_LABEL[patch.status]}`);
     }
     if ('notes' in patch) {

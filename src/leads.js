@@ -64,8 +64,10 @@ function displayName(lead) {
 }
 
 // active: on a board. old: aged out without booking. dead: aged out after being marked Waste.
+// customer: booked, and their job was picked up a while ago (Past Customers).
 function statusOf(lead) {
   if (!lead.archived_at) return 'active';
+  if (lead.stage === 'booked') return 'customer';
   return lead.stage === 'waste' ? 'dead' : 'old';
 }
 
@@ -126,7 +128,10 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
         logActivity(existing.lead.id, 'reinquiry', { note });
         stmt('UPDATE leads SET updated_at = ? WHERE id = ?').run(now(), existing.lead.id);
         // An old lead that reaches out again goes back on the board as new.
-        if (existing.lead.archived_at) bringBack(existing.lead, { stage: 'new', note: 'Back from Old Leads: new inquiry' });
+        if (existing.lead.archived_at) {
+          const from = existing.lead.stage === 'booked' ? 'Past Customers' : 'Old Leads';
+          bringBack(existing.lead, { stage: 'new', note: `Back from ${from}: new inquiry` });
+        }
         return { lead: getLead(existing.lead.id), created: false, duplicate: true };
       }
 
@@ -151,7 +156,8 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     const where = [];
     const params = [];
     if (view === 'active') where.push('l.archived_at IS NULL');
-    if (view === 'old') where.push('l.archived_at IS NOT NULL');
+    if (view === 'old') where.push("l.archived_at IS NOT NULL AND l.stage != 'booked'");
+    if (view === 'customers') where.push("l.archived_at IS NOT NULL AND l.stage = 'booked'");
     if (status === 'dead') where.push("l.stage = 'waste'");
     if (status === 'old') where.push("l.stage != 'waste'");
     if (vehicleType === 'none') where.push("coalesce(l.vehicle_type, '') = ''");
@@ -178,7 +184,10 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                         l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type, l.booked_services, l.sms_opt_in,
                         l.campaign, l.form_name, l.message, l.heard_about, l.last_disposition, l.last_contacted_at,
                         l.received_at, l.updated_at, l.archived_at,
-                        (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at
+                        (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at,
+                        (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS jobs_done,
+                        (SELECT MAX(j.picked_up_at) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS last_pickup_at,
+                        (SELECT SUM(j.amount_cents) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS spent_cents
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY l.received_at DESC`).all(...params)
       .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row) }));
@@ -289,7 +298,10 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
 
     return transaction(db, () => {
       const ts = now();
-      if (lead.archived_at) bringBack(lead, { stage: lead.stage, note: 'Back on the board: call logged', user });
+      // A note on a past customer stays a note; a call or a new booking puts them back on the board.
+      if (lead.archived_at && !(lead.stage === 'booked' && toStage === 'booked' && !def.schedules)) {
+        bringBack(lead, { stage: lead.stage, note: 'Back on the board: call logged', user });
+      }
       const contactedAt = def.call === false ? lead.last_contacted_at : ts;
       stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?`)
         .run(toStage, def.id, contactedAt, ts, id);
@@ -325,17 +337,25 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     const cutoff = new Date(at.getTime() - archiveDays * 86400000).toISOString();
     const due = stmt(`SELECT id, stage FROM leads WHERE archived_at IS NULL AND stage != 'booked'
                       AND coalesce(restored_at, received_at) < ?`).all(cutoff);
-    if (!due.length) return 0;
+    // Booked customers move to Past Customers once their last job was picked up that long ago
+    // and nothing else is on the calendar for them.
+    const done = stmt(`SELECT l.id, l.stage FROM leads l WHERE l.archived_at IS NULL AND l.stage = 'booked'
+                       AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.lead_id = l.id AND j.status NOT IN ('picked_up', 'cancelled'))
+                       AND (SELECT MAX(j.picked_up_at) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') < ?
+                       AND coalesce(l.restored_at, '') < ?`).all(cutoff, cutoff);
+    if (!due.length && !done.length) return 0;
     transaction(db, () => {
       const ts = at.toISOString();
-      for (const lead of due) {
+      for (const lead of [...due, ...done]) {
         stmt('UPDATE leads SET archived_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, lead.id);
         stmt('UPDATE reminders SET done_at = ? WHERE lead_id = ? AND done_at IS NULL').run(ts, lead.id);
-        const where = lead.stage === 'waste' ? 'Dead Leads (marked Waste)' : 'Old Leads';
-        logActivity(lead.id, 'archived', { note: `Moved to ${where} after ${archiveDays} days without a booking` });
+        const note = lead.stage === 'booked'
+          ? `Moved to Past Customers ${archiveDays} days after pick-up`
+          : `Moved to ${lead.stage === 'waste' ? 'Dead Leads (marked Waste)' : 'Old Leads'} after ${archiveDays} days without a booking`;
+        logActivity(lead.id, 'archived', { note });
       }
     });
-    return due.length;
+    return due.length + done.length;
   }
 
   function bringBack(lead, { stage, note, user }) {
@@ -349,7 +369,11 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   function restoreLead(id, { user } = {}) {
     const lead = getLead(id);
     if (!lead.archived_at) throw new HttpError(400, 'This lead is already on the board.');
-    transaction(db, () => bringBack(lead, { note: 'Restored to the pipeline', user }));
+    // A past customer comes back as a fresh lead to call about their next job.
+    const customer = lead.stage === 'booked';
+    transaction(db, () => bringBack(lead, customer
+      ? { stage: 'new', note: 'Back on the board: repeat customer', user }
+      : { note: 'Restored to the pipeline', user }));
     return getLead(id);
   }
 

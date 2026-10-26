@@ -7,7 +7,7 @@ const { serviceLabels } = require('./services');
 const { JOB_STATUSES } = require('./jobs');
 
 const SOURCES = { facebook: 'Facebook', website: 'Website', manual: 'Manual' };
-const STATUS = { active: 'Active', old: 'Old', dead: 'Dead' };
+const STATUS = { active: 'Active', old: 'Old', dead: 'Dead', customer: 'Past customer' };
 const stageLabel = (id) => STAGES.find((s) => s.id === id)?.label ?? id;
 
 // "2026-10-23 15:07" in the server's time zone (TZ), so it sorts correctly in Excel.
