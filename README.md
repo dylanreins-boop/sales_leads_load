@@ -57,7 +57,7 @@ tab with `#rv` or `#other` at the end of the address. To change which types coun
   **pick-up** times (it suggests 8 AM the next business day, picked up a day later at 2 PM, or two days
   later for RVs). Booking the same lead again moves its job instead of adding a second one.
 - **Views:** Month, Week and List (List is the default on phones). Jobs are colored by status:
-  Scheduled, In the shop, Ready for pickup, Picked up, Cancelled. Multi-day jobs show on each day
+  Scheduled, In the shop, Ready for pickup, Picked up, Cancelled / Rescheduled. Multi-day jobs show on each day
   ("day 2 of 3"), with drop-off and pick-up times on the first and last day. RV jobs are tagged "RV".
   Each card shows the customer, vehicle, services, checklist progress and photo count.
 - **Booked leads not on the calendar yet** (e.g. booked before the calendar existed) are listed at the

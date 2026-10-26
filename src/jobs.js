@@ -13,7 +13,7 @@ const JOB_STATUSES = [
   { id: 'in_shop', label: 'In the shop' },
   { id: 'ready', label: 'Ready for pickup' },
   { id: 'picked_up', label: 'Picked up' },
-  { id: 'cancelled', label: 'Cancelled' },
+  { id: 'cancelled', label: 'Cancelled / Rescheduled' },
 ];
 const STATUS_LABEL = Object.fromEntries(JOB_STATUSES.map((s) => [s.id, s.label]));
 const CLOSED = ['picked_up', 'cancelled'];
