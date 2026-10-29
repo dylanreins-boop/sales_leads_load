@@ -4,10 +4,19 @@
 const com = { data: null, settings: null, rep: '', status: 'owed', selected: new Set() };
 const COM_STATUS = { owed: 'Owed', pending: 'Pending', paid: 'Paid', no_amount: 'No job amount', cancelled: 'Cancelled' };
 const OWED_RULE = {
+  in_shop: 'once the vehicle is booked and in the shop',
   picked_up: 'once the job is picked up',
   deposit: 'once the deposit is taken',
   booked: 'as soon as the job is booked',
 };
+
+// From an admin's reminder: show that rep's owed commissions, ready to pay.
+function openCommissionsFor(rep) {
+  com.rep = rep === 'No rep' ? '' : rep;
+  com.status = 'owed';
+  showPanel(null);
+  showSection('commissions');
+}
 
 // ---------- on the lead's Shop job box ----------
 function depositEditor(job, { onSaved }) {
@@ -176,6 +185,7 @@ async function payJobs(ids, label) {
     toast(`Marked paid: ${label || money(res.total_cents)}`);
     $('#comPayNote').value = '';
     await loadCommissions();
+    loadReminders().catch(() => {});
   } catch (err) { fail(err); }
 }
 

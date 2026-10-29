@@ -806,16 +806,20 @@ async function addNote(e) {
 // ---------- reminders ----------
 async function loadReminders() {
   state.reminders = await api('/api/reminders');
+  // Admins are also reminded about commissions owed to reps (vehicle booked and in the shop).
+  state.commissionsOwed = isAdmin() ? await api('/api/commissions/owed').catch(() => null) : null;
+  const owedReps = state.commissionsOwed?.reps || [];
   const due = state.reminders.filter((r) => dueStatus(r.due_at) === 'overdue');
   const badge = $('#reminderBadge');
-  badge.hidden = !due.length;
-  badge.textContent = due.length;
+  badge.hidden = !due.length && !owedReps.length;
+  badge.textContent = due.length + owedReps.length;
 
   const banner = $('#dueBanner');
-  banner.hidden = !due.length;
-  banner.textContent = due.length === 1
-    ? `Time to call ${leadName(due[0])}. Click to see your reminders.`
-    : `${due.length} leads are due for a call. Click to see your reminders.`;
+  const parts = [];
+  if (due.length) parts.push(due.length === 1 ? `Time to call ${leadName(due[0])}.` : `${due.length} leads are due for a call.`);
+  if (owedReps.length) parts.push(`${money(state.commissionsOwed.owed_cents, { cents: false })} in commissions to pay (${owedReps.map((r) => r.rep).join(', ')}).`);
+  banner.hidden = !parts.length;
+  banner.textContent = `${parts.join(' ')} Click to see your reminders.`;
 
   notifyDue(due);
   if (!$('#remindersPanel').hidden) renderReminders();
@@ -826,11 +830,21 @@ function renderReminders() {
   for (const r of state.reminders) groups[dueStatus(r.due_at)].push(r);
   const titles = { overdue: 'Due now', today: 'Later today', later: 'Upcoming' };
   const list = $('#remindersList');
+  const owed = state.commissionsOwed?.reps || [];
+  const payGroup = owed.length ? [
+    h('div', { class: 'reminder-group' }, 'Commissions to pay'),
+    ...owed.map((r) => h('div', { class: 'reminder-item overdue', onclick: () => openCommissionsFor(r.rep) },
+      h('div', {},
+        h('div', { class: 'name' }, r.rep),
+        h('div', { class: 'when' }, `${money(r.owed_cents)} owed · ${r.jobs} job${r.jobs === 1 ? '' : 's'} in the shop`),
+        r.oldest_at && h('div', { class: 'muted' }, `Oldest since ${shortDate(r.oldest_at)}`)),
+      h('div', { class: 'small-btns' }, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); openCommissionsFor(r.rep); } }, 'Pay')))),
+  ] : [];
   if (!state.reminders.length) {
-    list.replaceChildren(h('p', { class: 'muted' }, 'No open reminders. Disposition a lead to schedule a call.'));
+    list.replaceChildren(...payGroup, h('p', { class: 'muted' }, 'No open call reminders. Disposition a lead to schedule a call.'));
     return;
   }
-  list.replaceChildren(...Object.entries(groups).filter(([, items]) => items.length).flatMap(([key, items]) => [
+  list.replaceChildren(...payGroup, ...Object.entries(groups).filter(([, items]) => items.length).flatMap(([key, items]) => [
     h('div', { class: 'reminder-group' }, titles[key]),
     ...items.map((r) => h('div', { class: `reminder-item ${key}`, onclick: () => openLead(r.lead_id) },
       h('div', {},

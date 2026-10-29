@@ -117,9 +117,13 @@ about us", with how many booked, the booking rate, the revenue their jobs brough
 when booking (the amount fills in at 10%; change it if they paid a different amount, and pick how they
 paid), or use **Mark taken** on the lead's Shop job box later. Who took it and when is logged.
 
-**Commissions.** The rep who booked a job earns 10% of the job amount. Each commission is **Pending**
-until it's earned (by default, once the job is marked Picked up), then **Owed** until an admin marks it
-**Paid**. Cancelled jobs earn nothing.
+**Commissions.** The rep who booked a job earns 10% of the job amount. A commission is only earned once
+the vehicle is **booked and in the shop**: it's **Pending** until the shop marks the job In the shop (or
+Ready / Picked up), then **Owed** until an admin marks it **Paid**. Cancelled jobs earn nothing.
+
+**Reminders to pay.** Admins' **Reminders** (and the badge and banner) list each rep who is owed, how much,
+how many jobs, and since when, with a **Pay** button that opens that rep's owed commissions. When a job's
+commission becomes owed, it's logged on the lead and shows in Updates.
 
 The **Commissions** page (sales and admins):
 
@@ -128,8 +132,8 @@ The **Commissions** page (sales and admins):
 - **Admins** see every rep. **By rep** shows owed, pending and paid this year, with a **Pay** button per
   rep. Tick individual jobs and **Mark paid** (with an optional note like a check number). **Undo paid**
   reverses a payment. **Edit** gives a commission to another rep or sets a different amount. **Rates**
-  changes the commission % and deposit %, and when commission is owed (job picked up, deposit taken, or
-  booked).
+  changes the commission % and deposit %, and when commission is owed (vehicle in the shop, which is
+  the default; job picked up; deposit taken; or booked).
 
 Every deposit, commission change and payment is logged on the lead and shows in Updates. Shop logins
 never see job amounts, deposits or commissions.

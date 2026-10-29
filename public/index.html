@@ -136,6 +136,7 @@
       <label>Deposit <span class="pct-input"><input name="deposit_pct" type="number" min="0" max="100" step="0.5"> %</span></label>
       <label>Commission is owed when
         <select name="owed_when">
+          <option value="in_shop">the vehicle is in the shop</option>
           <option value="picked_up">the job is picked up</option>
           <option value="deposit">the deposit is taken</option>
           <option value="booked">the job is booked</option>
@@ -438,7 +439,7 @@
   <!-- Reminders panel -->
   <aside id="remindersPanel" class="drawer" aria-label="Reminders" hidden>
     <div class="drawer-head">
-      <h2>Call reminders</h2>
+      <h2>Reminders</h2>
       <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
     </div>
     <div class="drawer-body">

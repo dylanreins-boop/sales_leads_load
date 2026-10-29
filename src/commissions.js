@@ -4,13 +4,15 @@ const { parseAmount } = require('./jobs');
 // Deposits and sales commissions on jobs.
 // A commission is the rate (10% by default) of the job amount, earned by the rep who booked the job
 // (an admin can hand it to someone else or set a different amount). It shows as:
-//   pending  - not earned yet (see owed_when)
+//   pending  - not earned yet (by default: until the vehicle is in the shop)
 //   owed     - earned and not paid
 //   paid     - an admin marked it paid
 //   no_amount / cancelled - nothing to pay
-const OWED_WHEN = ['picked_up', 'deposit', 'booked'];
+const OWED_WHEN = ['in_shop', 'picked_up', 'deposit', 'booked'];
+const IN_THE_BUILDING = ['in_shop', 'ready', 'picked_up'];
 const DEPOSIT_METHODS = ['Cash', 'Card', 'Check', 'Zelle', 'Venmo', 'Other'];
-const DEFAULTS = { rate_pct: 10, deposit_pct: 10, owed_when: 'picked_up' };
+// Commission is owed once the vehicle is booked and in the building.
+const DEFAULTS = { rate_pct: 10, deposit_pct: 10, owed_when: 'in_shop' };
 
 const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const now = () => new Date().toISOString();
@@ -49,7 +51,9 @@ function createCommissionService(db, { leads, jobs }) {
     const paid = job.commission_paid_at != null;
     const commission = paid ? job.commission_paid_cents
       : job.commission_override_cents ?? pctOf(job.amount_cents, settings.rate_pct);
-    const earned = { picked_up: job.status === 'picked_up', deposit: job.deposit_cents != null, booked: true }[settings.owed_when];
+    const earned = {
+      in_shop: IN_THE_BUILDING.includes(job.status), picked_up: job.status === 'picked_up', deposit: job.deposit_cents != null, booked: true,
+    }[settings.owed_when];
     let status;
     if (paid) status = 'paid';
     else if (job.status === 'cancelled') status = 'cancelled';
@@ -156,7 +160,34 @@ function createCommissionService(db, { leads, jobs }) {
     return forJob(id);
   }
 
-  return { getSettings, saveSettings, figures, list, forJob, setDeposit, setCommission, pay, unpay };
+  // Runs a change to a job and logs when that change makes its commission owed (shows in Updates).
+  function watchOwed(id, change, { user } = {}) {
+    const before = forJob(id).commission_status;
+    const result = change();
+    const after = forJob(id);
+    if (before !== 'owed' && after.commission_status === 'owed') {
+      leads.logActivity(after.lead_id, 'commission', { note: `Commission now owed to ${after.commission_rep || 'nobody'}: ${money(after.commission_cents)}`, user });
+    }
+    return result;
+  }
+
+  // What the admins still have to pay, by rep (for their reminders).
+  function owedSummary() {
+    const byRep = new Map();
+    for (const j of list().jobs.filter((x) => x.commission_status === 'owed')) {
+      const rep = j.commission_rep || 'No rep';
+      const r = byRep.get(rep) || { rep, owed_cents: 0, jobs: 0, oldest_at: null };
+      r.owed_cents += j.commission_cents;
+      r.jobs += 1;
+      const since = j.picked_up_at || j.start_at;
+      if (!r.oldest_at || since < r.oldest_at) r.oldest_at = since;
+      byRep.set(rep, r);
+    }
+    const reps = [...byRep.values()].sort((a, b) => b.owed_cents - a.owed_cents);
+    return { owed_cents: reps.reduce((n, r) => n + r.owed_cents, 0), reps };
+  }
+
+  return { getSettings, saveSettings, figures, list, forJob, setDeposit, setCommission, pay, unpay, watchOwed, owedSummary };
 }
 
 module.exports = { createCommissionService, DEPOSIT_METHODS, OWED_WHEN };

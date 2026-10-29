@@ -74,7 +74,7 @@ test('deposits can be marked later, changed and undone; the shop never sees mone
   assert.equal((await call('PATCH', `/api/jobs/${job.id}/deposit`, { taken: false })).data.deposit_cents, null);
 });
 
-test('commission is owed once the job is picked up, and admins mark it paid', async () => {
+test('commission is owed once the job is done, and admins mark it paid', async () => {
   const a = (await book(SAM, '1400')).job;
   const b = (await book(SAM, '5200')).job;
   const lisaJob = (await book(LISA, '800')).job;
@@ -127,4 +127,41 @@ test('admins can hand a commission to another rep, change the amount, and change
   await call('PATCH', `/api/jobs/${job.id}`, { status: 'cancelled' }, SHOP);
   now = (await call('GET', '/api/commissions', undefined, LISA)).data.jobs.find((j) => j.id === job.id);
   assert.equal(now.commission_status, 'cancelled', 'cancelled jobs earn nothing');
+});
+
+test('commission becomes owed once the vehicle is in the shop, and admins are reminded to pay it', async () => {
+  await call('PUT', '/api/settings/commission', { owed_when: 'in_shop' }, ADMIN);
+  const { job } = await book(SAM, '3000');
+  assert.equal(job.commission_status, 'pending', 'booked but not in the building yet');
+  const before = (await call('GET', '/api/commissions/owed', undefined, ADMIN)).data;
+  assert.equal((await call('GET', '/api/commissions/owed')).status, 403, 'reminders are for admins');
+
+  await call('PATCH', `/api/jobs/${job.id}`, { status: 'in_shop' }, SHOP);
+  const now = (await call('GET', '/api/commissions')).data.jobs.find((j) => j.id === job.id);
+  assert.equal(now.commission_status, 'owed');
+  const lead = (await call('GET', `/api/leads/${job.lead_id}`)).data;
+  assert.ok(lead.activities.some((a) => a.type === 'commission' && a.note === 'Commission now owed to Sam: $300.00' && a.user_name === 'Mike'),
+    'logged so admins see it in Updates');
+
+  const after = (await call('GET', '/api/commissions/owed', undefined, ADMIN)).data;
+  const sam = (r) => r.reps.find((x) => x.rep === 'Sam') || { owed_cents: 0, jobs: 0 };
+  assert.equal(sam(after).owed_cents - sam(before).owed_cents, 30000);
+  assert.equal(sam(after).jobs - sam(before).jobs, 1);
+  await call('POST', '/api/commissions/pay', { job_ids: [job.id] }, ADMIN);
+  assert.equal(sam((await call('GET', '/api/commissions/owed', undefined, ADMIN)).data).owed_cents, sam(before).owed_cents, 'paid drops off the reminder');
+
+  // Back out of the shop (e.g. a mistake) before it's paid: pending again.
+  const second = (await book(SAM, '1000')).job;
+  await call('PATCH', `/api/jobs/${second.id}`, { status: 'in_shop' }, SHOP);
+  await call('PATCH', `/api/jobs/${second.id}`, { status: 'scheduled' }, SHOP);
+  assert.equal((await call('GET', '/api/commissions')).data.jobs.find((j) => j.id === second.id).commission_status, 'pending');
+});
+
+test('the default rule is: owed once the vehicle is in the shop', async () => {
+  assert.ok(require('../src/commissions').OWED_WHEN.includes('in_shop'));
+  const fresh = http.createServer(createApp({ db: openDatabase(':memory:') }));
+  await new Promise((resolve) => fresh.listen(0, resolve));
+  const res = await fetch(`http://localhost:${fresh.address().port}/api/settings/commission`, { headers: { Authorization: SAM } });
+  assert.equal((await res.json()).owed_when, 'in_shop');
+  fresh.close();
 });

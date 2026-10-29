@@ -242,7 +242,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // The job's price: sales and admins set it; shop logins never see it.
   route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
   route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
-  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => jobs.updateJob(Number(params.id), body, actor), { roles: CALENDAR });
+  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) =>
+    commissions.watchOwed(Number(params.id), () => jobs.updateJob(Number(params.id), body, actor), actor), { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
     jobs.updateItem(Number(params.id), Number(params.item), body, actor), { roles: CALENDAR });
@@ -376,7 +377,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // ---- Deposits and commissions ----
   route('GET', '/api/settings/commission', () => commissions.getSettings());
   route('PUT', '/api/settings/commission', ({ body }) => commissions.saveSettings(body), { roles: ADMIN });
-  route('PATCH', '/api/jobs/:id/deposit', ({ params, body, actor }) => commissions.setDeposit(Number(params.id), body, actor));
+  route('PATCH', '/api/jobs/:id/deposit', ({ params, body, actor }) =>
+    commissions.watchOwed(Number(params.id), () => commissions.setDeposit(Number(params.id), body, actor), actor));
+  route('GET', '/api/commissions/owed', () => commissions.owedSummary(), { roles: ADMIN });
   route('PATCH', '/api/jobs/:id/commission', ({ params, body, actor }) => commissions.setCommission(Number(params.id), body, actor), { roles: ADMIN });
   route('POST', '/api/jobs/:id/commission/unpay', ({ params, actor }) => commissions.unpay(Number(params.id), actor), { roles: ADMIN });
   route('POST', '/api/commissions/pay', ({ body, actor }) => commissions.pay(body.job_ids, { user: actor.user, note: body.note }), { roles: ADMIN });
