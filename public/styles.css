@@ -447,6 +447,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   max-width: calc(100vw - 32px);
 }
 .toast.error { background: var(--danger); color: #fff; }
+.toast.warn { background: var(--highlight); color: #2b1a00; font-weight: 600; }
 
 @media (max-width: 640px) {
   .topbar { padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); }
@@ -710,6 +711,7 @@ table.com-table { min-width: 760px; }
 .cal-cell { background: var(--panel); min-height: 112px; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .cal-cell.weekend { background: color-mix(in srgb, var(--bg) 70%, var(--panel)); }
 .cal-cell.other-month .cal-date { opacity: 0.4; }
+.cal-cell-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
 .cal-date { align-self: flex-start; border: none; background: none; padding: 2px 7px; border-radius: 999px; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
 .cal-date:hover { background: var(--bg); }
 .cal-cell.today .cal-date { background: var(--accent); color: var(--accent-text); }
@@ -725,6 +727,7 @@ table.com-table { min-width: 760px; }
 .week-dow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .week-date { font-family: var(--font-brand); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .week-col.today .week-date { color: var(--accent); }
+.week-load { padding: 6px 12px 0; display: flex; }
 .week-jobs { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .week-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 16px 0; }
 
@@ -831,3 +834,33 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
   .schedule-form button { justify-self: start; }
 }
 .quote-note { font-size: 13px; font-style: italic; }
+
+/* Shop time: booked hours per day against the shop's hours */
+.load-tag { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; padding: 1px 6px; border-radius: 999px; }
+.load-tag.full { color: var(--ok); }
+.load-tag.over { color: #fff; background: var(--danger); }
+.week-head .load-tag { margin-left: auto; }
+.load-tag .lt-short { display: none; }
+.load-bar { display: block; flex: 1; height: 6px; min-width: 40px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
+.load-bar > span { display: block; height: 100%; background: var(--ok); }
+.load-bar.over > span { background: var(--danger); }
+.shop-time-note { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); font-size: 13px; margin-bottom: 10px; }
+.shop-time-note.warn { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); background: color-mix(in srgb, var(--danger) 7%, var(--panel)); }
+.shop-time-head { font-weight: 600; }
+.shop-day { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 10px; }
+.shop-day-hours { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.shop-day.over .shop-day-hours, .shop-day.over .shop-day-date { color: var(--danger); font-weight: 700; }
+.shop-warning { margin: 0; color: var(--danger); font-weight: 600; }
+.shop-warning::before { content: "⚠ "; }
+.schedule-form .span-all { grid-column: 1 / -1; }
+.work-days { border: none; padding: 0; margin: 0; }
+.work-days legend { font-size: 13px; padding: 0; margin-bottom: 4px; }
+.work-days .checks { grid-template-columns: repeat(7, auto); gap: 2px 10px; }
+@media (max-width: 640px) {
+  .work-days .checks { grid-template-columns: repeat(4, auto); }
+  .shop-day { grid-template-columns: 100px 1fr auto; }
+  .cal-cell .load-tag { font-size: 10px; padding: 0 4px; }
+  .cal-cell .load-tag .lt-full { display: none; }
+  .cal-cell .load-tag .lt-short { display: inline; }
+  .cal-cell-top { flex-wrap: wrap; }
+}

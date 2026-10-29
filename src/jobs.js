@@ -7,6 +7,7 @@ const { transaction } = require('./db');
 const { HttpError } = require('./leads');
 const { pipelineFor } = require('./vehicle');
 const { cleanServices, serviceLabels, parseServices } = require('./services');
+const ShopTime = require('../public/shop-time');
 
 const JOB_STATUSES = [
   { id: 'scheduled', label: 'Scheduled' },
@@ -127,13 +128,73 @@ function createJobService(db, { leads, photosDir }) {
     return d.toISOString();
   }
 
-  // Checks drop-off/pick-up times from a booking; throws a 400 the rep can read.
-  function parseSchedule({ job_start, job_end } = {}) {
-    const start = parseTime(job_start, 'drop-off');
-    const end = parseTime(job_end, 'pick-up');
-    if (end <= start) throw new HttpError(400, 'Pick-up has to be after drop-off.');
-    return { start, end };
+  // ---- shop hours ----
+  // When the shop works (8 hours a day, Monday to Friday by default) and the usual work time per job.
+  function getShopHours() {
+    const row = stmt("SELECT value FROM settings WHERE key = 'shop_hours'").get();
+    let saved = {};
+    try { saved = row ? JSON.parse(row.value) : {}; } catch { /* keep defaults */ }
+    return ShopTime.settingsOf(saved);
   }
+
+  function saveShopHours(input = {}) {
+    const next = getShopHours();
+    if ('open' in input) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(input.open))) throw new HttpError(400, 'Pick the time the shop opens.');
+      next.open = String(input.open);
+    }
+    for (const [key, min, max, what] of [['hours_per_day', 1, 16, 'Hours a day go from 1 to 16.'], ['car_hours', 0.5, 80, 'The usual car job goes from half an hour to 80 hours.'], ['rv_days', 1, 10, 'The usual RV job goes from 1 to 10 days.']]) {
+      if (!(key in input)) continue;
+      const n = Number(input[key]);
+      if (!Number.isFinite(n) || n < min || n > max) throw new HttpError(400, what);
+      next[key] = Math.round(n * 2) / 2;
+    }
+    if ('work_days' in input) {
+      const days = [...new Set((Array.isArray(input.work_days) ? input.work_days : []).map(Number))].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).sort();
+      if (!days.length) throw new HttpError(400, 'Pick at least one work day.');
+      next.work_days = days;
+    }
+    if (next.open.split(':').map(Number).reduce((h, m) => h + m / 60) + next.hours_per_day > 24) {
+      throw new HttpError(400, 'The work day has to end by midnight.');
+    }
+    stmt("INSERT INTO settings (key, value) VALUES ('shop_hours', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(next));
+    return next;
+  }
+
+  // Work time in hours ("4", 16). Blank means the usual for the vehicle (null).
+  function parseHours(value) {
+    if (value == null || String(value).trim() === '') return null;
+    const hours = Number(value);
+    if (!Number.isFinite(hours) || hours < 0.5 || hours > 400) throw new HttpError(400, 'Pick how long the job takes.');
+    return Math.round(hours * 4) / 4;
+  }
+
+  // Checks drop-off/pick-up times and work time from a booking; throws a 400 the rep can read.
+  // With a work time and no pick-up, pick-up is when the work is done.
+  function parseSchedule({ job_start, job_end, job_hours } = {}) {
+    const start = parseTime(job_start, 'drop-off');
+    const hours = parseHours(job_hours);
+    const end = !job_end && hours != null ? ShopTime.finishAt(start, hours, getShopHours()).toISOString() : parseTime(job_end, 'pick-up');
+    if (end <= start) throw new HttpError(400, 'Pick-up has to be after drop-off.');
+    return { start, end, hours };
+  }
+
+  // The shop's booked hours on each day a job (or a proposed one) is worked, with warnings for days
+  // over the shop's hours, closed days and pick-ups before the work can be done.
+  function capacity({ id, start, end, hours, pipeline, status } = {}) {
+    const from = parseTime(start, 'drop-off');
+    const to = parseTime(end, 'pick-up');
+    const dayStart = new Date(from);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(to);
+    dayEnd.setHours(24, 0, 0, 0);
+    const others = listJobs({ from: dayStart.toISOString(), to: dayEnd.toISOString() });
+    const settings = getShopHours();
+    return ShopTime.check({ id, start_at: from, end_at: to, work_hours: hours, pipeline, status }, others, settings);
+  }
+
+  const capacityFor = (job) => capacity({ id: job.id, start: job.start_at, end: job.end_at, hours: job.work_hours, pipeline: job.pipeline, status: job.status });
 
   const LEAD_FIELDS = `l.full_name, l.first_name, l.last_name, l.phone, l.email, l.sms_opt_in, l.vehicle_type, l.vehicle_year,
                        l.vehicle_make, l.vehicle_model, l.vehicle_color, l.message, l.stage`;
@@ -174,7 +235,7 @@ function createJobService(db, { leads, photosDir }) {
   }
 
   // Puts a booked lead on the calendar, or moves its open job to the new times.
-  function scheduleLead(leadId, { start, end }, { user } = {}) {
+  function scheduleLead(leadId, { start, end, hours = null }, { user } = {}) {
     const lead = leads.getLead(leadId);
     const services = lead.booked_services;
     return transaction(db, () => {
@@ -182,19 +243,20 @@ function createJobService(db, { leads, photosDir }) {
       const open = stmt(`SELECT * FROM jobs WHERE lead_id = ? AND status NOT IN ('picked_up', 'cancelled')
                          ORDER BY id DESC LIMIT 1`).get(leadId);
       if (open) {
-        stmt('UPDATE jobs SET start_at = ?, end_at = ?, services = ?, updated_at = ? WHERE id = ?')
-          .run(start, end, JSON.stringify(services), ts, open.id);
+        stmt('UPDATE jobs SET start_at = ?, end_at = ?, services = ?, work_hours = COALESCE(?, work_hours), updated_at = ? WHERE id = ?')
+          .run(start, end, JSON.stringify(services), hours, ts, open.id);
         leads.logActivity(leadId, 'job', { note: `Job moved: drop-off ${when(start)}, pick-up ${when(end)}`, user });
         return getJob(open.id);
       }
-      const { lastInsertRowid } = stmt(`INSERT INTO jobs (lead_id, start_at, end_at, status, services, created_by, created_at, updated_at)
-                                        VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?)`)
-        .run(leadId, start, end, JSON.stringify(services), user ?? null, ts, ts);
+      const work = hours ?? ShopTime.defaultHours(pipelineFor(lead.vehicle_type), getShopHours());
+      const { lastInsertRowid } = stmt(`INSERT INTO jobs (lead_id, start_at, end_at, status, services, work_hours, created_by, created_at, updated_at)
+                                        VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?, ?)`)
+        .run(leadId, start, end, JSON.stringify(services), work, user ?? null, ts, ts);
       const jobId = Number(lastInsertRowid);
       const add = stmt('INSERT INTO job_checklist (job_id, section, label, position, created_at) VALUES (?, ?, ?, ?, ?)');
       checklistFor(lead.vehicle_type, services).forEach((item, i) => add.run(jobId, item.section, item.label, (i + 1) * 10, ts));
       const what = serviceLabels(services);
-      leads.logActivity(leadId, 'job', { note: `Job on the calendar: drop-off ${when(start)}, pick-up ${when(end)}${what ? ` · ${what}` : ''}`, user });
+      leads.logActivity(leadId, 'job', { note: `Job on the calendar: drop-off ${when(start)}, pick-up ${when(end)} · ${ShopTime.label(work, getShopHours())} of work${what ? ` · ${what}` : ''}`, user });
       return getJob(jobId);
     });
   }
@@ -234,6 +296,14 @@ function createJobService(db, { leads, photosDir }) {
         sets.push('start_at = ?', 'end_at = ?');
         params.push(start, end);
         notes.push(`Job moved: drop-off ${when(start)}, pick-up ${when(end)}`);
+      }
+    }
+    if ('work_hours' in patch) {
+      const hours = parseHours(patch.work_hours) ?? ShopTime.defaultHours(job.pipeline, getShopHours());
+      if (hours !== job.work_hours) {
+        sets.push('work_hours = ?');
+        params.push(hours);
+        notes.push(`Work time: ${ShopTime.label(hours, getShopHours())}${job.work_hours ? ` (was ${ShopTime.label(job.work_hours, getShopHours())})` : ''}`);
       }
     }
     if ('status' in patch && patch.status !== job.status) {
@@ -342,7 +412,7 @@ function createJobService(db, { leads, photosDir }) {
   }
 
   return {
-    parseSchedule, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
+    getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };
 }

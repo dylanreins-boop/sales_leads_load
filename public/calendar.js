@@ -22,7 +22,6 @@ const PHASE_LABEL = { before: 'Before', during: 'During', after: 'After' };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const startOfWeek = (d) => addDays(startOfDay(d), -startOfDay(d).getDay()); // Sunday
 const sameDay = (a, b) => startOfDay(a).getTime() === startOfDay(b).getTime();
-const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
 const clock = (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const shortClock = (d) => clock(d).replace(':00', '').replace(' AM', 'a').replace(' PM', 'p');
 const dayName = (d, style = 'short') => d.toLocaleDateString([], { weekday: style });
@@ -68,6 +67,96 @@ function jobsOn(day) {
 const vehicleText = (j) => [j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(' ') || j.vehicle_type || '';
 const customer = (j) => j.full_name || [j.first_name, j.last_name].filter(Boolean).join(' ') || j.phone || 'Customer';
 
+// ---------- shop time ----------
+// The shop works a set number of hours a day (8 by default, Monday to Friday). Each job has a work
+// time; the calendar adds up each day's hours and warns when a day goes over.
+const shopHours = () => state.meta.shopHours;
+const isOpen = (day) => ShopTime.isWorkDay(day, shopHours());
+const workLabel = (job) => ShopTime.label(ShopTime.jobHours(job, shopHours()), shopHours());
+
+function loadBar(booked) {
+  const per = shopHours().hours_per_day;
+  return h('span', { class: `load-bar ${booked > per ? 'over' : ''}`, 'aria-hidden': 'true' },
+    h('span', { style: `width:${Math.min(100, Math.round((booked / per) * 100))}%` }));
+}
+
+// "6/8 hrs" for a day on the calendar; red when it's over, and a flag on closed days with a drop-off or pick-up.
+function loadTag(day, entries) {
+  const per = shopHours().hours_per_day;
+  const load = cal.load?.get(ShopTime.dayKey(day));
+  if (!isOpen(day)) {
+    const busy = entries.some((e) => (e.isFirst || e.isLast) && e.job.status !== 'cancelled');
+    return busy && h('span', { class: 'load-tag over', title: 'A drop-off or pick-up is set for a day the shop is closed' }, h('span', { class: 'lt-full' }, '⚠ Closed'), h('span', { class: 'lt-short' }, '⚠'));
+  }
+  if (!load) return null;
+  const over = load.hours > per;
+  return h('span', {
+    class: `load-tag ${over ? 'over' : load.hours === per ? 'full' : ''}`,
+    title: `${ShopTime.hrs(load.hours)} of ${ShopTime.hrs(per)} booked${over ? ' (over)' : ''}: ${load.jobs.map((j) => `${j.name} ${ShopTime.hrs(j.hours)}`).join(', ')}`,
+  }, h('span', { class: 'lt-full' }, `${over ? '⚠ ' : ''}${Math.round(load.hours * 10) / 10}/${per} hrs`),
+  h('span', { class: 'lt-short' }, `${over ? '⚠' : ''}${Math.round(load.hours)}h`));
+}
+
+// The booked hours on each day a job is worked, and any warnings, under a form's times.
+function renderShopTime(note, result) {
+  if (!note) return;
+  if (!result) { note.hidden = true; return; }
+  const per = shopHours().hours_per_day;
+  note.hidden = false;
+  note.classList.toggle('warn', result.warnings.length > 0);
+  note.replaceChildren(
+    h('div', { class: 'shop-time-head' }, `${ShopTime.label(result.hours, shopHours())} of work`, result.days.length > 0 && h('span', { class: 'muted' }, ` · shop hours booked each day, with this job`)),
+    ...result.days.map((d) => h('div', { class: `shop-day ${d.over ? 'over' : ''}` },
+      h('span', { class: 'shop-day-date' }, longDate(ShopTime.fromKey(d.date))),
+      loadBar(d.booked),
+      h('span', { class: 'shop-day-hours' }, `${ShopTime.hrs(d.booked)} of ${per}`))),
+    ...result.warnings.map((w) => h('p', { class: 'shop-warning' }, w.text)));
+}
+
+// Wires a form's Work time, Drop-off and Pick-up fields (job_hours, job_start, job_end): pick-up
+// moves to when the work is done whenever the work time or drop-off changes (it can still be set by
+// hand), and the note under them is kept up to date. Returns fill(hours, start, end).
+function wireShopTime(form, { pipeline = () => 'other', jobId = () => null } = {}) {
+  const note = form.querySelector('.shop-time-note');
+  let timer = null;
+  let seq = 0;
+  async function check() {
+    const start = new Date(form.job_start.value);
+    const end = new Date(form.job_end.value);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) { renderShopTime(note, null); return; }
+    const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), hours: form.job_hours.value, pipeline: pipeline() });
+    if (jobId()) params.set('job', jobId());
+    const mine = ++seq;
+    try {
+      const result = await api(`/api/jobs/capacity?${params}`);
+      if (mine === seq) renderShopTime(note, result);
+    } catch { renderShopTime(note, null); }
+  }
+  const refresh = () => { clearTimeout(timer); timer = setTimeout(check, 200); };
+  const followWork = () => {
+    const start = new Date(form.job_start.value);
+    if (Number.isNaN(start.getTime())) return;
+    form.job_end.value = toLocalInput(ShopTime.finishAt(start, Number(form.job_hours.value), shopHours()));
+  };
+  form.job_hours.addEventListener('change', () => { followWork(); refresh(); });
+  form.job_start.addEventListener('change', () => { followWork(); refresh(); });
+  form.job_end.addEventListener('change', refresh);
+  return function fill(hours, start, end) {
+    form.job_hours.replaceChildren(...ShopTime.options(shopHours(), hours).map((o) => h('option', { value: o.hours }, o.label)));
+    form.job_hours.value = String(hours);
+    if (start) form.job_start.value = toLocalInput(new Date(start));
+    if (start) form.job_end.value = toLocalInput(end ? new Date(end) : ShopTime.finishAt(start, hours, shopHours()));
+    renderShopTime(note, null);
+    refresh();
+  };
+}
+
+// Shows the first warning after a booking or a move; the form already showed the details.
+function warnShopTime(result) {
+  const warnings = result?.warnings || [];
+  if (warnings.length) toast(`Heads up: ${warnings[0].text}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ''}`, 'warn');
+}
+
 // ---------- loading ----------
 async function loadCalendar() {
   const { from, to } = range();
@@ -103,7 +192,7 @@ function chip(entry) {
   return h('button', {
     type: 'button',
     class: `job-chip status-${job.status} ${isFirst ? '' : 'cont'}`,
-    title: `${customer(job)} · ${vehicleText(job)} · ${jobStatusLabel(job.status)}${days > 1 ? ` · day ${n} of ${days}` : ''}`,
+    title: `${customer(job)} · ${vehicleText(job)} · ${jobStatusLabel(job.status)} · ${workLabel(job)} of work${days > 1 ? ` · day ${n} of ${days}` : ''}`,
     onclick: (e) => { e.stopPropagation(); openJob(job.id); },
   },
   h('span', { class: 'chip-time' }, when),
@@ -121,11 +210,13 @@ function renderMonth(body) {
     const entries = jobsOn(day);
     const shown = entries.slice(0, 4);
     return h('div', {
-      class: `cal-cell ${day.getMonth() !== month ? 'other-month' : ''} ${isWeekend(day) ? 'weekend' : ''} ${sameDay(day, today) ? 'today' : ''}`,
+      class: `cal-cell ${day.getMonth() !== month ? 'other-month' : ''} ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}`,
       role: 'gridcell',
       'aria-label': `${longDate(day)}, ${entries.length} job${entries.length === 1 ? '' : 's'}`,
     },
-    h('button', { type: 'button', class: 'cal-date', title: 'Show this week', onclick: () => { cal.anchor = day; setView('week'); } }, day.getDate()),
+    h('div', { class: 'cal-cell-top' },
+      h('button', { type: 'button', class: 'cal-date', title: 'Show this week', onclick: () => { cal.anchor = day; setView('week'); } }, day.getDate()),
+      loadTag(day, entries)),
     h('div', { class: 'cal-chips' }, ...shown.map(chip),
       entries.length > shown.length && h('button', {
         type: 'button', class: 'cal-more', onclick: () => { cal.anchor = day; setView('week'); },
@@ -163,7 +254,7 @@ function jobCard(entry, { showDay = false } = {}) {
       job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV')),
     h('div', { class: 'job-card-name' }, customer(job)),
     h('div', { class: 'job-card-vehicle' }, [job.vehicle_type, vehicleText(job) !== job.vehicle_type && vehicleText(job), job.vehicle_color].filter(Boolean).join(' · ')),
-    h('div', { class: 'job-card-when' }, showDay ? `${longDate(isLast && !isFirst ? job.end_at : job.start_at)} · ${when}` : when),
+    h('div', { class: 'job-card-when' }, showDay ? `${longDate(isLast && !isFirst ? job.end_at : job.start_at)} · ${when}` : when, isFirst && ` · ${workLabel(job)} of work`),
     services && h('div', { class: 'job-card-services' }, services),
     h('div', { class: 'job-card-foot' }, progress(job),
       h('span', { class: 'photo-count' }, `${job.photo_count || 0} photo${job.photo_count === 1 ? '' : 's'}`)));
@@ -175,10 +266,12 @@ function renderWeek(body) {
   body.replaceChildren(h('div', { class: 'cal-week' }, ...Array.from({ length: 7 }, (_, i) => {
     const day = addDays(from, i);
     const entries = jobsOn(day);
-    return h('section', { class: `week-col ${isWeekend(day) ? 'weekend' : ''} ${sameDay(day, today) ? 'today' : ''}` },
-      h('header', { class: 'week-head' }, h('span', { class: 'week-dow' }, dayName(day)), h('span', { class: 'week-date' }, day.getDate())),
+    const booked = cal.load.get(ShopTime.dayKey(day))?.hours || 0;
+    return h('section', { class: `week-col ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}` },
+      h('header', { class: 'week-head' }, h('span', { class: 'week-dow' }, dayName(day)), h('span', { class: 'week-date' }, day.getDate()), loadTag(day, entries)),
+      isOpen(day) && h('div', { class: 'week-load' }, loadBar(booked)),
       h('div', { class: 'week-jobs' }, entries.length ? entries.map((e) => jobCard(e))
-        : h('div', { class: 'week-empty' }, isWeekend(day) ? 'Closed' : 'No jobs')));
+        : h('div', { class: 'week-empty' }, isOpen(day) ? 'No jobs' : 'Closed')));
   })));
 }
 
@@ -195,7 +288,7 @@ function renderList(body) {
     return;
   }
   body.replaceChildren(h('div', { class: 'cal-list' }, ...days.map(({ day, entries }) => h('section', { class: `list-day ${sameDay(day, today) ? 'today' : ''}`, id: sameDay(day, today) ? 'calToday' : null },
-    h('h3', { class: 'list-day-head' }, longDate(day), sameDay(day, today) && h('span', { class: 'today-tag' }, 'Today')),
+    h('h3', { class: 'list-day-head' }, longDate(day), sameDay(day, today) && h('span', { class: 'today-tag' }, 'Today'), loadTag(day, entries)),
     entries.length ? h('div', { class: 'list-jobs' }, ...entries.map((e) => jobCard(e))) : h('p', { class: 'muted' }, 'No jobs today.')))));
   if (cal.anchor.getMonth() === today.getMonth()) $('#calToday')?.scrollIntoView({ block: 'start' });
 }
@@ -214,6 +307,7 @@ function renderCalendar() {
         `${leadName(l)}${l.vehicle_type ? ` · ${l.vehicle_type}` : ''}`)));
   }
 
+  cal.load = ShopTime.loadByDay(cal.jobs, shopHours());
   const body = $('#calBody');
   body.dataset.view = cal.view;
   if (cal.view === 'month') renderMonth(body);
@@ -243,12 +337,13 @@ function syncJobOnCalendar(job) {
   renderCalendar();
 }
 
-async function patchJob(patch, message) {
+async function patchJob(patch, message, { warn = false } = {}) {
   try {
     cal.job = await api(`/api/jobs/${cal.job.id}`, { method: 'PATCH', body: patch });
     renderJob();
     syncJobOnCalendar(cal.job);
     if (message) toast(message);
+    if (warn) warnShopTime(cal.job.shop_time);
   } catch (err) { fail(err); }
 }
 
@@ -287,18 +382,25 @@ function renderJob() {
 
     // Schedule
     h('section', { class: 'card-section' },
-      h('h3', {}, 'Drop-off and pick-up'),
+      h('h3', {}, 'Work time, drop-off and pick-up'),
       !edit && h('dl', { class: 'job-times' },
+        h('dt', {}, 'Work time'), h('dd', {}, workLabel(job)),
         h('dt', {}, 'Drop-off'), h('dd', {}, fmtWhen(job.start_at)),
         h('dt', {}, 'Pick-up'), h('dd', {}, fmtWhen(job.end_at))),
-      edit && h('form', { class: 'schedule-form', onsubmit: (e) => {
+      !edit && h('div', { class: 'shop-time-note', id: 'jobShopTime' }),
+      edit && h('form', { class: 'schedule-form', id: 'jobScheduleForm', onsubmit: (e) => {
         e.preventDefault();
         const f = e.target;
-        patchJob({ start_at: new Date(f.start.value).toISOString(), end_at: new Date(f.end.value).toISOString() }, 'Job times saved');
+        const end = new Date(f.job_end.value);
+        const start = new Date(f.job_start.value);
+        if (!(end > start)) return toast('Pick-up has to be after drop-off', 'error');
+        patchJob({ start_at: start.toISOString(), end_at: end.toISOString(), work_hours: Number(f.job_hours.value) }, 'Job times saved', { warn: true });
       } },
-      h('label', {}, 'Drop-off', h('input', { type: 'datetime-local', name: 'start', required: true, value: toLocalInput(new Date(job.start_at)) })),
-      h('label', {}, 'Pick-up', h('input', { type: 'datetime-local', name: 'end', required: true, value: toLocalInput(new Date(job.end_at)) })),
-      h('button', { type: 'submit' }, 'Save times'))),
+      h('label', { class: 'span-all' }, 'Work time', h('select', { name: 'job_hours' })),
+      h('label', {}, 'Drop-off', h('input', { type: 'datetime-local', name: 'job_start', required: true })),
+      h('label', {}, 'Pick-up', h('input', { type: 'datetime-local', name: 'job_end', required: true })),
+      h('button', { type: 'submit' }, 'Save times'),
+      h('div', { class: 'shop-time-note span-all', hidden: true }))),
 
     // Customer
     h('section', { class: 'card-section job-customer' },
@@ -351,6 +453,13 @@ function renderJob() {
         }, h('img', { src: photoUrl(ph), alt: ph.caption || `${PHASE_LABEL[p]} photo`, loading: 'lazy' })))))),
       !job.photos.length && h('p', { class: 'muted' }, edit ? 'No photos yet. Take before photos at check-in.' : 'No photos yet.')),
   ].filter(Boolean));
+
+  const form = $('#jobScheduleForm');
+  if (form) {
+    wireShopTime(form, { pipeline: () => job.pipeline, jobId: () => job.id })(ShopTime.jobHours(job, shopHours()), job.start_at, job.end_at);
+  } else {
+    renderShopTime($('#jobShopTime'), job.shop_time);
+  }
 }
 
 function checkItem(item) {
@@ -481,31 +590,27 @@ function stepPhoto(step) {
 }
 
 // ---------- scheduling a booked lead ----------
-function nextBusinessDay(from, days) {
-  const d = new Date(from);
-  let left = days;
-  while (left > 0) {
-    d.setDate(d.getDate() + 1);
-    if (!(state.meta.reminderSkipWeekends && isWeekend(d))) left--;
-  }
-  return d;
-}
+const RV_TYPES = ['Coach / RV', 'Trailer / Toy Hauler'];
+const pipelineOf = (vehicleType) => (RV_TYPES.includes(vehicleType) ? 'rv' : 'other');
 
-// Default slot: drop-off next business day at 8 AM, pick-up a day later (two for RVs) at 2 PM.
+// Default slot: drop-off at opening time on the next day the shop works, with the usual work time
+// for the vehicle (about 4 hours for cars, 2 days for RVs) and pick-up when that work is done.
 function defaultSlot(vehicleType) {
-  const start = nextBusinessDay(new Date(), 1);
-  start.setHours(8, 0, 0, 0);
-  const end = nextBusinessDay(start, ['Coach / RV', 'Trailer / Toy Hauler'].includes(vehicleType) ? 2 : 1);
-  end.setHours(14, 0, 0, 0);
-  return { start, end };
+  const settings = shopHours();
+  const start = new Date();
+  do start.setDate(start.getDate() + 1); while (!ShopTime.isWorkDay(start, settings));
+  const [hh, mm] = settings.open.split(':').map(Number);
+  start.setHours(hh, mm, 0, 0);
+  const hours = ShopTime.defaultHours(pipelineOf(vehicleType), settings);
+  return { start, end: ShopTime.finishAt(start, hours, settings), hours };
 }
 
+let fillScheduleDialog = null;
 function openScheduleDialog(lead) {
   cal.scheduleLeadId = lead.id;
-  const f = $('#scheduleForm');
-  const { start, end } = defaultSlot(lead.vehicle_type);
-  f.job_start.value = toLocalInput(start);
-  f.job_end.value = toLocalInput(end);
+  cal.schedulePipeline = pipelineOf(lead.vehicle_type);
+  const { start, end, hours } = defaultSlot(lead.vehicle_type);
+  fillScheduleDialog(hours, start, end);
   $('#scheduleFor').textContent = `${leadName(lead)}${lead.vehicle_type ? ` · ${lead.vehicle_type}` : ''}`;
   $('#scheduleDialog').showModal();
 }
@@ -513,12 +618,13 @@ function openScheduleDialog(lead) {
 async function saveSchedule(e) {
   e.preventDefault();
   const f = e.target;
-  const body = { job_start: new Date(f.job_start.value).toISOString(), job_end: new Date(f.job_end.value).toISOString() };
+  const body = { job_start: new Date(f.job_start.value).toISOString(), job_end: new Date(f.job_end.value).toISOString(), job_hours: f.job_hours.value };
   if (body.job_end <= body.job_start) return toast('Pick-up has to be after drop-off', 'error');
   try {
     const job = await api(`/api/leads/${cal.scheduleLeadId}/job`, { method: 'POST', body });
     $('#scheduleDialog').close();
     toast(`On the calendar for ${longDate(job.start_at)}, ${clock(job.start_at)}`);
+    warnShopTime(job.shop_time);
     if (state.section === 'calendar') {
       cal.anchor = new Date(job.start_at);
       await loadCalendar();
@@ -533,6 +639,37 @@ function showJobOnCalendar(jobId, startAt) {
   cal.anchor = new Date(startAt);
   showSection('calendar');
   openJob(jobId);
+}
+
+// ---------- shop hours (admins) ----------
+function toggleShopHours() {
+  const f = $('#shopHoursForm');
+  f.hidden = !f.hidden;
+  if (f.hidden) return;
+  const s = shopHours();
+  f.open.value = s.open;
+  f.hours_per_day.value = s.hours_per_day;
+  f.car_hours.value = s.car_hours;
+  f.rv_days.value = s.rv_days;
+  $('#shopDays').replaceChildren(...[1, 2, 3, 4, 5, 6, 0].map((d) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', name: 'work_day', value: d, checked: s.work_days.includes(d) }), dayName(new Date(2026, 10, 1 + d)))));
+}
+
+async function saveShopHours(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    state.meta.shopHours = await api('/api/settings/shop-hours', { method: 'PUT', body: {
+      open: f.open.value,
+      hours_per_day: Number(f.hours_per_day.value),
+      car_hours: Number(f.car_hours.value),
+      rv_days: Number(f.rv_days.value),
+      work_days: [...f.querySelectorAll('[name=work_day]:checked')].map((c) => Number(c.value)),
+    } });
+    f.hidden = true;
+    toast('Shop hours saved');
+    renderCalendar();
+  } catch (err) { fail(err); }
 }
 
 function initCalendar() {
@@ -552,6 +689,9 @@ function initCalendar() {
     if (e.key === 'ArrowRight') stepPhoto(1);
   });
   $('#scheduleForm').addEventListener('submit', saveSchedule);
+  fillScheduleDialog = wireShopTime($('#scheduleForm'), { pipeline: () => cal.schedulePipeline });
+  $('#shopHoursBtn').addEventListener('click', toggleShopHours);
+  $('#shopHoursForm').addEventListener('submit', saveShopHours);
   $('#scheduleCancel').addEventListener('click', () => $('#scheduleDialog').close());
   // Keep the calendar fresh while it's on screen.
   setInterval(() => { if (state.section === 'calendar' && document.visibilityState === 'visible') loadCalendar().catch(() => {}); }, 60_000);

@@ -206,6 +206,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     reminderSkipWeekends: config.reminderSkipWeekends,
     archiveDays: config.archiveDays,
     recoatMonths: config.recoatMonths,
+    shopHours: jobs.getShopHours(),
     depositMethods: DEPOSIT_METHODS,
     commissionOwedWhen: OWED_WHEN,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
@@ -233,17 +234,33 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // ---- Shop calendar ----
   route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
   route('GET', '/api/jobs/unscheduled', () => jobs.listUnscheduled(), { roles: ADMIN });
+  // Booked shop hours on the days a proposed job would be worked, and what's worth a warning.
+  route('GET', '/api/jobs/capacity', ({ query }) => jobs.capacity({
+    id: query.get('job') ? Number(query.get('job')) : undefined,
+    start: query.get('start'),
+    end: query.get('end'),
+    hours: query.get('hours') ? Number(query.get('hours')) : null,
+    pipeline: query.get('pipeline') || 'other',
+  }), { roles: ANY_LOGIN });
+  route('GET', '/api/settings/shop-hours', () => jobs.getShopHours(), { roles: ANY_LOGIN });
+  route('PUT', '/api/settings/shop-hours', ({ body }) => jobs.saveShopHours(body), { roles: ADMIN });
   route('POST', '/api/leads/:id/job', ({ params, body, actor }) => {
     const lead = leads.getLead(Number(params.id));
     if (lead.stage !== 'booked') throw new HttpError(400, 'Only booked leads go on the calendar. Log "Appointment Booked" first.');
-    return jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
+    const job = jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
+    return { ...job, shop_time: jobs.capacityFor(job) };
   });
-  route('GET', '/api/jobs/:id', ({ params }) => jobs.getJob(Number(params.id)), { roles: ANY_LOGIN });
+  route('GET', '/api/jobs/:id', ({ params }) => {
+    const job = jobs.getJob(Number(params.id));
+    return { ...job, shop_time: jobs.capacityFor(job) };
+  }, { roles: ANY_LOGIN });
   // The job's price: sales and admins set it; shop logins never see it.
   route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
   route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
-  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) =>
-    commissions.watchOwed(Number(params.id), () => jobs.updateJob(Number(params.id), body, actor), actor), { roles: CALENDAR });
+  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => {
+    const job = commissions.watchOwed(Number(params.id), () => jobs.updateJob(Number(params.id), body, actor), actor);
+    return { ...job, shop_time: jobs.capacityFor(job) };
+  }, { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
     jobs.updateItem(Number(params.id), Number(params.item), body, actor), { roles: CALENDAR });
@@ -315,6 +332,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
         commissions.setDeposit(result.job.id, { taken: true, amount: body.deposit_amount, method: body.deposit_method }, actor);
       }
       result.job = commissions.forJob(result.job.id);
+      result.shop_time = jobs.capacityFor(result.job);
       result.lead = leads.getLead(id);
     }
     // The rep can untick "send follow-up email" for a single call.

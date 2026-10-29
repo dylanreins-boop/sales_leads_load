@@ -712,9 +712,8 @@ function syncDispoForm(fromDispositionChange = false) {
   const scheduleWasHidden = $('#scheduleField').hidden;
   $('#scheduleField').hidden = !def?.schedules;
   if (def?.schedules && scheduleWasHidden && state.openLead) {
-    const { start, end } = defaultSlot(state.openLead.vehicle_type);
-    form.job_start.value = toLocalInput(start);
-    form.job_end.value = toLocalInput(end);
+    const { start, end, hours } = defaultSlot(state.openLead.vehicle_type);
+    state.fillBookingTime(hours, start, end);
   }
   if (!def?.schedules) setScheduleError(false);
 }
@@ -770,12 +769,15 @@ async function saveDisposition(e) {
   if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
   if (needsServices) body.services = services;
   if (needsSchedule) {
-    Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_amount: form.job_amount.value });
+    Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_hours: form.job_hours.value, job_amount: form.job_amount.value });
     if (form.deposit_taken.checked) Object.assign(body, { deposit_taken: true, deposit_amount: form.deposit_amount.value, deposit_method: form.deposit_method.value });
   }
   try {
-    const { lead, reminder, email, job } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
-    if (job) toast(`Booked. On the shop calendar for ${fmtDateTime(job.start_at)}`);
+    const { lead, reminder, email, job, shop_time: shopTime } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
+    if (job) {
+      toast(`Booked. On the shop calendar for ${fmtDateTime(job.start_at)}`);
+      warnShopTime(shopTime);
+    }
     else {
       toast(reminder
         ? `Saved. Reminder set for ${fmtDateTime(reminder.due_at)}`
@@ -1241,6 +1243,7 @@ async function init() {
   // Escape closes the side panel, unless a dialog (like the photo viewer) is open on top of it.
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) showPanel(null); });
   $('#dispoForm').addEventListener('submit', saveDisposition);
+  state.fillBookingTime = wireShopTime($('#dispoForm'), { pipeline: () => pipelineOf(state.openLead?.vehicle_type) });
   $('#dispoForm').disposition.addEventListener('change', () => syncDispoForm(true));
   $('#dispoForm').reminder.addEventListener('change', () => syncDispoForm());
   $('#stageSelect').addEventListener('change', (e) => moveStage(state.openLeadId, e.target.value));

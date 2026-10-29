@@ -229,7 +229,16 @@
         <button type="button" data-view="week">Week</button>
         <button type="button" data-view="list">List</button>
       </div>
+      <button type="button" id="shopHoursBtn" class="admin-only">Shop hours</button>
     </div>
+    <form id="shopHoursForm" class="com-settings" hidden>
+      <label>Opens <input name="open" type="time" step="900" required></label>
+      <label>Hours a day <input name="hours_per_day" type="number" min="1" max="16" step="0.5" required></label>
+      <fieldset class="work-days"><legend>Work days</legend><div id="shopDays" class="checks"></div></fieldset>
+      <label>Usual car job <span class="pct-input"><input name="car_hours" type="number" min="0.5" max="80" step="0.5" required> hours</span></label>
+      <label>Usual RV / trailer job <span class="pct-input"><input name="rv_days" type="number" min="1" max="10" step="1" required> days</span></label>
+      <button type="submit" class="primary">Save shop hours</button>
+    </form>
     <div id="calLegend" class="cal-legend" aria-label="Job status colors"></div>
     <div id="calUnscheduled" class="cal-unscheduled" hidden></div>
     <div id="calBody" class="cal-body"></div>
@@ -320,8 +329,10 @@
           <fieldset id="scheduleField" class="services schedule" hidden aria-describedby="scheduleError">
             <legend>Put it on the shop calendar</legend>
             <div class="info-grid">
+              <label class="span-2">Work time <select name="job_hours"></select></label>
               <label>Drop-off <input type="datetime-local" name="job_start"></label>
               <label>Pick-up <input type="datetime-local" name="job_end"></label>
+              <div class="shop-time-note span-2" aria-live="polite" hidden></div>
               <label class="span-2">Job amount <span class="optional">(optional, shop never sees it)</span>
                 <input name="job_amount" inputmode="decimal" placeholder="$1,250" autocomplete="off">
               </label>
@@ -562,8 +573,10 @@
     <form id="scheduleForm">
       <h2>Put on the calendar</h2>
       <p id="scheduleFor" class="muted"></p>
+      <label>Work time <select name="job_hours"></select></label>
       <label>Drop-off <input type="datetime-local" name="job_start" required></label>
       <label>Pick-up <input type="datetime-local" name="job_end" required></label>
+      <div class="shop-time-note" aria-live="polite" hidden></div>
       <div class="dialog-actions">
         <button type="button" id="scheduleCancel">Cancel</button>
         <button type="submit" class="primary">Add to calendar</button>
@@ -597,6 +610,7 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
+  <script src="shop-time.js"></script>
   <script src="app.js"></script>
   <script src="calendar.js"></script>
   <script src="revenue.js"></script>
