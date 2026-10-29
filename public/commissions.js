@@ -100,12 +100,14 @@ function renderCommissions() {
   const noDeposit = jobs.filter((j) => j.deposit_cents == null && !['picked_up', 'cancelled'].includes(j.status));
   const tile = (label, cents, sub, flag) => h('section', { class: 'rev-tile' },
     h('h3', {}, label), h('div', { class: 'rev-total' }, cents), h('div', { class: 'rev-sub' }, sub), flag && h('div', { class: 'rev-flag' }, flag));
+  const toCollect = noDeposit.reduce((n, j) => n + (j.deposit_due_cents || 0), 0);
+  const noAmount = noDeposit.filter((j) => j.deposit_due_cents == null).length;
   $('#comTiles').replaceChildren(
     tile(isAdmin() ? 'Owed to reps' : 'Owed to you', money(sum(owed), { cents: false }), `${owed.length} job${owed.length === 1 ? '' : 's'}`),
     tile('Pending', money(sum(pending), { cents: false }), `${pending.length} job${pending.length === 1 ? '' : 's'} not earned yet`),
     tile('Paid this year', money(sum(paidYtd), { cents: false }), `${paidYtd.length} job${paidYtd.length === 1 ? '' : 's'}`),
     tile('Deposits not taken', String(noDeposit.length), 'upcoming and in-shop jobs',
-      noDeposit.length ? `${money(noDeposit.reduce((n, j) => n + (j.deposit_due_cents || 0), 0), { cents: false })} to collect` : null));
+      [toCollect > 0 && `${money(toCollect, { cents: false })} to collect`, noAmount > 0 && `${noAmount} without a job amount`].filter(Boolean).join(' · ') || null));
 
   if (isAdmin()) renderRepTable(jobs, yearStart);
   renderComTable(jobs);
