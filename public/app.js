@@ -182,7 +182,8 @@ function showSection(name) {
   $('#leadsSection').hidden = section !== 'leads';
   $('#calendarSection').hidden = section !== 'calendar';
   $('#revenueSection').hidden = section !== 'revenue';
-  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue' }[section] || 'Lead Pipeline';
+  $('#commissionsSection').hidden = section !== 'commissions';
+  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue', commissions: 'Commissions' }[section] || 'Lead Pipeline';
   document.querySelectorAll('.main-nav button').forEach((b) => {
     if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -190,6 +191,7 @@ function showSection(name) {
   history.replaceState(null, '', `#${section === 'leads' ? state.pipeline : section}`);
   if (section === 'calendar') loadCalendar().catch(fail);
   else if (section === 'revenue') loadRevenue().catch(fail);
+  else if (section === 'commissions') loadCommissions().catch(fail);
   else renderBoard();
 }
 
@@ -348,7 +350,9 @@ function renderLeadJob(lead) {
     : h('div', { class: 'lead-job' },
       h('span', { class: 'muted' }, 'Booked, but not on the shop calendar yet.'),
       h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')),
-    open && open.status !== 'cancelled' && amountEditor(open, { editable: true, onSaved: () => loadLeads().catch(() => {}) })].filter(Boolean));
+    open && open.status !== 'cancelled' && amountEditor(open, { editable: true, onSaved: () => openLead(lead.id) }),
+    open && open.status !== 'cancelled' && depositEditor(open, { onSaved: () => openLead(lead.id) }),
+    open && commissionLine(open)].filter(Boolean));
 }
 
 // ---------- old & dead leads ----------
@@ -765,7 +769,10 @@ async function saveDisposition(e) {
   if (form.reminder.checked) body.reminder_at = new Date(form.reminder_at.value).toISOString();
   if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
   if (needsServices) body.services = services;
-  if (needsSchedule) Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_amount: form.job_amount.value });
+  if (needsSchedule) {
+    Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_amount: form.job_amount.value });
+    if (form.deposit_taken.checked) Object.assign(body, { deposit_taken: true, deposit_amount: form.deposit_amount.value, deposit_method: form.deposit_method.value });
+  }
   try {
     const { lead, reminder, email, job } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
     if (job) toast(`Booked. On the shop calendar for ${fmtDateTime(job.start_at)}`);
@@ -1249,6 +1256,7 @@ async function init() {
   $('#reviewForm').addEventListener('input', () => { $('#reviewError').hidden = true; });
   $('#customerDue').addEventListener('change', (e) => { state.customerDue = e.target.value; renderBoard(); });
 
+  initCommissions();
   if (shop) return showSection('calendar');
   if (isAdmin()) {
     loadUpdatesCount();

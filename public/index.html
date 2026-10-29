@@ -30,6 +30,7 @@
     <nav class="main-nav" aria-label="Sections">
       <button type="button" data-section="leads" aria-current="page">Leads</button>
       <button type="button" data-section="calendar">Calendar</button>
+      <button type="button" data-section="commissions">Commissions</button>
       <button type="button" data-section="revenue" class="admin-only">Revenue</button>
     </nav>
     <span id="currentUser" class="muted" hidden></span>
@@ -114,6 +115,50 @@
   </section>
 
   </div>
+
+  <!-- Commissions: each rep sees their own; admins see everyone, deposits, and mark commissions paid -->
+  <section id="commissionsSection" class="section revenue" aria-labelledby="comTitle" hidden>
+    <div class="rev-toolbar">
+      <h2 id="comTitle" class="rev-title">Commissions</h2>
+      <div class="rev-controls">
+        <select id="comRep" class="admin-only" aria-label="Sales rep"></select>
+        <div id="comStatus" class="segmented" role="group" aria-label="Show">
+          <button type="button" data-status="owed" aria-pressed="true">Owed</button>
+          <button type="button" data-status="pending" aria-pressed="false">Pending</button>
+          <button type="button" data-status="paid" aria-pressed="false">Paid</button>
+          <button type="button" data-status="" aria-pressed="false">All</button>
+        </div>
+        <button type="button" id="comSettingsBtn" class="admin-only">Rates</button>
+      </div>
+    </div>
+    <form id="comSettings" class="com-settings" hidden>
+      <label>Commission <span class="pct-input"><input name="rate_pct" type="number" min="0" max="100" step="0.5"> %</span></label>
+      <label>Deposit <span class="pct-input"><input name="deposit_pct" type="number" min="0" max="100" step="0.5"> %</span></label>
+      <label>Commission is owed when
+        <select name="owed_when">
+          <option value="picked_up">the job is picked up</option>
+          <option value="deposit">the deposit is taken</option>
+          <option value="booked">the job is booked</option>
+        </select>
+      </label>
+      <button type="submit" class="primary">Save rates</button>
+    </form>
+    <p id="comRule" class="muted rev-note"></p>
+    <div id="comTiles" class="rev-tiles"></div>
+    <section id="comReps" class="rev-block admin-only" aria-labelledby="comRepsTitle">
+      <div class="rev-block-head"><h3 id="comRepsTitle">By rep</h3></div>
+      <div class="table-scroll"><table id="comRepTable" class="matrix rev-table"></table></div>
+    </section>
+    <section class="rev-block" aria-labelledby="comJobsTitle">
+      <div class="rev-block-head"><h3 id="comJobsTitle">Jobs</h3></div>
+      <div class="table-scroll"><table id="comTable" class="matrix rev-table com-table"></table></div>
+    </section>
+    <div id="comPayBar" class="com-paybar admin-only" hidden>
+      <span id="comPayText"></span>
+      <input id="comPayNote" placeholder="Note (e.g. check #1042)" aria-label="Payment note" maxlength="100">
+      <button type="button" id="comPayBtn" class="primary">Mark paid</button>
+    </div>
+  </section>
 
   <!-- Revenue (admins): job amounts added up by day, week, month and year to date -->
   <section id="revenueSection" class="section revenue" aria-labelledby="revTitle" hidden>
@@ -279,6 +324,9 @@
               <label class="span-2">Job amount <span class="optional">(optional, shop never sees it)</span>
                 <input name="job_amount" inputmode="decimal" placeholder="$1,250" autocomplete="off">
               </label>
+              <label class="check span-2"><input type="checkbox" name="deposit_taken"> Deposit taken now</label>
+              <label class="deposit-field" hidden>Deposit <input name="deposit_amount" inputmode="decimal" placeholder="10% of the job" autocomplete="off"></label>
+              <label class="deposit-field" hidden>Paid by <select name="deposit_method"></select></label>
             </div>
           </fieldset>
           <p id="scheduleError" class="field-error" hidden>Pick a drop-off and a pick-up time after it.</p>
@@ -552,5 +600,6 @@
   <script src="calendar.js"></script>
   <script src="revenue.js"></script>
   <script src="quotes.js"></script>
+  <script src="commissions.js"></script>
 </body>
 </html>

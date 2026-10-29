@@ -18,6 +18,7 @@ const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
 const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 const { createQuoteService } = require('./src/quotes');
 const { createReviewService } = require('./src/reviews');
+const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -150,6 +151,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const users = createUserService(db, { serverUsers: config.users });
   const quotes = createQuoteService(db, { leads, brand: config.brand });
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
+  const commissions = createCommissionService(db, { leads, jobs });
+  leads.setJobDecorator((job) => commissions.figures(job));
   const routes = [];
 
   // Returns the signed-in user ({ name, role }), or null if the login is wrong.
@@ -203,6 +206,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     reminderSkipWeekends: config.reminderSkipWeekends,
     archiveDays: config.archiveDays,
     recoatMonths: config.recoatMonths,
+    depositMethods: DEPOSIT_METHODS,
+    commissionOwedWhen: OWED_WHEN,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
     facebookFormIds: config.facebook.formIds,
     emailConfigured: mailer.configured,
@@ -297,10 +302,18 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     const id = Number(params.id);
     const schedule = DISPOSITIONS_BY_ID[body.disposition]?.schedules ? jobs.parseSchedule(body) : null;
     const amount = schedule ? parseAmount(body.job_amount) : null;
+    if (schedule && body.deposit_taken && amount == null && !String(body.deposit_amount ?? '').trim()) {
+      throw new HttpError(400, 'Enter the job amount (or the deposit amount) to record the deposit.');
+    }
+    if (schedule && body.deposit_taken) parseAmount(body.deposit_amount);
     const result = leads.dispositionLead(id, body, actor);
     if (schedule) {
       result.job = jobs.scheduleLead(id, schedule, actor);
       if (amount != null) result.job = jobs.setAmount(result.job.id, body.job_amount, actor);
+      if (body.deposit_taken) {
+        commissions.setDeposit(result.job.id, { taken: true, amount: body.deposit_amount, method: body.deposit_method }, actor);
+      }
+      result.job = commissions.forJob(result.job.id);
       result.lead = leads.getLead(id);
     }
     // The rep can untick "send follow-up email" for a single call.
@@ -358,6 +371,20 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     }
     leads.recordEmail(quote.lead_id, message, { status: 'sent', trigger: 'quote', user: actor.user, label: 'Quote email' });
     return { quote: quotes.markEmailed(quote.id, message.to), lead: leads.getLead(quote.lead_id) };
+  });
+
+  // ---- Deposits and commissions ----
+  route('GET', '/api/settings/commission', () => commissions.getSettings());
+  route('PUT', '/api/settings/commission', ({ body }) => commissions.saveSettings(body), { roles: ADMIN });
+  route('PATCH', '/api/jobs/:id/deposit', ({ params, body, actor }) => commissions.setDeposit(Number(params.id), body, actor));
+  route('PATCH', '/api/jobs/:id/commission', ({ params, body, actor }) => commissions.setCommission(Number(params.id), body, actor), { roles: ADMIN });
+  route('POST', '/api/jobs/:id/commission/unpay', ({ params, actor }) => commissions.unpay(Number(params.id), actor), { roles: ADMIN });
+  route('POST', '/api/commissions/pay', ({ body, actor }) => commissions.pay(body.job_ids, { user: actor.user, note: body.note }), { roles: ADMIN });
+  // Sales reps see their own commissions; admins see everyone's.
+  route('GET', '/api/commissions', ({ query, actor }) => {
+    const all = actor.role === 'admin';
+    const result = commissions.list({ rep: all ? query.get('rep') || null : actor.user || '' });
+    return { ...result, reps: all ? [...new Set([...users.list().map((u) => u.name), ...result.jobs.map((j) => j.commission_rep).filter(Boolean)])] : [actor.user] };
   });
 
   // ---- Lead source report (admin) ----

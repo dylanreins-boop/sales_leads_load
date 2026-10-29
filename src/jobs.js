@@ -107,12 +107,12 @@ function parseAmount(value) {
   return cents;
 }
 
-// Job prices are for sales and admins; shop logins never get them.
-const AMOUNT_KEYS = ['amount_cents', 'amount_by', 'amount_at'];
+// Job prices, deposits and commissions are for sales and admins; shop logins never get them.
+const isMoneyKey = (k) => /^(amount|deposit|commission)_/.test(k);
 function hideAmount(value) {
   if (Array.isArray(value)) return value.map(hideAmount);
-  if (value && typeof value === 'object' && 'amount_cents' in value) {
-    return Object.fromEntries(Object.entries(value).filter(([k]) => !AMOUNT_KEYS.includes(k)));
+  if (value && typeof value === 'object' && Object.keys(value).some(isMoneyKey)) {
+    return Object.fromEntries(Object.entries(value).filter(([k]) => !isMoneyKey(k)));
   }
   return value;
 }

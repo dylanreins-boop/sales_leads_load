@@ -91,7 +91,16 @@ CREATE TABLE IF NOT EXISTS jobs (
   amount_by    TEXT,
   amount_at    TEXT,
   picked_up_at TEXT,                            -- when it was marked Picked up
-  review_sent_at TEXT                           -- when the review-request email went out (or was skipped)
+  review_sent_at TEXT,                          -- when the review-request email went out (or was skipped)
+  deposit_cents INTEGER,                        -- deposit taken (null = not taken yet)
+  deposit_method TEXT,
+  deposit_by TEXT,
+  deposit_at TEXT,
+  commission_rep TEXT,                          -- who earns the commission (defaults to who booked it)
+  commission_override_cents INTEGER,            -- set by an admin instead of the standard rate
+  commission_paid_cents INTEGER,
+  commission_paid_by TEXT,
+  commission_paid_at TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_time ON jobs (start_at, end_at);
 CREATE INDEX IF NOT EXISTS jobs_lead ON jobs (lead_id);
@@ -191,6 +200,11 @@ function migrate(db) {
   if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
   if (!has('leads', 'sms_opt_in')) db.exec('ALTER TABLE leads ADD COLUMN sms_opt_in INTEGER');
   if (!has('jobs', 'review_sent_at')) db.exec('ALTER TABLE jobs ADD COLUMN review_sent_at TEXT');
+  for (const [column, type] of [['deposit_cents', 'INTEGER'], ['deposit_method', 'TEXT'], ['deposit_by', 'TEXT'], ['deposit_at', 'TEXT'],
+    ['commission_rep', 'TEXT'], ['commission_override_cents', 'INTEGER'], ['commission_paid_cents', 'INTEGER'],
+    ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
+    if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
+  }
   if (!has('jobs', 'picked_up_at')) {
     db.exec("ALTER TABLE jobs ADD COLUMN picked_up_at TEXT; UPDATE jobs SET picked_up_at = updated_at WHERE status = 'picked_up'");
   }

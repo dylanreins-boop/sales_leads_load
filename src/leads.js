@@ -74,6 +74,9 @@ function statusOf(lead) {
 function createLeadService(db, { reminderHour = 9, skipWeekends = false, archiveDays = 14, brand = { name: 'Lead Pipeline' } } = {}) {
   const EMAIL_SETTINGS = defaultEmailSettings(brand);
   const stmt = (sql) => db.prepare(sql);
+  // Lets the server add deposit and commission figures to a lead's jobs.
+  let decorateJob = (job) => job;
+  const setJobDecorator = (fn) => { decorateJob = fn; };
 
   function logActivity(leadId, type, fields = {}) {
     stmt(`INSERT INTO activities (lead_id, type, disposition, from_stage, to_stage, note, user_name, created_at)
@@ -204,7 +207,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.quotes = stmt('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(id).map((q) => ({ ...q, lines: JSON.parse(q.lines) }));
-    lead.jobs = stmt('SELECT id, start_at, end_at, status, amount_cents, amount_by, amount_at FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id);
+    lead.jobs = stmt('SELECT * FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id).map((j) => decorateJob(j));
     return lead;
   }
 
@@ -516,7 +519,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
-    archiveOldLeads, restoreLead, exportLeads, logActivity, listUpdates, countUnseenUpdates, markUpdatesSeen,
+    archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, listUpdates, countUnseenUpdates, markUpdatesSeen,
   };
 }
 

@@ -111,6 +111,29 @@ Jobs marked Cancelled / Rescheduled don't count. The Excel export includes a Job
 date, the leads that came in by lead source (Facebook, website, phone / walk-in) and by "How they heard
 about us", with how many booked, the booking rate, the revenue their jobs brought in, and revenue per lead.
 
+## Deposits and commissions
+
+**Deposits.** Every booked job shows the deposit due (10% of the job amount). Tick **Deposit taken now**
+when booking (the amount fills in at 10%; change it if they paid a different amount, and pick how they
+paid), or use **Mark taken** on the lead's Shop job box later. Who took it and when is logged.
+
+**Commissions.** The rep who booked a job earns 10% of the job amount. Each commission is **Pending**
+until it's earned (by default, once the job is marked Picked up), then **Owed** until an admin marks it
+**Paid**. Cancelled jobs earn nothing.
+
+The **Commissions** page (sales and admins):
+
+- **Sales reps** see only their own: owed to them, pending, paid this year, their deposits not taken
+  yet, and each job's status.
+- **Admins** see every rep. **By rep** shows owed, pending and paid this year, with a **Pay** button per
+  rep. Tick individual jobs and **Mark paid** (with an optional note like a check number). **Undo paid**
+  reverses a payment. **Edit** gives a commission to another rep or sets a different amount. **Rates**
+  changes the commission % and deposit %, and when commission is owed (job picked up, deposit taken, or
+  booked).
+
+Every deposit, commission change and payment is logged on the lead and shows in Updates. Shop logins
+never see job amounts, deposits or commissions.
+
 ## Quotes
 
 Every lead has a **Quote** box (sales and admins). Pick a vehicle package or an RV / trailer rate (enter the
