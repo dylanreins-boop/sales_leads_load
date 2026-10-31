@@ -50,9 +50,12 @@ function applyLogo() {
   const img = document.querySelector('.brand-logo');
   if (!img || !a) return;
   const onDark = isDark() || darkColor(look.previewBar ?? a.bar);
-  // The <source> follows the device, not these settings, so the script picks the logo itself.
-  img.parentElement.querySelector('source')?.remove();
-  img.src = onDark ? a.logo_dark || a.logo || '/brand/logo-white.png' : a.logo || '/brand/logo.png';
+  // The <source> follows the device, not these settings, so the script picks the logo itself
+  // (remembering the page's standard logos first).
+  const source = img.parentElement.querySelector('source');
+  if (!look.standardLogos) look.standardLogos = { light: img.getAttribute('src'), dark: source?.getAttribute('srcset') || img.getAttribute('src') };
+  source?.remove();
+  img.src = onDark ? a.logo_dark || a.logo || look.standardLogos.dark : a.logo || look.standardLogos.light;
 }
 
 async function applyBackground(a) {
