@@ -190,8 +190,12 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     }
     stmt(`UPDATE jobs SET ${kind === 'confirm' ? 'confirm_sent_at' : 'reminder_sent_at'} = ? WHERE id = ?`).run(now(), jobId);
     if (!sent.length && !problems.length) {
-      const why = !lead.phone && !lead.email ? 'no phone or email on file'
-        : 'texting and email aren\'t set up for this customer';
+      const why = !texter.configured && !mailer.configured ? 'texting and email aren\'t connected yet'
+        : !lead.phone && !lead.email ? 'no phone or email on file'
+          : lead.sms_opt_in === 0 && !lead.email ? 'the customer opted out of texts and has no email on file'
+            : !texter.configured ? 'no email on file (texting isn\'t connected yet)'
+              : !mailer.configured ? 'no mobile number on file (email isn\'t connected yet)'
+                : 'no way to reach the customer';
       leads.logActivity(lead.id, 'notice', { note: `${kind === 'confirm' ? 'Booking confirmation' : 'Day-before reminder'} not sent: ${why}`, user });
     }
     return { sent, problems };
