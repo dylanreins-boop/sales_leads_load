@@ -62,7 +62,7 @@ test('admins set the colors for everyone; the CSS reaches every page without sig
   assert.equal((await call('PUT', '/api/appearance', { column_clear: 99 })).status, 400);
 
   // Preview doesn't save.
-  const preview = (await call('POST', '/api/appearance/preview', { accent: '#1f6f4a' })).data.css;
+  const preview = (await call('POST', '/api/appearance/preview', { scope: 'company', values: { accent: '#1f6f4a' } })).data.css;
   assert.match(preview, /#1f6f4a/);
   assert.match((await call('GET', '/appearance.css', undefined, null)).data, /#c8102e/);
 });
@@ -92,6 +92,42 @@ test('background picture and logos are uploaded, served publicly, replaced and r
   assert.deepEqual([reset.accent, reset.logo, reset.background_image], [null, null, null]);
   await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(fs.readdirSync(dir).filter((f) => f.startsWith('brand-')), []);
+});
+
+test('each person sets their own look on top of the company look; it follows their account', async () => {
+  await call('PUT', '/api/appearance', { accent: '#c8102e', dark_panel: '#1b1d22' });
+  const samCss = async () => (await call('GET', '/appearance.css', undefined, SAM)).data;
+  assert.match(await samCss(), /--accent: #c8102e/, 'starts from the company look');
+
+  const mine = (await call('PUT', '/api/appearance/mine', { accent: '#1f6f4a', dark_panel: '#13261d', column_clear: 40, theme: 'dark' }, SAM)).data;
+  assert.equal(mine.accent, '#1f6f4a', 'the look in effect');
+  assert.deepEqual([mine.mine.accent, mine.mine.theme, mine.theme], ['#1f6f4a', 'dark', 'dark']);
+  assert.equal(mine.company.accent, '#c8102e');
+  const css = await samCss();
+  assert.match(css, /--accent: #1f6f4a/);
+  assert.match(css, /--panel: #13261d/);
+  assert.match(css, /\) 60%, transparent\)/, '40% see-through');
+  assert.match((await call('GET', '/appearance.css', undefined, ADMIN)).data, /--accent: #c8102e/, 'other people keep the company look');
+  assert.match((await call('GET', '/appearance.css', undefined, null)).data, /--accent: #c8102e/, 'so does the sign-in page');
+
+  // An admin changing the company look doesn't override what Sam picked; things Sam left alone follow it.
+  await call('PUT', '/api/appearance', { highlight: '#ff00aa' });
+  assert.match(await samCss(), /--accent: #1f6f4a; --accent-text: #ffffff; --highlight: #ff00aa/);
+
+  // Sam's own background picture; only admins change the company look and logos.
+  const bg = (await call('POST', '/api/appearance/mine/background', PNG, SAM, 'image/png')).data;
+  assert.match(bg.background_image, /brand-user-bg-/);
+  assert.equal((await fetch(base + bg.background_image)).status, 200);
+  assert.equal((await call('PUT', '/api/appearance', { accent: '#000000' }, SAM)).status, 403);
+  assert.equal((await call('POST', '/api/appearance/logo', PNG, SAM, 'image/png')).status, 403);
+  assert.equal((await call('POST', '/api/appearance/preview', { scope: 'company', values: {} }, SAM)).status, 403);
+  assert.match((await call('POST', '/api/appearance/preview', { scope: 'mine', values: { accent: '#123456' } }, SAM)).data.css, /--accent: #123456/);
+  assert.equal((await call('PUT', '/api/appearance/mine', { theme: 'purple' }, SAM)).status, 400);
+
+  // Back to the company look (keeps light/dark).
+  const reset = (await call('POST', '/api/appearance/mine/reset', undefined, SAM)).data;
+  assert.deepEqual([reset.accent, reset.mine.background_image, reset.theme], ['#c8102e', null, 'dark']);
+  await call('POST', '/api/appearance/reset');
 });
 
 test('the sign-in page loads the appearance without signing in', async () => {

@@ -1,8 +1,10 @@
 'use strict';
-// Appearance: each person's light/dark choice, and the colors, background picture and logo admins set
-// for everyone. Uses the helpers from app.js ($, h, api, toast, fail, state, showPanel, isAdmin).
+// Appearance: each person's own look (light/dark, colors, background picture), saved to their login,
+// on top of the company look admins set for everyone (plus the logos).
+// Uses the helpers from app.js ($, h, api, toast, fail, state, showPanel, isAdmin).
 
-const look = { saved: null, draft: {}, bgUrl: null, previewTimer: null };
+// saved: the look in effect, with .company and .mine; scope: which one the panel is editing.
+const look = { saved: null, scope: 'mine', draft: {}, bgUrl: null, previewTimer: null };
 // The standard look's colors, shown in the color pickers when nothing is set.
 const STANDARD = {
   accent: '#004ea2', highlight: '#ffad43',
@@ -26,12 +28,22 @@ const themeChoice = () => { try { return localStorage.getItem('theme') || ''; } 
 const isDark = () => document.documentElement.dataset.theme === 'dark'
   || (!document.documentElement.dataset.theme && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
 
-function setTheme(choice) {
+// Kept on this device too, so the page opens in the right look before anything loads.
+function showTheme(choice) {
   try { if (choice) localStorage.setItem('theme', choice); else localStorage.removeItem('theme'); } catch { /* storage unavailable */ }
   if (choice) document.documentElement.dataset.theme = choice;
   else delete document.documentElement.dataset.theme;
   document.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themeChoice === choice)));
   applyLogo();
+}
+
+async function setTheme(choice) {
+  showTheme(choice);
+  if (!state.meta.currentUser) return;
+  try {
+    const a = await api('/api/appearance/mine', { method: 'PUT', body: { theme: choice || null } });
+    look.saved = a;
+  } catch (err) { fail(err); }
 }
 
 // ---------- applying the look ----------
@@ -84,76 +96,119 @@ async function applyBackground(a) {
 function applyAppearance(a) {
   look.saved = a;
   look.previewColors = null;
+  // Light/dark follows the login; this device's copy catches up.
+  if (a.mine && (a.theme || '') !== themeChoice()) showTheme(a.theme || '');
   setAppearanceCss(a.css);
   applyLogo();
   applyBackground(a);
 }
 
 // ---------- the panel ----------
+const editing = () => look.saved[look.scope] || {};
+// What a color shows when it isn't set: in my look the company's, in the company look the standard.
+const fallback = (key) => (look.scope === 'mine' ? look.saved.company[key] || STANDARD[key] : STANDARD[key]);
+
+// Ready-made looks. In my look, "Company look" clears my colors, and the others set every color.
+function presetList() {
+  if (look.scope === 'company') return PRESETS.map((p) => ({ name: p.name, colors: presetColors(p) }));
+  return [
+    { name: 'Company look', colors: Object.fromEntries(COLOR_KEYS.map((k) => [k, null])) },
+    ...PRESETS.map((p) => ({ name: p.name, colors: Object.fromEntries(COLOR_KEYS.map((k) => [k, p.colors[k] || STANDARD[k]])) })),
+  ];
+}
+
 function renderAppearance() {
   const a = look.saved;
   document.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themeChoice === themeChoice())));
-  if (!isAdmin()) return;
-  const colors = { ...pick(a), ...look.draft };
+  const company = look.scope === 'company';
+  document.querySelectorAll('[data-scope]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.scope === look.scope)));
+  document.querySelectorAll('#appearancePanel .company-only').forEach((el) => { el.hidden = !company; });
+  $('#lookIntro').textContent = company
+    ? 'What everyone sees unless they change their own look, including the sign-in and booking pages. Changes show here right away; Save to use them.'
+    : 'Only for you, on any phone or computer you sign in on. Anything you don\'t change follows the company look. Changes show right away; Save to keep them.';
+  $('#colorSave').textContent = company ? 'Save for everyone' : 'Save my look';
+  $('#appearanceReset').textContent = company ? 'Go back to the standard Bob Moses look (for everyone)' : 'Use the company look again';
+
+  const mine = editing();
+  const colors = { ...pick(mine), ...look.draft };
   const f = $('#colorForm');
   for (const key of COLOR_KEYS) {
-    f[key].value = colors[key] || STANDARD[key];
-    f.querySelector(`[data-default="${key}"]`).hidden = !colors[key];
+    f[key].value = colors[key] || fallback(key);
+    const reset = f.querySelector(`[data-default="${key}"]`);
+    reset.hidden = !colors[key];
+    reset.textContent = company ? 'Default' : 'Company';
+    reset.title = company ? 'Back to the standard color' : 'Back to the company color';
   }
-  f.column_clear.value = colors.column_clear ?? 0;
-  $('#columnClearValue').textContent = `${colors.column_clear ?? 0}%`;
+  const clear = colors.column_clear ?? (company ? 0 : a.company.column_clear ?? 0);
+  f.column_clear.value = clear;
+  $('#columnClearValue').textContent = `${clear}%`;
+
   // Swatches show the look this device is in (light or dark).
   const d = isDark() ? 'dark_' : '';
-  $('#themePresets').replaceChildren(...PRESETS.map((p) => {
-    const c = { ...STANDARD, ...Object.fromEntries(Object.entries(p.colors).filter(([, v]) => v)) };
+  $('#themePresets').replaceChildren(...presetList().map((p) => {
+    const c = Object.fromEntries(COLOR_KEYS.map((k) => [k, p.colors[k] || fallback(k)]));
     const active = COLOR_KEYS.every((k) => (colors[k] || null) === (p.colors[k] || null));
-    return h('button', { type: 'button', class: 'preset', 'aria-pressed': String(active), onclick: () => { look.draft = { ...look.draft, ...presetColors(p) }; renderAppearance(); preview(); } },
+    return h('button', { type: 'button', class: 'preset', 'aria-pressed': String(active), onclick: () => { look.draft = { ...look.draft, ...p.colors }; renderAppearance(); preview(); } },
       h('span', { class: 'preset-swatch', style: `background:${c[`${d}background`]}` },
         h('i', { style: `background:${c[`${d}bar`]}` }), h('i', { style: `background:${c[`${d}panel`]}; border-color:${c[`${d}border`]}` }),
         h('i', { style: `background:${c.accent}` }), h('i', { style: `background:${c.highlight}` })),
       p.name);
   }));
+
   for (const box of document.querySelectorAll('.image-setting')) {
     const kind = box.dataset.image;
-    const url = kind === 'background' ? a.background_image : a[kind];
-    box.querySelector('[data-thumb]').replaceChildren(url
-      ? h('img', { src: url, alt: '' })
-      : h('span', { class: 'muted' }, kind === 'background' ? 'No picture' : 'Standard logo'));
+    const url = kind === 'background' ? mine.background_image : mine[kind];
+    const empty = kind !== 'background' ? 'Standard logo'
+      : !company && a.company.background_image ? 'Using the company picture' : 'No picture';
+    box.querySelector('[data-thumb]').replaceChildren(url ? h('img', { src: url, alt: '' }) : h('span', { class: 'muted' }, empty));
     box.querySelector('[data-remove]').hidden = !url;
   }
-  $('#bgDim').value = a.background_dim ?? 70;
-  $('#bgDimValue').textContent = `${a.background_dim ?? 70}%`;
-  $('#bgDim').closest('label').hidden = !a.background_image;
+  const dim = mine.background_dim ?? a.background_dim ?? 70;
+  $('#bgDim').value = dim;
+  $('#bgDimValue').textContent = `${dim}%`;
+  $('#bgDim').closest('label').hidden = !(mine.background_image || (!company && a.company.background_image));
 }
-const pick = (a) => ({ ...Object.fromEntries(COLOR_KEYS.map((k) => [k, a[k] || null])), column_clear: a.column_clear ?? 0 });
+const pick = (a) => ({ ...Object.fromEntries(COLOR_KEYS.map((k) => [k, a[k] || null])), column_clear: a.column_clear ?? null });
 
 // Shows the panel's colors on the whole app without saving.
 function preview() {
   clearTimeout(look.previewTimer);
   look.previewTimer = setTimeout(async () => {
     try {
-      const { css } = await api('/api/appearance/preview', { method: 'POST', body: { ...pick(look.saved), ...look.draft } });
+      const values = { ...pick(editing()), ...look.draft };
+      const { css } = await api('/api/appearance/preview', { method: 'POST', body: { scope: look.scope, values } });
       setAppearanceCss(css);
-      look.previewColors = { ...look.draft };
+      look.previewColors = Object.fromEntries(COLOR_KEYS.map((k) => [k, values[k] || (look.scope === 'mine' ? look.saved.company[k] : null)]));
       applyLogo();
     } catch (err) { fail(err); }
   }, 120);
 }
 
+// The address for this scope: my look, or the company look.
+const scopeUrl = (path = '') => (look.scope === 'mine' ? `/api/appearance/mine${path}` : `/api/appearance${path}`);
+
 async function openAppearance() {
   try { look.saved = await api('/api/appearance'); } catch (err) { return fail(err); }
   look.draft = {};
+  look.scope = 'mine';
   renderAppearance();
   showPanel($('#appearancePanel'));
+}
+
+function switchScope(scope) {
+  if (scope === look.scope) return;
+  if (Object.keys(look.draft).length) undoColors();
+  look.scope = scope;
+  renderAppearance();
 }
 
 async function saveColors(e) {
   e.preventDefault();
   try {
-    applyAppearance(await api('/api/appearance', { method: 'PUT', body: { ...pick(look.saved), ...look.draft } }));
+    applyAppearance(await api(scopeUrl(), { method: 'PUT', body: { ...pick(editing()), ...look.draft } }));
     look.draft = {};
     renderAppearance();
-    toast('Colors saved for everyone');
+    toast(look.scope === 'company' ? 'Colors saved for everyone' : 'Your look is saved');
   } catch (err) { fail(err); }
 }
 
@@ -189,7 +244,7 @@ async function uploadImage(e) {
   if (!file) return;
   try {
     const blob = kind === 'background' ? await resizeImage(file, 2400, 'image/jpeg') : await resizeImage(file, 800, 'image/png');
-    const res = await fetch(`/api/appearance/${kind}`, { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
+    const res = await fetch(kind === 'background' ? scopeUrl('/background') : `/api/appearance/${kind}`, { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
     applyAppearance(data);
@@ -201,26 +256,29 @@ async function uploadImage(e) {
 
 async function removeImage(kind) {
   try {
-    applyAppearance(await api(`/api/appearance/${kind}`, { method: 'DELETE' }));
+    applyAppearance(await api(kind === 'background' ? scopeUrl('/background') : `/api/appearance/${kind}`, { method: 'DELETE' }));
     renderAppearance();
   } catch (err) { fail(err); }
 }
 
 async function saveDim(e) {
   try {
-    applyAppearance(await api('/api/appearance', { method: 'PUT', body: { background_dim: Number(e.target.value) } }));
+    applyAppearance(await api(scopeUrl(), { method: 'PUT', body: { background_dim: Number(e.target.value) } }));
     if (Object.keys(look.draft).length) preview();
     renderAppearance();
   } catch (err) { fail(err); }
 }
 
 async function resetAppearance() {
-  if (!window.confirm('Go back to the standard colors and logo, and remove the background picture, for everyone?')) return;
+  const company = look.scope === 'company';
+  if (!window.confirm(company
+    ? 'Go back to the standard colors and logo, and remove the background picture, for everyone?'
+    : 'Clear your own colors and background picture and use the company look again?')) return;
   try {
-    applyAppearance(await api('/api/appearance/reset', { method: 'POST' }));
+    applyAppearance(await api(scopeUrl('/reset'), { method: 'POST' }));
     look.draft = {};
     renderAppearance();
-    toast('Back to the standard look');
+    toast(company ? 'Back to the standard look' : 'You\'re on the company look again');
   } catch (err) { fail(err); }
 }
 
@@ -229,7 +287,7 @@ function initAppearance() {
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyLogo);
   $('#appearanceBtn').addEventListener('click', openAppearance);
   document.querySelectorAll('[data-theme-choice]').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.themeChoice)));
-  if (!isAdmin()) return;
+  document.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => switchScope(b.dataset.scope)));
   const f = $('#colorForm');
   f.addEventListener('submit', saveColors);
   f.addEventListener('input', (e) => {

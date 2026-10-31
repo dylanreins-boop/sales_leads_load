@@ -24,7 +24,7 @@ function depositEditor(job, { onSaved }) {
   const methods = state.meta.depositMethods || [];
   const show = () => {
     const taken = job.deposit_cents != null;
-    box.replaceChildren(
+    fill(box,
       h('span', { class: 'amount-label' }, 'Deposit'),
       taken
         ? h('span', { class: 'amount-value' }, money(job.deposit_cents))

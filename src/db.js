@@ -273,6 +273,7 @@ function migrate(db) {
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
   }
+  if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
   // New-lead alerts: when it's due (alert hours), when it went out, and when admins were told nobody called.
   for (const column of ['alert_due_at', 'alerted_at', 'escalated_at']) {

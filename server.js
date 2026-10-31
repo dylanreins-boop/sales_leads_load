@@ -578,24 +578,51 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     res.end(importer.template());
   }, { roles: ADMIN });
 
-  // ---- Appearance: colors, background image and logo (admins set them for everyone) ----
-  route('GET', '/appearance.css', ({ res }) => {
-    res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' });
-    res.end(appearance.css());
+  // ---- Appearance: the company look (admins) and each person's own look on top of it ----
+  // Public, so the sign-in and booking pages get the company look; signed-in people get their own.
+  const viewer = (req) => (users.anyLogins() ? authenticate(req)?.name ?? null : null);
+  const signedInName = (actor) => {
+    if (!actor.user) throw new HttpError(400, 'Sign in with your own login to save your own look.');
+    return actor.user;
+  };
+  route('GET', '/appearance.css', ({ req, res }) => {
+    res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'private, no-cache' });
+    res.end(appearance.cssFor(viewer(req)));
   }, { isPublic: true });
-  // Public: the sign-in and booking pages use the logo and colors too.
-  route('GET', '/api/appearance', () => appearance.view(), { isPublic: true });
+  route('GET', '/api/appearance', ({ req }) => appearance.view(viewer(req)), { isPublic: true });
   route('GET', '/api/appearance/files/:file', ({ params, res }) => {
     const file = appearance.imagePath(params.file);
     const data = fs.readFileSync(file.path);
     res.writeHead(200, { 'Content-Type': file.mime, 'Content-Length': data.length, 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
     res.end(data);
   }, { isPublic: true });
-  route('PUT', '/api/appearance', ({ body }) => appearance.save(body), { roles: ADMIN });
-  route('POST', '/api/appearance/reset', () => appearance.reset(), { roles: ADMIN });
-  route('POST', '/api/appearance/preview', ({ body }) => appearance.preview(body), { roles: ADMIN });
-  route('POST', '/api/appearance/:kind', ({ params, raw }) => appearance.setImage(params.kind, raw), { roles: ADMIN, rawBody: true, bodyLimit: 8_000_000 });
-  route('DELETE', '/api/appearance/:kind', ({ params }) => appearance.removeImage(params.kind), { roles: ADMIN });
+  // Everyone: their own colors, background picture and light/dark choice.
+  route('PUT', '/api/appearance/mine', ({ body, actor }) => appearance.save(signedInName(actor), body), { roles: ANY_LOGIN });
+  route('POST', '/api/appearance/mine/reset', ({ actor }) => appearance.reset(signedInName(actor)), { roles: ANY_LOGIN });
+  route('POST', '/api/appearance/mine/background', ({ raw, actor }) => appearance.setImage(signedInName(actor), 'background', raw),
+    { roles: ANY_LOGIN, rawBody: true, bodyLimit: 8_000_000 });
+  route('DELETE', '/api/appearance/mine/background', ({ actor }) => appearance.removeImage(signedInName(actor), 'background'), { roles: ANY_LOGIN });
+  route('POST', '/api/appearance/preview', ({ body, actor }) => {
+    if (body.scope === 'company' && actor.role !== 'admin') throw new HttpError(403, 'Only admins change the company look.');
+    return appearance.preview(actor.user, body.scope === 'company' ? 'company' : 'mine', body.values || {});
+  }, { roles: ANY_LOGIN });
+  // Admins: the company look everyone starts from, and the logos.
+  route('PUT', '/api/appearance', ({ body, actor }) => {
+    appearance.save(null, body);
+    return appearance.view(actor.user);
+  }, { roles: ADMIN });
+  route('POST', '/api/appearance/reset', ({ actor }) => {
+    appearance.reset(null);
+    return appearance.view(actor.user);
+  }, { roles: ADMIN });
+  route('POST', '/api/appearance/:kind', ({ params, raw, actor }) => {
+    appearance.setImage(null, params.kind, raw);
+    return appearance.view(actor.user);
+  }, { roles: ADMIN, rawBody: true, bodyLimit: 8_000_000 });
+  route('DELETE', '/api/appearance/:kind', ({ params, actor }) => {
+    appearance.removeImage(null, params.kind);
+    return appearance.view(actor.user);
+  }, { roles: ADMIN });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });

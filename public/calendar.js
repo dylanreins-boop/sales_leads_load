@@ -381,7 +381,7 @@ async function toggleSheetEmail() {
   if (!f.hidden) { f.hidden = true; return; }
   try {
     const s = await api('/api/settings/day-sheet');
-    f.replaceChildren(
+    fill(f,
       h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'enabled', checked: s.enabled }), ' Email this sheet every work-day morning'),
       h('label', {}, 'To', h('input', { name: 'to', type: 'text', value: s.to.join(', '), placeholder: 'shop@example.com, mike@example.com' })),
       h('label', {}, 'At', h('select', { name: 'hour' }, ...[4, 5, 6, 7, 8, 9, 10, 11].map((hr) => h('option', { value: hr, selected: hr === s.hour }, `${hr}:00 AM`)))),

@@ -22,6 +22,9 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // Builds DOM nodes with textContent so lead data from forms can't inject HTML.
+// replaceChildren, skipping the empty parts of conditional content (false, null, undefined).
+const fill = (node, ...kids) => node.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
+
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -87,7 +90,7 @@ const money = (cents, { cents: showCents = true } = {}) => (cents == null ? '' :
 function amountEditor(job, { editable, onSaved }) {
   const box = h('div', { class: 'job-amount' });
   const show = () => {
-    box.replaceChildren(
+    fill(box,
       h('span', { class: 'amount-label' }, 'Job amount'),
       job.amount_cents == null
         ? h('span', { class: 'amount-missing' }, 'Not set')
@@ -218,8 +221,8 @@ function renderTabs() {
     tab('customers', 'Past Customers', state.customers.length, 'old-tab'),
     tab('old', 'Old & Dead Leads', state.oldLeads.length, 'old-tab'),
     h('span', { class: 'spacer' }),
-    isAdmin() && h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
-      h('span', { class: 'long-label' }, 'Export to Excel'), h('span', { class: 'short-label' }, 'Excel')),
+    ...(isAdmin() ? [h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
+      h('span', { class: 'long-label' }, 'Export to Excel'), h('span', { class: 'short-label' }, 'Excel'))] : []),
   );
 }
 
