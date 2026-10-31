@@ -266,6 +266,10 @@ function migrate(db) {
   for (const column of ['alert_due_at', 'alerted_at', 'escalated_at']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }
+  // Customer sign-off at drop-off: who signed, when, the signature image and what they agreed to.
+  for (const column of ['signoff_name', 'signoff_at', 'signoff_by', 'signoff_file', 'signoff_terms']) {
+    if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
+  }
   for (const column of ['confirm_sent_at', 'reminder_sent_at']) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   }

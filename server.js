@@ -25,6 +25,7 @@ const { createPush } = require('./src/push');
 const { createAlertService } = require('./src/alerts');
 const { createStripe } = require('./src/stripe');
 const { createBookingService } = require('./src/bookings');
+const { createDaySheetMailer } = require('./src/daysheet');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -183,6 +184,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   });
   const stripe = createStripe(config.stripe, fetchImpl);
   const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand: config.brand });
+  const daySheets = createDaySheetMailer(db, { jobs, mailer, brand: config.brand });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
     .catch((err) => ({ sent: [], problems: [err.message] }));
@@ -278,6 +280,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     pipeline: query.get('pipeline') || 'other',
   }), { roles: ANY_LOGIN });
   route('GET', '/api/settings/shop-hours', () => jobs.getShopHours(), { roles: ANY_LOGIN });
+  // The day sheet: drop-offs, pick-ups and jobs in the shop for one day (and its morning email).
+  route('GET', '/api/jobs/day-sheet', ({ query }) => jobs.daySheet(query.get('date')), { roles: ANY_LOGIN });
+  route('GET', '/api/settings/day-sheet', () => ({ ...daySheets.getSettings(), emailConfigured: mailer.configured }), { roles: ADMIN });
+  route('PUT', '/api/settings/day-sheet', ({ body }) => daySheets.saveSettings(body), { roles: ADMIN });
   route('PUT', '/api/settings/shop-hours', ({ body }) => jobs.saveShopHours(body), { roles: ADMIN });
   route('POST', '/api/leads/:id/job', async ({ params, body, actor }) => {
     const lead = leads.getLead(Number(params.id));
@@ -641,8 +647,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // New-lead alerts and the "nobody called yet" alert to admins, checked every minute.
   const alertTimer = setInterval(runAlerts, 60000);
   alertTimer.unref();
-  // Day-before reminders to customers, checked every 5 minutes.
-  const sendReminders = () => messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
+  // Day-before reminders to customers and the shop's morning day sheet, checked every 5 minutes.
+  const sendReminders = () => {
+    messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
+    daySheets.sendDue().catch((err) => console.error('Day sheet email failed:', err.message));
+  };
   const noticeTimer = setInterval(sendReminders, 5 * 60000);
   noticeTimer.unref();
 

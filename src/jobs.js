@@ -194,6 +194,39 @@ function createJobService(db, { leads, photosDir }) {
     return ShopTime.check({ id, start_at: from, end_at: to, work_hours: hours, pipeline, status }, others, settings);
   }
 
+  // ---- the day sheet ----
+  // Everything the shop needs for one day: drop-offs, pick-ups and what's already in the building.
+  function daySheet(dateKey) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ''))) throw new HttpError(400, 'Pick a day.');
+    const day = ShopTime.fromKey(dateKey);
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
+    const settings = getShopHours();
+    const all = listJobs({ from: day.toISOString(), to: next.toISOString() }).filter((j) => j.status !== 'cancelled');
+    const load = ShopTime.loadByDay(all, settings).get(dateKey);
+    const summary = (j) => ({
+      id: j.id, lead_id: j.lead_id, status: j.status, start_at: j.start_at, end_at: j.end_at,
+      customer: j.full_name || [j.first_name, j.last_name].filter(Boolean).join(' ') || j.phone || 'Customer',
+      phone: j.phone, vehicle: [j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(' ') || j.vehicle_type || '',
+      vehicle_type: j.vehicle_type, color: j.vehicle_color, pipeline: j.pipeline,
+      services: serviceLabels(j.services), notes: j.notes, work: ShopTime.label(ShopTime.jobHours(j, settings), settings),
+      hours_today: load?.jobs.find((x) => x.id === j.id)?.hours ?? 0,
+      checklist_done: j.checklist_done, checklist_total: j.checklist_total, photo_count: j.photo_count,
+      signed_off: Boolean(j.signoff_at),
+    });
+    const inDay = (iso) => new Date(iso) >= day && new Date(iso) < next;
+    return {
+      date: dateKey,
+      open: ShopTime.isWorkDay(day, settings),
+      hours_per_day: settings.hours_per_day,
+      booked_hours: load?.hours ?? 0,
+      dropoffs: all.filter((j) => inDay(j.start_at)).map(summary),
+      pickups: all.filter((j) => inDay(j.end_at) && !inDay(j.start_at)).map(summary),
+      same_day: all.filter((j) => inDay(j.start_at) && inDay(j.end_at)).map((j) => j.id),
+      in_shop: all.filter((j) => !inDay(j.start_at) && !inDay(j.end_at)).map(summary),
+    };
+  }
+
   const capacityFor = (job) => capacity({ id: job.id, start: job.start_at, end: job.end_at, hours: job.work_hours, pipeline: job.pipeline, status: job.status });
 
   const LEAD_FIELDS = `l.full_name, l.first_name, l.last_name, l.phone, l.email, l.sms_opt_in, l.vehicle_type, l.vehicle_year,
@@ -412,7 +445,7 @@ function createJobService(db, { leads, photosDir }) {
   }
 
   return {
-    getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
+    getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };
 }

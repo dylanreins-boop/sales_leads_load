@@ -901,3 +901,35 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
 .book-link-maker form { display: grid; gap: 10px; }
 .book-link-maker .info-grid label { margin: 0; }
 .send-by { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+
+/* Day sheet (calendar) */
+.day-sheet { display: grid; gap: 16px; max-width: 980px; }
+.sheet-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px; }
+.sheet-head h2 { font-family: var(--font-brand); font-size: 20px; margin: 0 0 6px; }
+.sheet-load { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); min-width: 260px; }
+.sheet-load.over { color: var(--danger); font-weight: 700; }
+.sheet-actions { display: flex; gap: 8px; }
+.sheet-block h3 { font-family: var(--font-brand); font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.sheet-rows { display: grid; gap: 8px; }
+.sheet-row { display: grid; grid-template-columns: 110px minmax(150px, 1.2fr) 2fr auto; gap: 4px 16px; align-items: start; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--st, var(--accent)); border-radius: 10px; cursor: pointer; }
+.sheet-row:hover { border-color: var(--st, var(--accent)); }
+.sheet-when { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sheet-who strong { margin-right: 6px; }
+.sheet-status { display: grid; justify-items: end; gap: 2px; font-size: 12px; }
+.sheet-notes { grid-column: 2 / -1; font-size: 13px; background: color-mix(in srgb, var(--highlight) 14%, var(--panel)); padding: 6px 10px; border-radius: 8px; }
+.sheet-email { margin: 0; }
+.sheet-email input[name=to] { min-width: 280px; }
+@media (max-width: 700px) {
+  .sheet-row { grid-template-columns: 1fr auto; }
+  .sheet-when { grid-column: 1 / -1; }
+  .sheet-what { grid-column: 1 / -1; }
+  .sheet-status { grid-row: 2; grid-column: 2; }
+  .sheet-notes { grid-column: 1 / -1; }
+}
+@media print {
+  body { background: #fff; color: #000; height: auto; display: block; }
+  .topbar, .cal-toolbar, #calLegend, #calUnscheduled, .sheet-actions, .sheet-email, .toasts, .drawer, .scrim, #dueBanner { display: none !important; }
+  .day-sheet { max-width: none; }
+  .sheet-row { break-inside: avoid; box-shadow: none; border-color: #999; }
+  .sheet-notes { background: #f2f2f2; }
+}

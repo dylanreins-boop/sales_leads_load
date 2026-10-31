@@ -28,6 +28,10 @@ const dayName = (d, style = 'short') => d.toLocaleDateString([], { weekday: styl
 const longDate = (d) => new Date(d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
 function range() {
+  if (cal.view === 'sheet') {
+    const from = startOfDay(cal.anchor);
+    return { from, to: addDays(from, 1) };
+  }
   if (cal.view === 'week') {
     const from = startOfWeek(cal.anchor);
     return { from, to: addDays(from, 7) };
@@ -39,6 +43,7 @@ function range() {
 }
 
 function title() {
+  if (cal.view === 'sheet') return cal.anchor.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   if (cal.view === 'week') {
     const { from } = range();
     const to = addDays(from, 6);
@@ -161,11 +166,13 @@ function warnShopTime(result) {
 async function loadCalendar() {
   const { from, to } = range();
   const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
-  const [jobs, unscheduled] = await Promise.all([
+  const [jobs, unscheduled, sheet] = await Promise.all([
     api(`/api/jobs?${params}`),
     isAdmin() ? api('/api/jobs/unscheduled') : Promise.resolve([]),
+    cal.view === 'sheet' ? api(`/api/jobs/day-sheet?date=${ShopTime.dayKey(cal.anchor)}`) : null,
   ]);
   cal.jobs = jobs;
+  cal.sheet = sheet;
   cal.unscheduled = unscheduled;
   renderCalendar();
 }
@@ -178,7 +185,8 @@ function setView(view) {
 
 function move(step) {
   const a = new Date(cal.anchor);
-  if (cal.view === 'week') a.setDate(a.getDate() + step * 7);
+  if (cal.view === 'sheet') a.setDate(a.getDate() + step);
+  else if (cal.view === 'week') a.setDate(a.getDate() + step * 7);
   else a.setMonth(a.getMonth() + step, 1);
   cal.anchor = a;
   loadCalendar().catch(fail);
@@ -312,7 +320,77 @@ function renderCalendar() {
   body.dataset.view = cal.view;
   if (cal.view === 'month') renderMonth(body);
   else if (cal.view === 'week') renderWeek(body);
+  else if (cal.view === 'sheet') renderSheet(body);
   else renderList(body);
+}
+
+// ---------- day sheet ----------
+// One day for the shop: drop-offs, pick-ups and what's already in the building. Prints on one page.
+function sheetRow(j, when) {
+  return h('article', { class: `sheet-row status-${j.status}`, tabindex: '0', role: 'button', onclick: () => openJob(j.id), onkeydown: (e) => { if (e.key === 'Enter') openJob(j.id); } },
+    h('div', { class: 'sheet-when' }, when),
+    h('div', { class: 'sheet-who' },
+      h('strong', {}, j.customer), j.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV'),
+      j.phone && h('div', { class: 'muted' }, j.phone)),
+    h('div', { class: 'sheet-what' },
+      h('div', {}, [j.vehicle, j.color].filter(Boolean).join(' · ') || j.vehicle_type || 'Vehicle'),
+      h('div', { class: 'muted' }, [j.services, `${j.work} of work`].filter(Boolean).join(' · '))),
+    h('div', { class: 'sheet-status' },
+      h('span', { class: `job-status status-${j.status}` }, jobStatusLabel(j.status)),
+      h('span', { class: 'muted' }, `Checklist ${j.checklist_done}/${j.checklist_total}`),
+      j.signed_off && h('span', { class: 'muted' }, 'Signed off')),
+    j.notes && h('div', { class: 'sheet-notes' }, h('b', {}, 'Notes: '), j.notes));
+}
+
+function sheetBlock(label, rows, when, empty) {
+  return h('section', { class: 'sheet-block' },
+    h('h3', {}, `${label} `, h('span', { class: 'muted' }, `(${rows.length})`)),
+    rows.length ? h('div', { class: 'sheet-rows' }, ...rows.map((j) => sheetRow(j, when(j)))) : h('p', { class: 'muted' }, empty));
+}
+
+function renderSheet(body) {
+  const s = cal.sheet;
+  if (!s) { body.replaceChildren(); return; }
+  const over = s.booked_hours > s.hours_per_day;
+  body.replaceChildren(h('div', { class: 'day-sheet' },
+    h('div', { class: 'sheet-head' },
+      h('div', {},
+        h('h2', {}, cal.anchor.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })),
+        h('div', { class: `sheet-load ${over ? 'over' : ''}` }, loadBar(s.booked_hours),
+          h('span', {}, `${ShopTime.hrs(s.booked_hours)} of ${ShopTime.hrs(s.hours_per_day)} booked${over ? ' · over' : ''}`))),
+      h('div', { class: 'sheet-actions' },
+        h('button', { type: 'button', onclick: () => window.print() }, 'Print'),
+        isAdmin() && h('button', { type: 'button', onclick: toggleSheetEmail }, 'Morning email'))),
+    isAdmin() && h('form', { id: 'sheetEmailForm', class: 'com-settings sheet-email', hidden: true, onsubmit: saveSheetEmail }),
+    !s.open && h('p', { class: 'notice' }, 'The shop is closed this day.'),
+    sheetBlock('Drop-offs', s.dropoffs, (j) => (s.same_day.includes(j.id) ? `${clock(j.start_at)}–${clock(j.end_at)}` : clock(j.start_at)), 'No drop-offs.'),
+    sheetBlock('Pick-ups', s.pickups, (j) => clock(j.end_at), 'No pick-ups.'),
+    sheetBlock('Already in the shop', s.in_shop, (j) => `Out ${longDate(j.end_at)}`, 'Nothing else in the shop.')));
+}
+
+async function toggleSheetEmail() {
+  const f = $('#sheetEmailForm');
+  if (!f.hidden) { f.hidden = true; return; }
+  try {
+    const s = await api('/api/settings/day-sheet');
+    f.replaceChildren(
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'enabled', checked: s.enabled }), ' Email this sheet every work-day morning'),
+      h('label', {}, 'To', h('input', { name: 'to', type: 'text', value: s.to.join(', '), placeholder: 'shop@example.com, mike@example.com' })),
+      h('label', {}, 'At', h('select', { name: 'hour' }, ...[4, 5, 6, 7, 8, 9, 10, 11].map((hr) => h('option', { value: hr, selected: hr === s.hour }, `${hr}:00 AM`)))),
+      h('button', { type: 'submit', class: 'primary' }, 'Save'),
+      !s.emailConfigured && h('p', { class: 'hint' }, 'Email sending isn\'t connected yet; the sheet starts going out once it is.'));
+    f.hidden = false;
+  } catch (err) { fail(err); }
+}
+
+async function saveSheetEmail(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('/api/settings/day-sheet', { method: 'PUT', body: { enabled: f.enabled.checked, to: f.to.value, hour: Number(f.hour.value) } });
+    f.hidden = true;
+    toast('Morning email saved');
+  } catch (err) { fail(err); }
 }
 
 // ---------- job panel ----------
@@ -676,7 +754,7 @@ async function saveShopHours(e) {
 function initCalendar() {
   let saved = null;
   try { saved = localStorage.getItem('calView'); } catch { /* storage unavailable */ }
-  cal.view = ['month', 'week', 'list'].includes(saved) ? saved : (window.innerWidth < 700 ? 'list' : 'month');
+  cal.view = ['month', 'week', 'list', 'sheet'].includes(saved) ? saved : (window.innerWidth < 700 ? 'list' : 'month');
   $('#calPrev').addEventListener('click', () => move(-1));
   $('#calNext').addEventListener('click', () => move(1));
   $('#calTodayBtn').addEventListener('click', () => { cal.anchor = new Date(); loadCalendar().catch(fail); });
