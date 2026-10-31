@@ -103,7 +103,8 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   // Adds a lead from any source, de-duplicating repeat submissions.
-  function ingest(input, { user } = {}) {
+  // `silent` (imports) skips the new-lead hook, so old leads don't set off alerts.
+  function ingest(input, { user, silent = false } = {}) {
     const lead = {
       source: input.source || 'manual',
       external_id: clean(input.external_id),
@@ -155,7 +156,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       logActivity(id, 'created', { to_stage: 'new', note: `Lead received from ${lead.source}`, user });
       return { lead: getLead(id), created: true, duplicate: false };
     });
-    if (result.created) {
+    if (result.created && !silent) {
       try { onCreated(result.lead); } catch (err) { console.error('New-lead hook failed:', err.message); }
     }
     return result;

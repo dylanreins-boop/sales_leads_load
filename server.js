@@ -26,6 +26,7 @@ const { createAlertService } = require('./src/alerts');
 const { createStripe } = require('./src/stripe');
 const { createBookingService } = require('./src/bookings');
 const { createDaySheetMailer } = require('./src/daysheet');
+const { createImportService } = require('./src/import');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -185,6 +186,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const stripe = createStripe(config.stripe, fetchImpl);
   const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand: config.brand });
   const daySheets = createDaySheetMailer(db, { jobs, mailer, brand: config.brand });
+  const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
     .catch((err) => ({ sent: [], problems: [err.message] }));
@@ -562,6 +564,17 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     const reached = await push.sendTo([name], { title: 'Alerts are on', body: 'New leads will show up here like this.', url: '/', tag: 'test' });
     return { delivered: reached.length > 0 };
   });
+
+  // ---- Importing leads from a spreadsheet (admins) ----
+  route('POST', '/api/import/upload', ({ raw, query }) => importer.load(raw, query.get('name')), { roles: ADMIN, rawBody: true, bodyLimit: 10_000_000 });
+  route('POST', '/api/import/check', ({ body }) => importer.check(body.token, body.mapping), { roles: ADMIN });
+  route('POST', '/api/import/commit', ({ body, actor }) => importer.commit(body.token, body.mapping, body, actor), { roles: ADMIN });
+  route('GET', '/api/import/batches', () => importer.batches(), { roles: ADMIN });
+  route('POST', '/api/import/batches/:id/undo', ({ params, actor }) => importer.undo(params.id, actor), { roles: ADMIN });
+  route('GET', '/api/import/template.csv', ({ res }) => {
+    res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="lead-import-template.csv"' });
+    res.end(importer.template());
+  }, { roles: ADMIN });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });

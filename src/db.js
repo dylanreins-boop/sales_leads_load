@@ -210,6 +210,17 @@ CREATE TABLE IF NOT EXISTS booking_links (
 );
 CREATE INDEX IF NOT EXISTS booking_links_lead ON booking_links (lead_id);
 
+-- Spreadsheet imports of leads from before the app (each can be undone).
+CREATE TABLE IF NOT EXISTS import_batches (
+  id            TEXT PRIMARY KEY,
+  file          TEXT NOT NULL,
+  created_count INTEGER NOT NULL,
+  created_by    TEXT,
+  created_at    TEXT NOT NULL,
+  undone_at     TEXT,
+  undone_by     TEXT
+);
+
 -- Phones and browsers that get alerts (Web Push), by person.
 CREATE TABLE IF NOT EXISTS push_subs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -262,6 +273,7 @@ function migrate(db) {
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
   }
+  if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
   // New-lead alerts: when it's due (alert hours), when it went out, and when admins were told nobody called.
   for (const column of ['alert_due_at', 'alerted_at', 'escalated_at']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);

@@ -42,6 +42,8 @@
         <option value="facebook">Facebook</option>
         <option value="website">Website</option>
         <option value="manual">Manual</option>
+        <option value="text">Text message</option>
+        <option value="import">Imported</option>
       </select>
     </div>
     <div class="actions">
@@ -53,6 +55,7 @@
       <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
       <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Emails</button>
       <button id="messagesBtn" type="button" class="lead-only admin-only">Texts &amp; reminders</button>
+      <button id="importBtn" type="button" class="lead-only admin-only">Import leads</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
@@ -512,6 +515,53 @@
   </aside>
 
   <!-- Follow-up email template -->
+  <!-- Import leads (admins): bring in leads from a spreadsheet -->
+  <aside id="importPanel" class="drawer wide" aria-label="Import leads" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Import leads</h2>
+        <div class="muted">Bring in leads from before the app, from Excel or a CSV file.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <section id="importStart" class="card-section">
+        <p>One lead per row, with the column names in the first row (Name, Phone, Email, Vehicle, Date, Status, Notes… any names work; you'll match them next). Leads already in the app are skipped.</p>
+        <div class="import-pick">
+          <label class="upload-btn">Choose a file
+            <input type="file" id="importFile" accept=".xlsx,.csv,.tsv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </label>
+          <a href="/api/import/template.csv" download>Download a sample file</a>
+        </div>
+        <p id="importError" class="field-error" hidden></p>
+      </section>
+      <section id="importMatch" class="card-section" hidden>
+        <h3>Match the columns <span id="importFileName" class="muted"></span></h3>
+        <p class="muted">We matched what we could from your column names. Change any that are wrong; columns you don't match are kept in the lead's notes.</p>
+        <div id="importColumns" class="import-columns"></div>
+        <h3>Where should they go?</h3>
+        <div class="import-place" role="radiogroup" aria-label="Where the leads go">
+          <label class="check"><input type="radio" name="importPlace" value="auto" checked> <span><b>By date (recommended).</b> Leads from the last 2 weeks go on the board; older ones go straight to Old &amp; Dead Leads, and old booked customers to Past Customers.</span></label>
+          <label class="check"><input type="radio" name="importPlace" value="board"> <span><b>All on the board</b> as leads to work now.</span></label>
+          <label class="check"><input type="radio" name="importPlace" value="archive"> <span><b>None on the board.</b> All go to Old &amp; Dead Leads / Past Customers, to look up later.</span></label>
+        </div>
+        <h3>Preview</h3>
+        <p id="importSummary" class="import-summary" aria-live="polite"></p>
+        <div class="table-scroll"><table id="importPreview" class="import-preview"></table></div>
+        <details id="importSkips" hidden><summary></summary><ul class="list"></ul></details>
+        <div class="dialog-actions">
+          <button type="button" id="importRestart">Choose another file</button>
+          <button type="button" id="importGo" class="primary">Import</button>
+        </div>
+      </section>
+      <section id="importDone" class="card-section" hidden></section>
+      <section class="card-section">
+        <h3>Past imports</h3>
+        <ul id="importHistory" class="list"></ul>
+      </section>
+    </div>
+  </aside>
+
   <!-- Texts & reminders (admins): saved texts and the automatic customer messages -->
   <aside id="messagesPanel" class="drawer" aria-label="Texts and reminders" hidden>
     <div class="drawer-head">
@@ -719,5 +769,6 @@
   <script src="quotes.js"></script>
   <script src="commissions.js"></script>
   <script src="messages.js"></script>
+  <script src="import.js"></script>
 </body>
 </html>
