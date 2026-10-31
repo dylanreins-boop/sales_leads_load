@@ -25,6 +25,8 @@ module.exports = {
   // Behind your own web server, read the visitor's address from X-Forwarded-For.
   trustProxy: process.env.TRUST_PROXY === 'true',
   dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'leads.db'),
+  // Written by the nightly off-server backup (deploy/oracle/backup.sh); admins see it under Team.
+  backupStatusFile: process.env.BACKUP_STATUS_FILE || path.join(path.dirname(process.env.DB_PATH || path.join(__dirname, '..', 'data', 'leads.db')), 'offsite-status.json'),
 
   // Dashboard logins (HTTP Basic auth): APP_USERS="Dylan:pass1:admin,Sam:pass2:sales,Mike:pass3:shop".
   // Each person gets their own login so the activity log shows who did what. Levels:

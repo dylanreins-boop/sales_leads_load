@@ -89,6 +89,39 @@ Open **https://leads.bobmosescc.com** and sign in, then add everyone else from t
 | See what the app is doing | `journalctl -u bob-moses-leads -f` |
 | Add email, Facebook or website keys | `sudo nano /etc/bob-moses-leads.env`, then `sudo systemctl restart bob-moses-leads` |
 | Restart the app | `sudo systemctl restart bob-moses-leads` |
+| Run a backup now (and see if it works) | `sudo bash /opt/bob-moses-leads/deploy/oracle/backup.sh` |
+
+## Off-server backups (recommended)
+
+Every night the server keeps a copy of the database for 14 days. To also keep copies **off** the server
+(so nothing is lost if the server is), send them to a cloud bucket. On Lightsail that's about $1 a month.
+
+1. **Lightsail console → Storage → Create bucket.** Pick the same region as your server (e.g. Oregon,
+   `us-west-2`), the smallest plan, and a name like `bob-moses-leads-backups`.
+2. Open the bucket → **Permissions → Access keys → Create access key.** Copy the **Access key ID** and
+   the **Secret access key** (the secret is only shown once).
+3. On the server:
+   ```bash
+   sudo bash /opt/bob-moses-leads/deploy/oracle/backup-setup.sh
+   ```
+   Enter the bucket name, the region (`us-west-2`), leave Endpoint blank, and paste the two keys. It runs a
+   first backup right away.
+4. In the app, **Team** shows the last off-server backup at the top (it turns red if one fails or a day
+   is missed).
+
+Each night it uploads the database (`db/leads-YYYY-MM-DD.db.gz`, kept 30 days) and any new photos and
+signatures (`photos/`). Any S3-compatible service works too (AWS S3, Backblaze B2, Cloudflare R2: fill in
+their Endpoint).
+
+**Restoring:** download the newest `db/leads-….db.gz` from the bucket, then on the server:
+
+```bash
+gunzip leads-YYYY-MM-DD.db.gz
+sudo systemctl stop bob-moses-leads
+sudo cp leads-YYYY-MM-DD.db /var/lib/bob-moses-leads/leads.db && sudo chown leads: /var/lib/bob-moses-leads/leads.db
+sudo rm -f /var/lib/bob-moses-leads/leads.db-wal /var/lib/bob-moses-leads/leads.db-shm
+sudo systemctl start bob-moses-leads
+```
 
 **Where things live:** the database and photos are in `/var/lib/bob-moses-leads`, nightly backups (14
 days) in `/var/backups/bob-moses-leads`, and settings in `/etc/bob-moses-leads.env`. Copy a backup off

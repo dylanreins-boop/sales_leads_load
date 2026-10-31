@@ -151,11 +151,10 @@ CADDY
 systemctl enable caddy
 systemctl reload caddy || systemctl restart caddy
 
-echo "==> Nightly database backup (kept 14 days in $BACKUP_DIR)"
+echo "==> Nightly backup (database kept 14 days in $BACKUP_DIR; off-server too once backup-setup.sh is run)"
 cat > /etc/cron.daily/$SERVICE-backup <<CRON
 #!/bin/sh
-sqlite3 $DATA_DIR/leads.db ".backup '$BACKUP_DIR/leads-\$(date +%F).db'"
-find $BACKUP_DIR -name 'leads-*.db' -mtime +14 -delete
+exec /usr/bin/env bash $APP_DIR/deploy/oracle/backup.sh
 CRON
 chmod 755 /etc/cron.daily/$SERVICE-backup
 

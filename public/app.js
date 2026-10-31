@@ -945,7 +945,23 @@ async function openTeam() {
   try {
     await loadTeam();
     showPanel($('#teamPanel'));
+    loadBackupStatus();
   } catch (err) { fail(err); }
+}
+
+// The last nightly off-server backup: fine, failed, missing for over a day, or not set up yet.
+async function loadBackupStatus() {
+  const box = $('#backupStatus');
+  try {
+    const s = await api('/api/backup-status');
+    const stale = s.configured && Date.now() - new Date(s.at).getTime() > 36 * 3600000;
+    box.className = `backup-status ${!s.configured ? '' : !s.ok || stale ? 'bad' : 'ok'}`;
+    box.textContent = !s.configured
+      ? 'Off-server backups aren\'t set up yet. On the server, run: sudo bash /opt/bob-moses-leads/deploy/oracle/backup-setup.sh'
+      : !s.ok ? `Last off-server backup FAILED ${fmtDateTime(s.at)}: ${s.error}`
+        : `${stale ? 'No off-server backup since' : 'Last off-server backup:'} ${fmtDateTime(s.at)} · database and ${s.photos_total} photo${s.photos_total === 1 ? '' : 's'} saved`;
+    box.hidden = false;
+  } catch { box.hidden = true; }
 }
 
 async function loadTeam() {

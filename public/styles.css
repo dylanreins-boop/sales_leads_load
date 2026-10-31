@@ -950,3 +950,8 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
 .signoff.done .signoff-who { font-weight: 600; margin: 0 0 8px; }
 .signoff-img { display: block; max-width: 100%; height: auto; max-height: 160px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
 .signoff-terms { white-space: pre-wrap; font: 13px/1.5 inherit; font-family: inherit; color: var(--muted); margin: 8px 0 0; }
+
+/* Off-server backup status (Team panel) */
+.backup-status { font-size: 13px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); margin: 0 0 14px; }
+.backup-status.ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); color: var(--ok); font-weight: 600; }
+.backup-status.bad { border-color: var(--danger); color: var(--danger); font-weight: 700; background: color-mix(in srgb, var(--danger) 8%, var(--panel)); }

@@ -344,6 +344,14 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return feed;
   }, { roles: ADMIN });
   // ---- Team (admin): add logins, change levels, reset passwords, deactivate ----
+  // When the last off-server backup ran, and whether it worked (admins, shown under Team).
+  route('GET', '/api/backup-status', () => {
+    try {
+      return { configured: true, ...JSON.parse(fs.readFileSync(config.backupStatusFile, 'utf8')) };
+    } catch {
+      return { configured: false };
+    }
+  }, { roles: ADMIN });
   route('GET', '/api/users', () => ({ users: users.list(), history: users.history(), roles: ROLES, minPassword: MIN_PASSWORD }), { roles: ADMIN });
   route('POST', '/api/users', ({ body, actor }) => users.create(body, actor), { roles: ADMIN });
   route('PATCH', '/api/users/:id', ({ params, body, actor }) => users.update(Number(params.id), body, actor), { roles: ADMIN });
