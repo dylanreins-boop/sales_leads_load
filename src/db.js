@@ -190,6 +190,27 @@ CREATE TABLE IF NOT EXISTS texts (
 );
 CREATE INDEX IF NOT EXISTS texts_lead ON texts (lead_id);
 
+-- Phones and browsers that get alerts (Web Push), by person.
+CREATE TABLE IF NOT EXISTS push_subs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_norm   TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  endpoint    TEXT NOT NULL UNIQUE,
+  p256dh      TEXT NOT NULL,
+  auth        TEXT NOT NULL,
+  user_agent  TEXT,
+  created_at  TEXT NOT NULL,
+  last_ok_at  TEXT
+);
+
+-- Each person's own alert settings (works for every login, including ones set on the server).
+CREATE TABLE IF NOT EXISTS user_prefs (
+  name_norm   TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  alert_phone TEXT,                             -- also text new-lead alerts here
+  updated_at  TEXT NOT NULL
+);
+
 -- Who added, changed or deactivated each login.
 CREATE TABLE IF NOT EXISTS user_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,6 +241,10 @@ function migrate(db) {
     ['commission_rep', 'TEXT'], ['commission_override_cents', 'INTEGER'], ['commission_paid_cents', 'INTEGER'],
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
+  }
+  // New-lead alerts: when it's due (alert hours), when it went out, and when admins were told nobody called.
+  for (const column of ['alert_due_at', 'alerted_at', 'escalated_at']) {
+    if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }
   for (const column of ['confirm_sent_at', 'reminder_sent_at']) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);

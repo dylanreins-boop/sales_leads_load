@@ -470,7 +470,19 @@
       <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
     </div>
     <div class="drawer-body">
-      <button id="enableNotifs" type="button" hidden>Turn on desktop notifications</button>
+      <section id="myAlerts" class="card-section my-alerts lead-only">
+        <h3>My phone alerts</h3>
+        <p id="alertsIntro" class="muted"></p>
+        <div class="alert-actions">
+          <button id="alertsOn" type="button" class="primary">Turn on alerts on this device</button>
+          <button id="alertsTest" type="button" hidden>Send a test alert</button>
+        </div>
+        <p id="alertsStatus" class="hint" hidden></p>
+        <form id="alertPhoneForm" class="inline-form">
+          <input name="alert_phone" type="tel" placeholder="Also text me alerts at (optional)" aria-label="Mobile number for alert texts">
+          <button type="submit">Save</button>
+        </form>
+      </section>
       <div id="remindersList"></div>
     </div>
   </aside>

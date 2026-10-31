@@ -92,6 +92,11 @@ module.exports = {
   // New Facebook and website leads ping the sales team; if nobody has called within this many
   // minutes, the admins get pinged too.
   speedToLeadMinutes: Number(process.env.SPEED_TO_LEAD_MINUTES ?? 15),
+  // Alerts only go out between these hours (shop time); overnight leads are alerted at the start.
+  alertHours: (() => {
+    const [start, end] = String(process.env.ALERT_HOURS || '7-20').split('-').map(Number);
+    return start >= 0 && end > start && end <= 24 ? { start, end } : { start: 7, end: 20 };
+  })(),
 
   email: {
     provider: (process.env.EMAIL_PROVIDER || '').toLowerCase(),

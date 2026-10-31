@@ -888,3 +888,8 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
 .template-row-head input { margin: 0; font-weight: 600; }
 .template-row textarea { margin: 0; }
 .placeholder-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+/* My phone alerts (Reminders panel) */
+.my-alerts { margin-bottom: 14px; }
+.alert-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.my-alerts .inline-form { margin-top: 6px; }

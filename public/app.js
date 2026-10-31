@@ -1067,7 +1067,7 @@ function notifyDue(due) {
 }
 
 function updateNotifButton() {
-  $('#enableNotifs').hidden = !('Notification' in window) || Notification.permission !== 'default';
+  if (state.meta.currentRole !== 'shop') loadMyAlerts();
 }
 
 // ---------- follow-up email template ----------
@@ -1247,7 +1247,6 @@ async function init() {
     renderUpdates();
   }));
   $('#dueBanner').addEventListener('click', () => $('#remindersBtn').click());
-  $('#enableNotifs').addEventListener('click', () => Notification.requestPermission().then(updateNotifButton));
   $('#scrim').addEventListener('click', () => showPanel(null));
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => showPanel(null)));
   // Escape closes the side panel, unless a dialog (like the photo viewer) is open on top of it.
@@ -1285,6 +1284,7 @@ async function init() {
 
   initCommissions();
   initMessages();
+  initAlerts();
   if (shop) return showSection('calendar');
   if (isAdmin()) {
     loadUpdatesCount();
@@ -1292,6 +1292,12 @@ async function init() {
   }
   await Promise.all([loadLeads(), loadReminders()]);
   showSection(location.hash === '#calendar' ? 'calendar' : 'leads');
+  // Opened from a phone alert: /?lead=12 opens that lead.
+  const fromAlert = Number(new URLSearchParams(location.search).get('lead'));
+  if (fromAlert) {
+    openLead(fromAlert);
+    try { history.replaceState(null, '', '/'); } catch { /* not allowed in some previews */ }
+  }
   // Refresh so new Facebook/website leads and due reminders show up on their own.
   setInterval(() => Promise.all([loadLeads(), loadReminders()]).catch(() => {}), 60_000);
 }

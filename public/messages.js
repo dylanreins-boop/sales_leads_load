@@ -169,3 +169,77 @@ function initMessages() {
   placeholderChips($('.placeholder-chips[data-for="notices"]'), NOTICE_PLACEHOLDERS, () => lastNoticeField);
   placeholderChips($('.placeholder-chips[data-for="templates"]'), TEXT_PLACEHOLDERS, () => lastTemplateField);
 }
+
+// ---------- my phone alerts ----------
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const installedApp = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function keyBytes(base64url) {
+  const raw = atob(base64url.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+async function currentSubscription() {
+  if (!pushSupported()) return null;
+  const reg = await navigator.serviceWorker.getRegistration();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+function alertsStatus(text) {
+  $('#alertsStatus').hidden = !text;
+  $('#alertsStatus').textContent = text || '';
+}
+
+async function loadMyAlerts() {
+  try { msg.alerts = await api('/api/alerts/me'); } catch { return; }
+  const a = msg.alerts;
+  const hoursText = `${new Date(2026, 0, 1, a.hours.start).toLocaleTimeString([], { hour: 'numeric' })} to ${new Date(2026, 0, 1, a.hours.end).toLocaleTimeString([], { hour: 'numeric' })}`;
+  $('#alertsIntro').textContent = state.meta.currentRole === 'admin'
+    ? `Get an alert when a new lead comes in or a customer texts back, and when nobody has worked a new lead within ${a.minutes} minutes. Alerts go out ${hoursText}.`
+    : `Get an alert the moment a new Facebook or website lead comes in, and when a customer texts back. Alerts go out ${hoursText}.`;
+  $('#alertPhoneForm').alert_phone.value = a.alert_phone || '';
+  $('#alertPhoneForm').hidden = !a.texting;
+  const sub = await currentSubscription().catch(() => null);
+  const on = Boolean(sub) && Notification.permission === 'granted';
+  $('#alertsOn').hidden = on;
+  $('#alertsTest').hidden = !on;
+  if (on) alertsStatus(`Alerts are on for this device${a.devices > 1 ? ` (and ${a.devices - 1} other${a.devices > 2 ? 's' : ''})` : ''}.`);
+  else if (isIos() && !installedApp()) alertsStatus('On iPhone: tap Share, then "Add to Home Screen". Open the app from your Home Screen and turn alerts on there.');
+  else if (!pushSupported()) alertsStatus('This browser can\'t get alerts. Try Chrome, Edge or Safari.');
+  else if (Notification.permission === 'denied') alertsStatus('Alerts are blocked for this site. Allow notifications in the browser\'s site settings, then try again.');
+  else alertsStatus(a.devices ? `Alerts are on for ${a.devices} other device${a.devices > 1 ? 's' : ''}.` : '');
+}
+
+async function turnOnAlerts() {
+  if (!pushSupported()) return loadMyAlerts();
+  try {
+    if (await Notification.requestPermission() !== 'granted') return loadMyAlerts();
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription()
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(msg.alerts.publicKey) });
+    await api('/api/alerts/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
+    toast('Alerts are on for this device');
+  } catch (err) { toast(`Couldn't turn on alerts on this device: ${err.message}`, 'error'); }
+  loadMyAlerts();
+}
+
+async function testAlert() {
+  try {
+    const { delivered } = await api('/api/alerts/test', { method: 'POST' });
+    toast(delivered ? 'Test alert sent. It should pop up in a few seconds.' : 'The test alert didn\'t reach this device. Turn alerts off and on again.', delivered ? '' : 'error');
+  } catch (err) { fail(err); }
+}
+
+async function saveAlertPhone(e) {
+  e.preventDefault();
+  try {
+    msg.alerts = { ...msg.alerts, ...await api('/api/alerts/me', { method: 'PUT', body: { alert_phone: e.target.alert_phone.value } }) };
+    toast(e.target.alert_phone.value.trim() ? 'Alert texts will go to that number' : 'Alert texts turned off');
+  } catch (err) { fail(err); }
+}
+
+function initAlerts() {
+  if (state.meta.currentRole === 'shop') return;
+  $('#alertsOn').addEventListener('click', turnOnAlerts);
+  $('#alertsTest').addEventListener('click', testAlert);
+  $('#alertPhoneForm').addEventListener('submit', saveAlertPhone);
+}

@@ -21,6 +21,8 @@ const { createReviewService } = require('./src/reviews');
 const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
 const { createTexter } = require('./src/sms');
 const { createMessageService } = require('./src/messages');
+const { createPush } = require('./src/push');
+const { createAlertService } = require('./src/alerts');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -163,7 +165,20 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const commissions = createCommissionService(db, { leads, jobs });
   leads.setJobDecorator((job) => commissions.figures(job));
   const texter = createTexter(config.sms, fetchImpl);
-  const messages = createMessageService(db, { leads, jobs, texter, mailer, brand: config.brand });
+  const push = createPush(db, {
+    subject: config.publicUrl || `mailto:${config.email.from || 'alerts@example.com'}`,
+    fetchImpl,
+  });
+  const alerts = createAlertService(db, { leads, users, push, texter, minutes: config.speedToLeadMinutes, hours: config.alertHours });
+  const runAlerts = () => alerts.process({ baseUrl: config.publicUrl }).catch((err) => console.error('Lead alerts failed:', err.message));
+  leads.setCreatedHook((lead) => {
+    alerts.leadArrived(lead);
+    runAlerts();
+  });
+  const messages = createMessageService(db, {
+    leads, jobs, texter, mailer, brand: config.brand,
+    onReply: (lead, text) => alerts.replied(lead, text, { baseUrl: config.publicUrl }).catch((err) => console.error('Reply alert failed:', err.message)),
+  });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
     .catch((err) => ({ sent: [], problems: [err.message] }));
@@ -452,6 +467,25 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     res.end('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   }, { isPublic: true });
 
+  // ---- Phone alerts (new leads, customer replies) ----
+  route('GET', '/api/alerts/me', ({ actor }) => ({
+    ...alerts.prefs(actor.user || 'admin'),
+    publicKey: push.publicKey(),
+    minutes: config.speedToLeadMinutes,
+    hours: config.alertHours,
+  }));
+  route('PUT', '/api/alerts/me', ({ body, actor }) => alerts.savePrefs(actor.user || 'admin', body));
+  route('POST', '/api/alerts/subscribe', ({ req, body, actor }) => push.subscribe(actor.user || 'admin', body.subscription, req.headers['user-agent']));
+  route('POST', '/api/alerts/unsubscribe', ({ body }) => {
+    push.unsubscribe(body.endpoint);
+    return { ok: true };
+  });
+  route('POST', '/api/alerts/test', async ({ actor }) => {
+    const name = actor.user || 'admin';
+    const reached = await push.sendTo([name], { title: 'Alerts are on', body: 'New leads will show up here like this.', url: '/', tag: 'test' });
+    return { delivered: reached.length > 0 };
+  });
+
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
   route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body), { roles: ADMIN });
@@ -550,6 +584,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   sendReviews();
   const reviewTimer = setInterval(sendReviews, 15 * 60000);
   reviewTimer.unref();
+  // New-lead alerts and the "nobody called yet" alert to admins, checked every minute.
+  const alertTimer = setInterval(runAlerts, 60000);
+  alertTimer.unref();
   // Day-before reminders to customers, checked every 5 minutes.
   const sendReminders = () => messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
   const noticeTimer = setInterval(sendReminders, 5 * 60000);

@@ -34,3 +34,28 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(event.request).then((hit) => hit || caches.match('/'))),
   );
 });
+
+// Phone alerts (new leads, customer replies) sent by the server through Web Push.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: event.data?.text() || 'New alert' }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Bob Moses Leads', {
+    body: data.body || '',
+    tag: data.tag,
+    renotify: Boolean(data.tag),
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: data.url || '/' },
+  }));
+});
+
+// Tapping an alert opens the app on that lead (reusing an open window when there is one).
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    const open = wins.find((w) => new URL(w.url).origin === self.location.origin);
+    if (open) return open.navigate(url).then((w) => (w || open).focus());
+    return self.clients.openWindow(url);
+  }));
+});

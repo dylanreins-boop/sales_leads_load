@@ -77,6 +77,9 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   // Lets the server add deposit and commission figures to a lead's jobs.
   let decorateJob = (job) => job;
   const setJobDecorator = (fn) => { decorateJob = fn; };
+  // Called with each brand-new lead (the server uses it for new-lead alerts).
+  let onCreated = () => {};
+  const setCreatedHook = (fn) => { onCreated = fn; };
 
   function logActivity(leadId, type, fields = {}) {
     stmt(`INSERT INTO activities (lead_id, type, disposition, from_stage, to_stage, note, user_name, created_at)
@@ -123,7 +126,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       throw new HttpError(400, 'A lead needs at least a name, email, or phone number.');
     }
 
-    return transaction(db, () => {
+    const result = transaction(db, () => {
       const existing = findExisting(lead);
       if (existing?.exact) return { lead: existing.lead, created: false, duplicate: true };
       if (existing) {
@@ -152,6 +155,10 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       logActivity(id, 'created', { to_stage: 'new', note: `Lead received from ${lead.source}`, user });
       return { lead: getLead(id), created: true, duplicate: false };
     });
+    if (result.created) {
+      try { onCreated(result.lead); } catch (err) { console.error('New-lead hook failed:', err.message); }
+    }
+    return result;
   }
 
   // view: 'active' (the boards), 'old' (Old & Dead Leads) or 'all'.
@@ -520,7 +527,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
-    archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, listUpdates, countUnseenUpdates, markUpdatesSeen,
+    archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,
   };
 }
 
