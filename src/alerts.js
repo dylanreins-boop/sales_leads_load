@@ -90,7 +90,7 @@ function createAlertService(db, { leads, users, push, texter, minutes = 15, hour
         link: baseUrl ? `${baseUrl}/?lead=${lead.id}` : '',
         tag: `lead-${lead.id}`,
       });
-      leads.logActivity(lead.id, 'alert', { note: reached.length ? `New-lead alert sent to ${reached.join(', ')}` : 'New-lead alert: nobody has phone alerts turned on yet' });
+      if (reached.length) leads.logActivity(lead.id, 'alert', { note: `New-lead alert sent to ${reached.join(', ')}` });
       alerted++;
     }
     const cutoff = new Date(at.getTime() - minutes * 60000).toISOString();

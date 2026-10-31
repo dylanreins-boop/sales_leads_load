@@ -200,11 +200,11 @@ async function loadMyAlerts() {
   $('#alertPhoneForm').hidden = !a.texting;
   const sub = await currentSubscription().catch(() => null);
   const on = Boolean(sub) && Notification.permission === 'granted';
-  $('#alertsOn').hidden = on;
+  $('#alertsOn').hidden = on || !a.publicKey;
   $('#alertsTest').hidden = !on;
   if (on) alertsStatus(`Alerts are on for this device${a.devices > 1 ? ` (and ${a.devices - 1} other${a.devices > 2 ? 's' : ''})` : ''}.`);
   else if (isIos() && !installedApp()) alertsStatus('On iPhone: tap Share, then "Add to Home Screen". Open the app from your Home Screen and turn alerts on there.');
-  else if (!pushSupported()) alertsStatus('This browser can\'t get alerts. Try Chrome, Edge or Safari.');
+  else if (!pushSupported() || !a.publicKey) alertsStatus('Phone alerts can\'t be turned on here. Open the app in Chrome, Edge or Safari (on iPhone, from your Home Screen).');
   else if (Notification.permission === 'denied') alertsStatus('Alerts are blocked for this site. Allow notifications in the browser\'s site settings, then try again.');
   else alertsStatus(a.devices ? `Alerts are on for ${a.devices} other device${a.devices > 1 ? 's' : ''}.` : '');
 }
@@ -273,6 +273,7 @@ function renderBookingLinks(lead) {
         h('span', { class: `muted ${kind === 'ok' ? 'status sent' : ''}` }, text),
         h('span', { class: 'muted' }, `Made ${fmtDateTime(l.created_at)}${l.created_by ? ` by ${l.created_by}` : ''}`)),
       open && h('div', { class: 'small-btns' },
+        h('a', { class: 'btn-link', href: `/book/${l.token}`, target: '_blank', rel: 'noopener' }, 'Preview'),
         h('button', { type: 'button', onclick: () => copyLink(linkUrl(l)) }, 'Copy link'),
         h('button', { type: 'button', onclick: () => cancelLink(l.id) }, 'Turn off')));
   }));

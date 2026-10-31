@@ -534,9 +534,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   });
   route('POST', '/api/booking-links/:id/cancel', ({ params, actor }) => bookings.cancel(Number(params.id), actor));
   // What the customer's booking page shows; ?paid= is Stripe sending them back after paying.
-  route('GET', '/api/public/booking/:token', async ({ params, query }) => {
+  route('GET', '/api/public/booking/:token', async ({ req, params, query }) => {
     if (query.get('paid')) await bookings.confirmPayment(params.token, query.get('paid')).catch((err) => console.error('Payment check failed:', err.message));
-    return bookings.view(params.token);
+    // Someone signed in to the app is previewing the page (a rep checking the link).
+    return { ...bookings.view(params.token), staff_preview: Boolean(users.anyLogins() && authenticate(req)) };
   }, { isPublic: true });
   route('POST', '/api/public/booking/:token', ({ req, params, body }) => bookings.book(params.token, body, { baseUrl: baseUrl(req) }), { isPublic: true });
   route('POST', '/api/public/booking/:token/pay', async ({ req, params }) => ({ redirect: await bookings.startPayment(params.token, { baseUrl: baseUrl(req) }) }), { isPublic: true });
@@ -549,7 +550,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // ---- Phone alerts (new leads, customer replies) ----
   route('GET', '/api/alerts/me', ({ actor }) => ({
     ...alerts.prefs(actor.user || 'admin'),
-    publicKey: push.publicKey(),
+    // null where this Node build can't make push keys (phone alerts then can't be turned on).
+    publicKey: (() => { try { return push.publicKey(); } catch { return null; } })(),
     minutes: config.speedToLeadMinutes,
     hours: config.alertHours,
   }));

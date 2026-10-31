@@ -53,9 +53,17 @@ tab with `#rv` or `#other` at the end of the address. To change which types coun
 
 **Calendar** (next to **Leads** in the header) shows every booked job.
 
-- **Booking puts the job on the calendar.** "Appointment Booked" now also asks for the **drop-off** and
-  **pick-up** times (it suggests 8 AM the next business day, picked up a day later at 2 PM, or two days
-  later for RVs). Booking the same lead again moves its job instead of adding a second one.
+- **Booking puts the job on the calendar.** "Appointment Booked" also asks for the **work time** (about 4
+  hours for cars, 1 to 5 days for RVs and trailers), **drop-off** (8 AM the next work day) and **pick-up**
+  (filled in for when the work is done). Booking the same lead again moves its job instead of adding a
+  second one.
+- **Shop hours and overbooking.** The shop works 8 hours a day, Monday to Friday (admins change this under
+  **Shop hours**). Each day shows its booked hours (e.g. 6/8 hrs) and turns red when it's over; booking or
+  moving a job warns when a day would go over, when drop-off or pick-up is on a closed day, or when pick-up
+  is before the work can be done.
+- **Day sheet** (a view next to Month/Week/List): one day's drop-offs, pick-ups and jobs already in the shop,
+  with phone numbers, vehicles, services, work time, notes and checklist progress. **Print** gives a clean
+  one-page sheet; admins can have it **emailed every work-day morning** (Morning email).
 - **Views:** Month, Week and List (List is the default on phones). Jobs are colored by status:
   Scheduled, In the shop, Ready for pickup, Picked up, Cancelled / Rescheduled. Multi-day jobs show on each day
   ("day 2 of 3"), with drop-off and pick-up times on the first and last day. RV jobs are tagged "RV".
@@ -65,6 +73,9 @@ tab with `#rv` or `#other` at the end of the address. To change which types coun
   calendar") or a "Put on calendar" button.
 - **Job panel** (click any job): change the status, move drop-off/pick-up, call or email the customer,
   see the services, keep job notes (keys, gate codes), work the **vehicle checklist**, and add **photos**.
+- **Customer sign-off at drop-off.** In the job panel, the shop writes the condition notes (chips, scratches,
+  curb rash), the customer types their name, signs with a finger and ticks that they agree. The signature,
+  notes, wording and before-photo count are saved on the job and logged on the lead.
 
 ### Vehicle checklist
 
@@ -357,6 +368,51 @@ days or until they tap **Sign out**. Resetting someone's password or deactivatin
 everywhere. After 8 wrong passwords for a name, sign-in pauses for 15 minutes. "Forgot your password?"
 tells them to ask an admin, who resets it on the Team panel. Scripts can still use HTTP Basic auth.
 
+## Texting customers
+
+With Twilio connected (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`; about $1 a month for the
+number plus about a cent a text), each lead has a **Texts** section: the whole conversation, a **saved
+texts** picker (filled in with the customer's name, vehicle, quote and the rep's name, and still editable)
+and **Send text**. Point the Twilio number's "A message comes in" webhook at `/webhooks/twilio` and replies
+show up on the lead (and alert the rep working it). A customer who replies STOP isn't texted again; a
+number the app doesn't know becomes a new lead. Admins edit the saved texts under **Texts & reminders**.
+
+## Booking confirmations and day-before reminders
+
+When a job is booked (from a call, the calendar or an online booking), the customer gets a **confirmation**
+by text and email with the drop-off and pick-up times, and a **reminder the day before** drop-off (at 10 AM
+by default; a moved job gets a fresh one). The rep can untick "Send the customer a booking confirmation"
+for a single booking. Admins edit the wording and turn either message on or off under **Texts & reminders**.
+Email works with the email settings above; texts need Twilio.
+
+## New-lead alerts (speed to lead)
+
+A new Facebook, website or text lead sends a **phone alert** to the sales team right away; tapping it opens
+the lead. If nobody has called, texted or logged anything on it within **15 minutes**, the admins get an
+alert too. Alerts go out 7 AM to 8 PM (`ALERT_HOURS`); overnight leads are alerted in the morning.
+
+Each person turns alerts on in **Reminders → My phone alerts** (on iPhone, add the app to the Home Screen
+first and turn them on from there). Alerts use the browser's built-in push service: free, no outside
+account. Anyone can also enter a mobile number to get alerts by text (with Twilio connected).
+
+## Online booking links
+
+From a lead (usually right after a quote), **Send a booking link** by text or email, or copy it. The
+customer's page shows the price, the 10% deposit, and only the days that still have room in the shop
+under the hours-per-day rule. Picking a day books the job on the calendar for that rep (their booking and
+their commission) and sends the confirmation. With `STRIPE_SECRET_KEY` set, the customer then pays the
+deposit on Stripe's payment page and it's recorded on the job; without it, they pay at drop-off. **Preview**
+shows the rep what the customer sees. Links work for 30 days and can be turned off.
+
+## Importing leads from before the app
+
+Admins: **Import leads** takes an Excel (.xlsx) or CSV file with one lead per row. The app matches the
+columns from their names (a "Vehicle" column like "2022 Tesla Model Y" is split into year, make and model),
+shows a preview, and asks where the leads go: **by date** (recent ones on the board, older ones straight to
+Old & Dead Leads, old booked customers to Past Customers), all on the board, or none. Leads already in the
+app and repeats in the file are skipped, columns that aren't matched are kept in the lead's notes, imports
+don't set off new-lead alerts, and every import can be **undone**. There's a sample file to start from.
+
 ## Using it on a phone
 
 The app is a Progressive Web App, so the same site works in a browser and as a home-screen app.
@@ -452,6 +508,8 @@ Later, add the other secrets the same way when you have them:
 Each `fly secrets set` restarts the app with the new values. Keep it at one machine: the database is a
 single file on the volume. Turn on volume snapshots (`fly volumes list`, then the Fly dashboard) for backups.
 
+Off-server backups, if you run the app on your own server: see `deploy/oracle/README.md`.
+
 ## Deploying elsewhere
 
 Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS. Things to check:
@@ -500,6 +558,17 @@ src/jobs.js          shop calendar jobs, vehicle checklist, job photos
 public/calendar.js   calendar views and the job panel
 src/email.js         email templates and sending (Resend / SendGrid / Postmark)
 src/db.js            SQLite schema
+src/messages.js      texts, saved texts, booking confirmations and day-before reminders
+src/sms.js           Twilio texting (send, webhook signature check)
+src/alerts.js        new-lead and reply alerts; src/push.js sends them (Web Push, no dependencies)
+src/bookings.js      online booking links; src/stripe.js card deposits (Stripe Checkout)
+src/daysheet.js      the shop's morning day-sheet email
+src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV
+public/shop-time.js  work time and hours per day (shared by the server and the browser)
+public/messages.js   texts, alerts, booking links and the Texts & reminders panel
+public/import.js     the Import leads panel
+public/book.html     the customer's online booking page
+scripts/backup-offsite.js  nightly copy of the database and photos to a cloud bucket
 public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons
 examples/            website form snippet
 test/                tests (npm test)

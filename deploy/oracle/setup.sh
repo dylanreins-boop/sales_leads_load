@@ -106,6 +106,12 @@ CORS_ORIGINS=https://bobmosescc.com,https://www.bobmosescc.com
 # FB_APP_SECRET=
 # FB_PAGE_ACCESS_TOKEN=
 # FB_FORM_IDS=
+# PUBLIC_URL=https://$DOMAIN
+# TWILIO_ACCOUNT_SID=
+# TWILIO_AUTH_TOKEN=
+# TWILIO_FROM=+1702...
+# STRIPE_SECRET_KEY=
+# STRIPE_WEBHOOK_SECRET=
 CONF
   chmod 600 "$ENV_FILE"
   echo "Saved $ENV_FILE"

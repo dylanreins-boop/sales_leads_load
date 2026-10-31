@@ -177,7 +177,15 @@ async function loadCalendar() {
   renderCalendar();
 }
 
+// The day sheet opens on the next day the shop is open when today it's closed (e.g. on a weekend).
+function sheetDay(day) {
+  const d = startOfDay(day);
+  for (let i = 0; i < 7 && !isOpen(d); i++) d.setDate(d.getDate() + 1);
+  return isOpen(d) ? d : startOfDay(day);
+}
+
 function setView(view) {
+  if (view === 'sheet' && sameDay(cal.anchor, new Date())) cal.anchor = sheetDay(new Date());
   cal.view = view;
   try { localStorage.setItem('calView', view); } catch { /* storage unavailable */ }
   loadCalendar().catch(fail);
@@ -866,9 +874,10 @@ function initCalendar() {
   let saved = null;
   try { saved = localStorage.getItem('calView'); } catch { /* storage unavailable */ }
   cal.view = ['month', 'week', 'list', 'sheet'].includes(saved) ? saved : (window.innerWidth < 700 ? 'list' : 'month');
+  if (cal.view === 'sheet') cal.anchor = sheetDay(new Date());
   $('#calPrev').addEventListener('click', () => move(-1));
   $('#calNext').addEventListener('click', () => move(1));
-  $('#calTodayBtn').addEventListener('click', () => { cal.anchor = new Date(); loadCalendar().catch(fail); });
+  $('#calTodayBtn').addEventListener('click', () => { cal.anchor = cal.view === 'sheet' ? sheetDay(new Date()) : new Date(); loadCalendar().catch(fail); });
   document.querySelectorAll('#calViews button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
   $('#photoPrev').addEventListener('click', () => stepPhoto(-1));
   $('#photoNext').addEventListener('click', () => stepPhoto(1));

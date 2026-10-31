@@ -40,6 +40,7 @@
     .contact { font-size: 14px; color: var(--muted); text-align: center; }
     .contact a { font-weight: 700; }
     .loading-note { text-align: center; color: var(--muted); }
+    .staff-banner { margin: 0; padding: 10px 14px; border-radius: 10px; background: var(--highlight); color: #2b1a00; font-weight: 600; font-size: 13px; text-align: center; }
   </style>
 </head>
 <body class="book-page">
@@ -49,12 +50,13 @@
       <img src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="140" height="79">
       <p>Book your appointment</p>
     </div>
+    <p class="staff-banner" id="staffBanner" hidden>You're signed in to the app: this is what the customer sees. Booking a day here books it for them.</p>
     <section class="book-card" id="card" aria-live="polite"><p class="loading-note">Loading…</p></section>
     <p class="contact" id="contact"></p>
   </main>
   <script>
     'use strict';
-    const token = location.pathname.split('/').filter(Boolean)[1];
+    const token = window.__bookToken || location.pathname.split('/').filter(Boolean)[1];
     const card = document.getElementById('card');
     const money = (c) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     let data = null;
@@ -123,6 +125,8 @@
 
     function render(error) {
       contactLine();
+      const banner = document.getElementById('staffBanner');
+      banner.hidden = !data.staff_preview;
       const hi = data.first_name ? `Hi ${data.first_name}!` : 'Hi!';
       if (data.status === 'expired' || data.status === 'cancelled') {
         fill(card, el('h1', {}, 'This link isn\'t active anymore'), el('p', {}, 'Call or text us and we\'ll find you a day.'));
