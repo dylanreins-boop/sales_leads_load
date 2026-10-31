@@ -458,6 +458,8 @@ function renderJob() {
           onclick: () => job.status !== s.id && patchJob({ status: s.id }, `Marked ${s.label.toLowerCase()}`),
         }, s.label)))),
 
+    signOffSection(job, edit),
+
     // Schedule
     h('section', { class: 'card-section' },
       h('h3', {}, 'Work time, drop-off and pick-up'),
@@ -532,12 +534,121 @@ function renderJob() {
       !job.photos.length && h('p', { class: 'muted' }, edit ? 'No photos yet. Take before photos at check-in.' : 'No photos yet.')),
   ].filter(Boolean));
 
+  const pad = $('#jobBody .signature-pad');
+  if (pad) {
+    const details = pad.closest('details');
+    if (details.open) requestAnimationFrame(() => setUpPad(pad));
+    details.addEventListener('toggle', () => details.open && setUpPad(pad));
+  }
   const form = $('#jobScheduleForm');
   if (form) {
     wireShopTime(form, { pipeline: () => job.pipeline, jobId: () => job.id })(ShopTime.jobHours(job, shopHours()), job.start_at, job.end_at);
   } else {
     renderShopTime($('#jobShopTime'), job.shop_time);
   }
+}
+
+// ---------- customer sign-off ----------
+// At drop-off the customer reviews the condition notes and before photos, then signs with a finger.
+function signOffSection(job, edit) {
+  if (job.signoff_at) {
+    return h('section', { class: 'card-section signoff done' },
+      h('h3', {}, 'Customer sign-off'),
+      h('p', { class: 'signoff-who' }, `Signed by ${job.signoff_name} · ${fmtWhen(job.signoff_at)}${job.signoff_by ? ` · with ${job.signoff_by}` : ''}`),
+      h('img', { class: 'signoff-img', src: `/api/jobs/${job.id}/signoff.png?v=${encodeURIComponent(job.signoff_at)}`, alt: `Signature of ${job.signoff_name}` }),
+      h('pre', { class: 'signoff-terms' }, job.signoff_terms),
+      isAdmin() && h('button', { type: 'button', class: 'link-btn', onclick: clearSignOff }, 'Clear sign-off (signed by mistake)'));
+  }
+  if (!edit) {
+    return h('section', { class: 'card-section signoff' }, h('h3', {}, 'Customer sign-off'), h('p', { class: 'muted' }, 'Not signed yet. The shop collects it at drop-off.'));
+  }
+  const before = job.photos.filter((p) => p.phase === 'before').length;
+  return h('details', { class: 'card-section signoff', open: job.status === 'scheduled' || job.status === 'in_shop' },
+    h('summary', {}, h('h3', {}, 'Customer sign-off')),
+    h('form', { class: 'signoff-form', onsubmit: saveSignOff },
+      h('p', { class: 'muted' }, `Walk around the vehicle with the customer. ${before ? `${before} before photo${before === 1 ? '' : 's'} taken.` : 'Take before photos first (Photos below).'} Then hand them the screen to sign.`),
+      h('label', {}, 'Condition notes', h('textarea', { name: 'notes', rows: '3', placeholder: 'Chips on the hood, curb rash on the front left wheel…' })),
+      h('label', {}, 'Customer name', h('input', { name: 'name', autocomplete: 'off', value: job.full_name || '' })),
+      h('div', { class: 'signature-wrap' },
+        h('canvas', { class: 'signature-pad', 'aria-label': 'Sign here with a finger or mouse' }),
+        h('span', { class: 'signature-hint', 'aria-hidden': 'true' }, 'Sign here'),
+        h('button', { type: 'button', class: 'link-btn signature-clear', onclick: (e) => clearPad(e.target.closest('.signature-wrap').querySelector('canvas')) }, 'Clear')),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'agree' }),
+        ` I walked around my vehicle with ${state.meta.brand?.name || 'the shop'} and agree its condition is as noted above and in the before photos.`),
+      h('button', { type: 'submit', class: 'primary' }, 'Save signature')));
+}
+
+// A finger/mouse signature pad on a canvas (sharp on high-density screens).
+function setUpPad(canvas) {
+  if (!canvas || canvas.dataset.ready) return;
+  canvas.dataset.ready = '1';
+  const ratio = window.devicePixelRatio || 1;
+  const size = () => {
+    const box = canvas.getBoundingClientRect();
+    canvas.width = Math.round(box.width * ratio);
+    canvas.height = Math.round(box.height * ratio);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0e1a2b';
+  };
+  size();
+  let drawing = false;
+  const point = (e) => { const b = canvas.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  canvas.addEventListener('pointerdown', (e) => {
+    drawing = true;
+    canvas.setPointerCapture(e.pointerId);
+    const ctx = canvas.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(...point(e));
+    ctx.lineTo(...point(e));
+    ctx.stroke();
+    canvas.dataset.signed = '1';
+    canvas.parentElement.classList.add('signed');
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const ctx = canvas.getContext('2d');
+    ctx.lineTo(...point(e));
+    ctx.stroke();
+    e.preventDefault();
+  });
+  const stop = () => { drawing = false; };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
+}
+
+function clearPad(canvas) {
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  delete canvas.dataset.signed;
+  canvas.parentElement.classList.remove('signed');
+}
+
+async function saveSignOff(e) {
+  e.preventDefault();
+  const f = e.target;
+  const canvas = f.querySelector('canvas');
+  if (!f.name.value.trim()) return toast('Type the customer\'s name', 'error');
+  if (!canvas.dataset.signed) return toast('Have the customer sign in the box', 'error');
+  if (!f.agree.checked) return toast('The customer needs to tick the box to agree', 'error');
+  try {
+    cal.job = await api(`/api/jobs/${cal.job.id}/signoff`, { method: 'POST', body: { name: f.name.value, notes: f.notes.value, agree: true, signature: canvas.toDataURL('image/png') } });
+    renderJob();
+    syncJobOnCalendar(cal.job);
+    toast('Signature saved');
+  } catch (err) { fail(err); }
+}
+
+async function clearSignOff() {
+  if (!window.confirm('Clear this sign-off? The customer will need to sign again.')) return;
+  try {
+    cal.job = await api(`/api/jobs/${cal.job.id}/signoff`, { method: 'DELETE' });
+    renderJob();
+    toast('Sign-off cleared');
+  } catch (err) { fail(err); }
 }
 
 function checkItem(item) {

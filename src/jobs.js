@@ -444,7 +444,55 @@ function createJobService(db, { leads, photosDir }) {
     return { ok: true };
   }
 
+  // ---- customer sign-off at drop-off ----
+  // The customer reviews the vehicle's condition with the shop and signs on the tablet or phone.
+  // The wording, the condition notes and the before-photo count are saved with the signature.
+  function signOff(jobId, { name, notes, signature, agree } = {}, { user, company = 'the shop' } = {}) {
+    const job = getJob(jobId);
+    if (job.signoff_at) throw new HttpError(400, 'This job is already signed off.');
+    const who = String(name ?? '').trim().slice(0, 80);
+    if (!who) throw new HttpError(400, 'Type the customer\'s name.');
+    if (!agree) throw new HttpError(400, 'The customer needs to tick the box to agree.');
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(signature || ''));
+    const image = match ? Buffer.from(match[1], 'base64') : null;
+    if (!image || imageType(image)?.mime !== 'image/png' || image.length < 200) throw new HttpError(400, 'Have the customer sign in the box first.');
+    if (image.length > 600_000) throw new HttpError(413, 'That signature image is too big.');
+    const before = job.photos.filter((p) => p.phase === 'before').length;
+    const condition = String(notes ?? '').trim().slice(0, 2000);
+    const ts = now();
+    const terms = [
+      `I, ${who}, walked around my ${[job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(' ') || job.vehicle_type || 'vehicle'} with ${company} at drop-off on ${when(ts)}.`,
+      'I agree its condition is as described below and shown in the before photos.',
+      `Condition notes: ${condition || 'None noted.'}`,
+      `Before photos taken: ${before}.`,
+    ].join('\n');
+    fs.mkdirSync(photosDir, { recursive: true });
+    const file = `signoff-${jobId}-${crypto.randomUUID()}.png`;
+    fs.writeFileSync(path.join(photosDir, file), image);
+    stmt('UPDATE jobs SET signoff_name = ?, signoff_at = ?, signoff_by = ?, signoff_file = ?, signoff_terms = ?, updated_at = ? WHERE id = ?')
+      .run(who, ts, user ?? null, file, terms, ts, jobId);
+    leads.logActivity(job.lead_id, 'signoff', { note: `${who} signed off on the vehicle's condition at drop-off${condition ? `: ${condition}` : ''}`, user });
+    return getJob(jobId);
+  }
+
+  function signOffImage(jobId) {
+    const job = getJob(jobId);
+    if (!job.signoff_file) throw new HttpError(404, 'Not signed yet');
+    return path.join(photosDir, path.basename(job.signoff_file));
+  }
+
+  // Admins can clear a sign-off made by mistake (the customer signs again).
+  function clearSignOff(jobId, { user } = {}) {
+    const job = getJob(jobId);
+    if (!job.signoff_at) return job;
+    stmt('UPDATE jobs SET signoff_name = NULL, signoff_at = NULL, signoff_by = NULL, signoff_file = NULL, signoff_terms = NULL, updated_at = ? WHERE id = ?').run(now(), jobId);
+    leads.logActivity(job.lead_id, 'signoff', { note: `Sign-off by ${job.signoff_name} cleared`, user });
+    if (job.signoff_file) fs.rm(path.join(photosDir, path.basename(job.signoff_file)), { force: true }, () => {});
+    return getJob(jobId);
+  }
+
   return {
+    signOff, signOffImage, clearSignOff,
     getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };

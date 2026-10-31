@@ -933,3 +933,20 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
   .sheet-row { break-inside: avoid; box-shadow: none; border-color: #999; }
   .sheet-notes { background: #f2f2f2; }
 }
+
+/* Customer sign-off (job panel) */
+.signoff summary { cursor: pointer; list-style: none; }
+.signoff summary::-webkit-details-marker { display: none; }
+.signoff summary h3 { display: inline; }
+.signoff summary::after { content: " ▾"; color: var(--muted); }
+.signoff[open] summary::after { content: " ▴"; }
+.signoff-form { display: grid; gap: 10px; margin-top: 8px; }
+.signoff-form label { margin: 0; }
+.signature-wrap { position: relative; border: 2px dashed var(--border); border-radius: 12px; background: #fff; }
+.signature-pad { display: block; width: 100%; height: 170px; touch-action: none; cursor: crosshair; border-radius: 10px; }
+.signature-hint { position: absolute; left: 14px; bottom: 12px; color: #9aa4b2; font-size: 13px; pointer-events: none; border-top: 1px solid #c7ced8; width: calc(100% - 28px); padding-top: 4px; }
+.signature-wrap.signed .signature-hint { visibility: hidden; }
+.signature-clear { position: absolute; top: 6px; right: 10px; }
+.signoff.done .signoff-who { font-weight: 600; margin: 0 0 8px; }
+.signoff-img { display: block; max-width: 100%; height: auto; max-height: 160px; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+.signoff-terms { white-space: pre-wrap; font: 13px/1.5 inherit; font-family: inherit; color: var(--muted); margin: 8px 0 0; }
