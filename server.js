@@ -19,6 +19,8 @@ const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 const { createQuoteService } = require('./src/quotes');
 const { createReviewService } = require('./src/reviews');
 const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
+const { createTexter } = require('./src/sms');
+const { createMessageService } = require('./src/messages');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -122,6 +124,13 @@ function corsHeaders(req) {
     : {};
 }
 
+// The address this request came in on, e.g. https://leads.bobmosescc.com (PUBLIC_URL wins when set).
+function baseUrl(req) {
+  if (config.publicUrl) return config.publicUrl;
+  const proto = String(req.headers['x-forwarded-proto'] || (req.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim();
+  return `${proto}://${req.headers['x-forwarded-host'] || req.headers.host || 'localhost'}`;
+}
+
 function serveStatic(req, res, pathname) {
   const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
@@ -153,6 +162,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
   const commissions = createCommissionService(db, { leads, jobs });
   leads.setJobDecorator((job) => commissions.figures(job));
+  const texter = createTexter(config.sms, fetchImpl);
+  const messages = createMessageService(db, { leads, jobs, texter, mailer, brand: config.brand });
+  // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
+  const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
+    .catch((err) => ({ sent: [], problems: [err.message] }));
   const routes = [];
 
   // Returns the signed-in user ({ name, role }), or null if the login is wrong.
@@ -207,6 +221,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     archiveDays: config.archiveDays,
     recoatMonths: config.recoatMonths,
     shopHours: jobs.getShopHours(),
+    textingConfigured: texter.configured,
     depositMethods: DEPOSIT_METHODS,
     commissionOwedWhen: OWED_WHEN,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
@@ -244,11 +259,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   }), { roles: ANY_LOGIN });
   route('GET', '/api/settings/shop-hours', () => jobs.getShopHours(), { roles: ANY_LOGIN });
   route('PUT', '/api/settings/shop-hours', ({ body }) => jobs.saveShopHours(body), { roles: ADMIN });
-  route('POST', '/api/leads/:id/job', ({ params, body, actor }) => {
+  route('POST', '/api/leads/:id/job', async ({ params, body, actor }) => {
     const lead = leads.getLead(Number(params.id));
     if (lead.stage !== 'booked') throw new HttpError(400, 'Only booked leads go on the calendar. Log "Appointment Booked" first.');
     const job = jobs.scheduleLead(lead.id, jobs.parseSchedule(body), actor);
-    return { ...job, shop_time: jobs.capacityFor(job) };
+    const confirmation = body.send_confirmation === false ? null : await confirmBooking(job.id, actor);
+    return { ...job, shop_time: jobs.capacityFor(job), confirmation };
   });
   route('GET', '/api/jobs/:id', ({ params }) => {
     const job = jobs.getJob(Number(params.id));
@@ -258,7 +274,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
   route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
   route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => {
+    const before = jobs.getJob(Number(params.id));
     const job = commissions.watchOwed(Number(params.id), () => jobs.updateJob(Number(params.id), body, actor), actor);
+    if (job.start_at !== before.start_at) messages.jobMoved(job.id);
     return { ...job, shop_time: jobs.capacityFor(job) };
   }, { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
@@ -333,6 +351,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       }
       result.job = commissions.forJob(result.job.id);
       result.shop_time = jobs.capacityFor(result.job);
+      if (body.send_confirmation !== false) result.confirmation = await confirmBooking(result.job.id, actor);
       result.lead = leads.getLead(id);
     }
     // The rep can untick "send follow-up email" for a single call.
@@ -407,6 +426,31 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     const result = commissions.list({ rep: all ? query.get('rep') || null : actor.user || '' });
     return { ...result, reps: all ? [...new Set([...users.list().map((u) => u.name), ...result.jobs.map((j) => j.commission_rep).filter(Boolean)])] : [actor.user] };
   });
+
+  // ---- Texts and automatic customer messages ----
+  route('GET', '/api/texts/templates', () => messages.getTemplates());
+  route('PUT', '/api/texts/templates', ({ body }) => messages.saveTemplates(body.templates), { roles: ADMIN });
+  // A saved text filled in for this lead (the rep can still edit it before sending).
+  route('POST', '/api/leads/:id/texts/fill', ({ params, body, actor }) => {
+    const template = messages.getTemplates().find((t) => t.id === body.template_id);
+    if (!template) throw new HttpError(404, 'That saved text was removed. Pick another.');
+    return { body: messages.render(template.body, leads.getLead(Number(params.id)), { rep: actor.user }) };
+  });
+  route('POST', '/api/leads/:id/texts', async ({ params, body, actor }) => {
+    const text = await messages.sendText(Number(params.id), body.body, actor);
+    return { text, lead: leads.getLead(Number(params.id)) };
+  });
+  route('GET', '/api/settings/notices', () => ({ ...messages.getNotices(), textingConfigured: texter.configured, emailConfigured: mailer.configured }));
+  route('PUT', '/api/settings/notices', ({ body }) => messages.saveNotices(body), { roles: ADMIN });
+
+  // Customer replies (Twilio "A message comes in" webhook). Answers with empty TwiML.
+  route('POST', '/webhooks/twilio', ({ req, res, body }) => {
+    const url = `${baseUrl(req)}${req.url}`;
+    if (!texter.verify(url, body, req.headers['x-twilio-signature'])) throw new HttpError(401, 'Bad signature');
+    messages.receiveText({ from: body.From, body: body.Body, id: body.MessageSid });
+    res.writeHead(200, { 'Content-Type': 'text/xml' });
+    res.end('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }, { isPublic: true });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
@@ -506,6 +550,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   sendReviews();
   const reviewTimer = setInterval(sendReviews, 15 * 60000);
   reviewTimer.unref();
+  // Day-before reminders to customers, checked every 5 minutes.
+  const sendReminders = () => messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
+  const noticeTimer = setInterval(sendReminders, 5 * 60000);
+  noticeTimer.unref();
 
   return async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');

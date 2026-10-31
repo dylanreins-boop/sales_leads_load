@@ -71,6 +71,28 @@ module.exports = {
     corsOrigins: list(process.env.CORS_ORIGINS || '*'),
   },
 
+  // The address people reach the app at, e.g. https://leads.bobmosescc.com. Used in booking links
+  // sent to customers and to check Twilio's signatures. When blank, it's worked out from each request.
+  publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
+
+  // Text messages (Twilio). Without these, texting is off; email still works.
+  sms: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID || '',
+    authToken: process.env.TWILIO_AUTH_TOKEN || '',
+    from: process.env.TWILIO_FROM || '',
+    messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID || '',
+  },
+
+  // Card deposits on online bookings (Stripe Checkout). Without a key, customers book and pay the deposit later.
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
+
+  // New Facebook and website leads ping the sales team; if nobody has called within this many
+  // minutes, the admins get pinged too.
+  speedToLeadMinutes: Number(process.env.SPEED_TO_LEAD_MINUTES ?? 15),
+
   email: {
     provider: (process.env.EMAIL_PROVIDER || '').toLowerCase(),
     apiKey: process.env.EMAIL_API_KEY || '',

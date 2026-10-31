@@ -52,6 +52,7 @@
       <button id="syncFb" type="button" class="lead-only admin-only">Sync Facebook</button>
       <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
       <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Emails</button>
+      <button id="messagesBtn" type="button" class="lead-only admin-only">Texts &amp; reminders</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
@@ -341,6 +342,7 @@
               <label class="deposit-field" hidden>Paid by <select name="deposit_method"></select></label>
             </div>
           </fieldset>
+          <label class="check confirm-option"><input type="checkbox" name="send_confirmation" checked> Send the customer a booking confirmation</label>
           <p id="scheduleError" class="field-error" hidden>Pick a drop-off and a pick-up time after it.</p>
           <label class="check">
             <input type="checkbox" name="reminder" checked> Remind me to call
@@ -367,6 +369,20 @@
       <section class="card-section">
         <h3>Reminders</h3>
         <ul id="leadReminders" class="list"></ul>
+      </section>
+
+      <section class="card-section" id="textSection">
+        <h3>Texts</h3>
+        <ol id="textThread" class="text-thread" aria-live="polite"></ol>
+        <form id="textForm" class="text-form">
+          <select id="textTemplate" aria-label="Start from a saved text"></select>
+          <textarea name="body" rows="3" maxlength="1000" placeholder="Type a text" aria-label="Text message"></textarea>
+          <div class="text-actions">
+            <span id="textCount" class="muted"></span>
+            <button type="submit" class="primary">Send text</button>
+          </div>
+          <p id="textHint" class="hint" hidden></p>
+        </form>
       </section>
 
       <section class="card-section">
@@ -460,6 +476,55 @@
   </aside>
 
   <!-- Follow-up email template -->
+  <!-- Texts & reminders (admins): saved texts and the automatic customer messages -->
+  <aside id="messagesPanel" class="drawer" aria-label="Texts and reminders" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Texts &amp; reminders</h2>
+        <div class="muted">Messages customers get automatically, and the saved texts reps start from.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <p id="messagesStatus" class="notice" hidden></p>
+      <form id="noticesForm">
+        <section class="card-section">
+          <h3>Booking confirmation</h3>
+          <label class="check"><input type="checkbox" name="confirm_enabled"> Send when a job is booked</label>
+          <label>Text <textarea name="confirm_text" rows="3"></textarea></label>
+          <label>Email subject <input name="confirm_subject" maxlength="200"></label>
+          <label>Email <textarea name="confirm_email" rows="7"></textarea></label>
+        </section>
+        <section class="card-section">
+          <h3>Reminder the day before drop-off</h3>
+          <label class="check"><input type="checkbox" name="reminder_enabled"> Send the day before drop-off</label>
+          <label>Send at <select name="reminder_hour"></select></label>
+          <label>Text <textarea name="reminder_text" rows="3"></textarea></label>
+          <label>Email subject <input name="reminder_subject" maxlength="200"></label>
+          <label>Email <textarea name="reminder_email" rows="6"></textarea></label>
+        </section>
+        <section class="card-section">
+          <h3>Send by</h3>
+          <label class="check"><input type="checkbox" name="by_text"> Text (customers who haven't opted out)</label>
+          <label class="check"><input type="checkbox" name="by_email"> Email</label>
+        </section>
+        <p class="hint">Personalize with: <span class="placeholder-chips" data-for="notices"></span></p>
+        <button type="submit" class="primary">Save automatic messages</button>
+      </form>
+
+      <section class="card-section">
+        <h3>Saved texts</h3>
+        <p class="muted">Reps pick one of these on a lead, change anything they like, and send.</p>
+        <form id="templatesForm">
+          <div id="templateRows" class="template-rows"></div>
+          <button type="button" id="addTemplate" class="link-btn">+ Add a saved text</button>
+          <p class="hint">Personalize with: <span class="placeholder-chips" data-for="templates"></span></p>
+          <button type="submit" class="primary">Save texts</button>
+        </form>
+      </section>
+    </div>
+  </aside>
+
   <aside id="emailPanel" class="drawer" aria-label="Follow-up email" hidden>
     <div class="drawer-head">
       <div>
@@ -577,6 +642,7 @@
       <label>Drop-off <input type="datetime-local" name="job_start" required></label>
       <label>Pick-up <input type="datetime-local" name="job_end" required></label>
       <div class="shop-time-note" aria-live="polite" hidden></div>
+      <label class="check"><input type="checkbox" name="send_confirmation" checked> Send the customer a booking confirmation</label>
       <div class="dialog-actions">
         <button type="button" id="scheduleCancel">Cancel</button>
         <button type="submit" class="primary">Add to calendar</button>
@@ -616,5 +682,6 @@
   <script src="revenue.js"></script>
   <script src="quotes.js"></script>
   <script src="commissions.js"></script>
+  <script src="messages.js"></script>
 </body>
 </html>

@@ -10,12 +10,13 @@ function vehicleText(lead) {
   return named || (lead.vehicle_type ? lead.vehicle_type.toLowerCase() : 'vehicle');
 }
 
-// Fills {{first_name}}-style placeholders from the lead. Unknown ones are left as-is.
-function renderTemplate(template, lead) {
+// Fills {{first_name}}-style placeholders from the lead, plus any `extra` values (like {{drop_off}}).
+// Unknown ones are left as-is.
+function renderTemplate(template, lead, extra = {}) {
   const first = lead.first_name || (lead.full_name || '').split(' ')[0] || 'there';
-  const values = { ...lead, first_name: first, full_name: lead.full_name || first, vehicle: vehicleText(lead) };
+  const values = { ...lead, first_name: first, full_name: lead.full_name || first, vehicle: vehicleText(lead), ...extra };
   return String(template || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) =>
-    PLACEHOLDERS.includes(key) ? (values[key] ?? '') : match);
+    (PLACEHOLDERS.includes(key) || key in extra ? (values[key] ?? '') : match));
 }
 
 function createMailer({ provider, apiKey, from, replyTo }, fetchImpl = (...a) => fetch(...a)) {
@@ -61,4 +62,4 @@ function createMailer({ provider, apiKey, from, replyTo }, fetchImpl = (...a) =>
   };
 }
 
-module.exports = { renderTemplate, createMailer, PLACEHOLDERS };
+module.exports = { renderTemplate, vehicleText, createMailer, PLACEHOLDERS };

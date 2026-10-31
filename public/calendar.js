@@ -618,13 +618,14 @@ function openScheduleDialog(lead) {
 async function saveSchedule(e) {
   e.preventDefault();
   const f = e.target;
-  const body = { job_start: new Date(f.job_start.value).toISOString(), job_end: new Date(f.job_end.value).toISOString(), job_hours: f.job_hours.value };
+  const body = { job_start: new Date(f.job_start.value).toISOString(), job_end: new Date(f.job_end.value).toISOString(), job_hours: f.job_hours.value, send_confirmation: f.send_confirmation.checked };
   if (body.job_end <= body.job_start) return toast('Pick-up has to be after drop-off', 'error');
   try {
     const job = await api(`/api/leads/${cal.scheduleLeadId}/job`, { method: 'POST', body });
     $('#scheduleDialog').close();
     toast(`On the calendar for ${longDate(job.start_at)}, ${clock(job.start_at)}`);
     warnShopTime(job.shop_time);
+    reportConfirmation(job.confirmation);
     if (state.section === 'calendar') {
       cal.anchor = new Date(job.start_at);
       await loadCalendar();

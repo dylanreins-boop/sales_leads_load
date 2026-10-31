@@ -174,6 +174,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_norm);
 
+-- Text messages to and from customers.
+CREATE TABLE IF NOT EXISTS texts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id     INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  direction   TEXT NOT NULL,                    -- out | in
+  phone       TEXT NOT NULL,                    -- the customer's number
+  body        TEXT NOT NULL,
+  status      TEXT NOT NULL,                    -- sent | failed | received
+  error       TEXT,
+  trigger     TEXT,                             -- manual | confirmation | reminder | ready | booking_link
+  provider_id TEXT,
+  user_name   TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS texts_lead ON texts (lead_id);
+
 -- Who added, changed or deactivated each login.
 CREATE TABLE IF NOT EXISTS user_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,6 +220,9 @@ function migrate(db) {
     ['commission_rep', 'TEXT'], ['commission_override_cents', 'INTEGER'], ['commission_paid_cents', 'INTEGER'],
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
+  }
+  for (const column of ['confirm_sent_at', 'reminder_sent_at']) {
+    if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   }
   if (!has('jobs', 'work_hours')) db.exec('ALTER TABLE jobs ADD COLUMN work_hours REAL');
   if (!has('jobs', 'picked_up_at')) {

@@ -864,3 +864,27 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
   .cal-cell .load-tag .lt-short { display: inline; }
   .cal-cell-top { flex-wrap: wrap; }
 }
+
+/* Texts on a lead */
+.text-thread { list-style: none; margin: 0 0 10px; padding: 8px; display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.text-thread .empty { text-align: center; font-size: 13px; padding: 8px 0; }
+.bubble { max-width: 85%; display: grid; gap: 2px; }
+.bubble.in { align-self: flex-start; }
+.bubble.out { align-self: flex-end; text-align: right; }
+.bubble-body { padding: 8px 12px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.bubble.in .bubble-body { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.bubble.out .bubble-body { background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 4px; }
+.bubble.failed .bubble-body { background: color-mix(in srgb, var(--danger) 14%, var(--panel)); color: var(--text); border: 1px dashed var(--danger); }
+.bubble-meta { font-size: 11px; color: var(--muted); }
+.text-form { display: grid; gap: 8px; }
+.text-form textarea { margin: 0; }
+.text-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.confirm-option { margin-top: 4px; }
+
+/* Texts & reminders panel */
+.template-rows { display: grid; gap: 12px; margin-bottom: 8px; }
+.template-row { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.template-row-head { display: flex; gap: 8px; align-items: center; }
+.template-row-head input { margin: 0; font-weight: 600; }
+.template-row textarea { margin: 0; }
+.placeholder-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }

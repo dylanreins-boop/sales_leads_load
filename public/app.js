@@ -66,7 +66,7 @@ const fail = (err) => toast(err.message, 'error');
 const stageLabel = (id) => state.meta.stages.find((s) => s.id === id)?.label ?? id;
 const dispoLabel = (id) => state.meta.dispositions.find((d) => d.id === id)?.label ?? id;
 const leadName = (l) => l.full_name || [l.first_name, l.last_name].filter(Boolean).join(' ') || l.email || l.phone || `Lead #${l.lead_id ?? l.id}`;
-const sourceLabel = { facebook: 'Facebook', website: 'Website', manual: 'Manual' };
+const sourceLabel = { facebook: 'Facebook', website: 'Website', manual: 'Manual', text: 'Text message', import: 'Imported', online: 'Online booking' };
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -479,7 +479,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -519,6 +519,7 @@ function renderLead(lead) {
   fillInfoForm(lead);
   renderLeadJob(lead);
   renderQuoteSection(lead).catch(fail);
+  if (state.meta.currentRole !== 'shop') renderTexts(lead);
 
   const stageSelect = $('#stageSelect');
   stageSelect.replaceChildren(...state.meta.stages.map((s) => h('option', { value: s.id, selected: s.id === lead.stage }, s.label)));
@@ -673,6 +674,14 @@ function activityItem(a) {
     checklist: 'Shop checklist',
     photo: 'Job photos',
     amount: 'Job amount',
+    deposit: 'Deposit',
+    commission: 'Commission',
+    text: 'Text',
+    notice: 'Customer message',
+    alert: 'Alert',
+    booking: 'Online booking',
+    signoff: 'Customer sign-off',
+    import: 'Imported',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),
@@ -769,14 +778,15 @@ async function saveDisposition(e) {
   if (!$('#emailOption').hidden) body.send_email = form.send_email.checked;
   if (needsServices) body.services = services;
   if (needsSchedule) {
-    Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_hours: form.job_hours.value, job_amount: form.job_amount.value });
+    Object.assign(body, { job_start: jobStart.toISOString(), job_end: jobEnd.toISOString(), job_hours: form.job_hours.value, job_amount: form.job_amount.value, send_confirmation: form.send_confirmation.checked });
     if (form.deposit_taken.checked) Object.assign(body, { deposit_taken: true, deposit_amount: form.deposit_amount.value, deposit_method: form.deposit_method.value });
   }
   try {
-    const { lead, reminder, email, job, shop_time: shopTime } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
+    const { lead, reminder, email, job, shop_time: shopTime, confirmation } = await api(`/api/leads/${state.openLeadId}/disposition`, { method: 'POST', body });
     if (job) {
       toast(`Booked. On the shop calendar for ${fmtDateTime(job.start_at)}`);
       warnShopTime(shopTime);
+      reportConfirmation(confirmation);
     }
     else {
       toast(reminder
@@ -1274,6 +1284,7 @@ async function init() {
   $('#customerDue').addEventListener('change', (e) => { state.customerDue = e.target.value; renderBoard(); });
 
   initCommissions();
+  initMessages();
   if (shop) return showSection('calendar');
   if (isAdmin()) {
     loadUpdatesCount();
