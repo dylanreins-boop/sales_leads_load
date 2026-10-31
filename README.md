@@ -418,9 +418,12 @@ don't set off new-lead alerts, and every import can be **undone**. There's a sam
 **Appearance** (top bar, everyone) has **Light / Dark / Match my device** for that phone or computer.
 Admins also get settings for everyone:
 
-- **Colors:** buttons and links, highlight, top bar and page background, or one of the ready-made looks
-  (Bob Moses, Midnight, Carbon, Clean white, Desert, Forest). Changes show right away; **Save colors** uses
-  them for everyone, including the sign-in and booking pages.
+- **Colors:** buttons and links and the highlight (both looks), plus the top bar, page background, columns
+  and cards, and borders, set separately for the light and the dark look (text follows the column color so
+  it stays readable). Or start from a ready-made look (Bob Moses, Midnight, Carbon, Clean white, Desert,
+  Forest). Changes show right away; **Save colors** uses them for everyone, including the sign-in and
+  booking pages.
+- **Columns see-through** lets the background picture show through the columns.
 - **Background picture** behind the boards and calendar, with a fade slider so cards stay easy to read.
 - **Logo:** your own logo for light backgrounds, and one for dark backgrounds (dark look, a dark top bar,
   the sign-in and booking pages).

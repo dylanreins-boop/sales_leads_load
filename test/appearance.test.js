@@ -46,11 +46,20 @@ test('admins set the colors for everyone; the CSS reaches every page without sig
 
   const css = (await call('GET', '/appearance.css', undefined, null)).data;
   assert.match(css, /--accent: #c8102e; --accent-text: #ffffff/);
-  assert.match(css, /:root\[data-theme="light"\] \{ --link: #c8102e; --bar: #16181d; --bar-text: #ffffff;/);
-  assert.match(css, /@media \(prefers-color-scheme: light\) \{ :root:not\(\[data-theme="dark"\]\) \{ --link: #c8102e;/);
+  assert.match(css, /:root\[data-theme="light"\] \{ --bar: #16181d; --bar-text: #ffffff;.*--bg: #ececee; --link: #c8102e; \}/);
+  assert.match(css, /@media \(prefers-color-scheme: light\) \{ :root:not\(\[data-theme="dark"\]\) \{ --bar: #16181d;/);
   assert.match(css, /--bg: #ececee/);
   assert.equal(textOn('#ffffff'), '#0e1a2b');
   assert.equal(textOn('#00142b'), '#ffffff');
+
+  // The dark look has its own top bar, page, columns and borders; text follows the column color.
+  const dark = (await call('PUT', '/api/appearance', { dark_bar: '#0d0e11', dark_panel: '#1b1d22', dark_border: '#2c2f36', panel: '#fffaf0', column_clear: 30 })).data;
+  assert.equal(dark.dark_panel, '#1b1d22');
+  const css2 = (await call('GET', '/appearance.css', undefined, null)).data;
+  assert.match(css2, /:root\[data-theme="dark"\] \{ --bar: #0d0e11;.*--panel: #1b1d22; --text: #ffffff;.*--border: #2c2f36; --link: color-mix/);
+  assert.match(css2, /:root\[data-theme="light"\] \{.*--panel: #fffaf0; --text: #0e1a2b;/);
+  assert.match(css2, /\.column, \.week-col \{ background: color-mix\(in srgb, color-mix\(in srgb, var\(--panel\) 55%, var\(--bg\)\) 70%, transparent\)/);
+  assert.equal((await call('PUT', '/api/appearance', { column_clear: 99 })).status, 400);
 
   // Preview doesn't save.
   const preview = (await call('POST', '/api/appearance/preview', { accent: '#1f6f4a' })).data.css;

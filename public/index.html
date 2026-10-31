@@ -547,10 +547,25 @@
           <p class="muted">Changes show here right away; Save to use them for everyone (and on the sign-in and booking pages).</p>
           <div id="themePresets" class="theme-presets" role="group" aria-label="Ready-made looks"></div>
           <form id="colorForm" class="color-form">
-            <div class="color-row" data-color="accent"><span><b>Buttons and links</b><small>Main color</small></span><input type="color" name="accent"><button type="button" class="link-btn" data-default="accent">Default</button></div>
-            <div class="color-row" data-color="highlight"><span><b>Highlight</b><small>Stripe under the top bar, RV tags</small></span><input type="color" name="highlight"><button type="button" class="link-btn" data-default="highlight">Default</button></div>
-            <div class="color-row" data-color="bar"><span><b>Top bar</b><small>Light look</small></span><input type="color" name="bar"><button type="button" class="link-btn" data-default="bar">Default</button></div>
-            <div class="color-row" data-color="background"><span><b>Page background</b><small>Light look</small></span><input type="color" name="background"><button type="button" class="link-btn" data-default="background">Default</button></div>
+            <fieldset class="color-group"><legend>Both looks</legend>
+              <div class="color-row" data-color="accent"><span><b>Buttons and links</b><small>Main color</small></span><input type="color" name="accent" aria-label="Buttons and links"><button type="button" class="link-btn" data-default="accent">Default</button></div>
+              <div class="color-row" data-color="highlight"><span><b>Highlight</b><small>Stripe under the top bar, RV tags</small></span><input type="color" name="highlight" aria-label="Highlight"><button type="button" class="link-btn" data-default="highlight">Default</button></div>
+            </fieldset>
+            <fieldset class="color-group"><legend>Light look</legend>
+              <div class="color-row" data-color="bar"><span><b>Top bar</b><small>Behind the logo and menus</small></span><input type="color" name="bar" aria-label="Top bar"><button type="button" class="link-btn" data-default="bar">Default</button></div>
+              <div class="color-row" data-color="background"><span><b>Page background</b><small>Behind the columns</small></span><input type="color" name="background" aria-label="Page background"><button type="button" class="link-btn" data-default="background">Default</button></div>
+              <div class="color-row" data-color="panel"><span><b>Columns and cards</b><small>Lead cards, calendar, panels; text color follows</small></span><input type="color" name="panel" aria-label="Columns and cards"><button type="button" class="link-btn" data-default="panel">Default</button></div>
+              <div class="color-row" data-color="border"><span><b>Borders</b><small>Around columns, cards and boxes</small></span><input type="color" name="border" aria-label="Borders"><button type="button" class="link-btn" data-default="border">Default</button></div>
+            </fieldset>
+            <fieldset class="color-group"><legend>Dark look</legend>
+              <div class="color-row" data-color="dark_bar"><span><b>Top bar</b><small>Behind the logo and menus</small></span><input type="color" name="dark_bar" aria-label="Top bar"><button type="button" class="link-btn" data-default="dark_bar">Default</button></div>
+              <div class="color-row" data-color="dark_background"><span><b>Page background</b><small>Behind the columns</small></span><input type="color" name="dark_background" aria-label="Page background"><button type="button" class="link-btn" data-default="dark_background">Default</button></div>
+              <div class="color-row" data-color="dark_panel"><span><b>Columns and cards</b><small>Lead cards, calendar, panels; text color follows</small></span><input type="color" name="dark_panel" aria-label="Columns and cards"><button type="button" class="link-btn" data-default="dark_panel">Default</button></div>
+              <div class="color-row" data-color="dark_border"><span><b>Borders</b><small>Around columns, cards and boxes</small></span><input type="color" name="dark_border" aria-label="Borders"><button type="button" class="link-btn" data-default="dark_border">Default</button></div>
+            </fieldset>
+            <label class="dim-row">Columns see-through (lets the background picture show)
+              <input type="range" name="column_clear" min="0" max="80" step="5"> <output id="columnClearValue"></output>
+            </label>
             <div class="appearance-actions">
               <button type="button" id="colorUndo">Undo changes</button>
               <button type="submit" class="primary">Save colors</button>

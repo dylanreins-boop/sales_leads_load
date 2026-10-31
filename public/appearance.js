@@ -3,16 +3,23 @@
 // for everyone. Uses the helpers from app.js ($, h, api, toast, fail, state, showPanel, isAdmin).
 
 const look = { saved: null, draft: {}, bgUrl: null, previewTimer: null };
-// The standard look's colors (light), shown in the color pickers when nothing is set.
-const STANDARD = { accent: '#004ea2', highlight: '#ffad43', bar: '#ffffff', background: '#f1f4f8' };
+// The standard look's colors, shown in the color pickers when nothing is set.
+const STANDARD = {
+  accent: '#004ea2', highlight: '#ffad43',
+  bar: '#ffffff', background: '#f1f4f8', panel: '#ffffff', border: '#d8dee7',
+  dark_bar: '#00142b', dark_background: '#07111e', dark_panel: '#0f1c2e', dark_border: '#22324a',
+};
+const COLOR_KEYS = Object.keys(STANDARD);
 const PRESETS = [
-  { name: 'Bob Moses', colors: { accent: null, highlight: null, bar: null, background: null } },
-  { name: 'Midnight', colors: { accent: '#0f6fd6', highlight: '#ffad43', bar: '#00142b', background: '#e8edf4' } },
-  { name: 'Carbon', colors: { accent: '#c8102e', highlight: '#f2b134', bar: '#16181d', background: '#ececee' } },
-  { name: 'Clean white', colors: { accent: '#111827', highlight: '#2563eb', bar: '#ffffff', background: '#f8f8f9' } },
-  { name: 'Desert', colors: { accent: '#b5531c', highlight: '#e8b04b', bar: '#3b2a1a', background: '#f6f0e6' } },
-  { name: 'Forest', colors: { accent: '#1f6f4a', highlight: '#d4a72c', bar: '#0f2a1f', background: '#eef3ef' } },
+  { name: 'Bob Moses', colors: {} },
+  { name: 'Midnight', colors: { accent: '#0f6fd6', highlight: '#ffad43', bar: '#00142b', background: '#e8edf4', border: '#cfd8e3' } },
+  { name: 'Carbon', colors: { accent: '#c8102e', highlight: '#f2b134', bar: '#16181d', background: '#ececee', border: '#d6d6da', dark_bar: '#0b0c0e', dark_background: '#111215', dark_panel: '#1b1d21', dark_border: '#2d3036' } },
+  { name: 'Clean white', colors: { accent: '#111827', highlight: '#2563eb', background: '#f8f8f9', border: '#e4e4e7', dark_bar: '#0f1115', dark_background: '#0f1115', dark_panel: '#181b20', dark_border: '#2a2e35' } },
+  { name: 'Desert', colors: { accent: '#b5531c', highlight: '#e8b04b', bar: '#3b2a1a', background: '#f6f0e6', panel: '#fffdf8', border: '#e6d9c4', dark_bar: '#1f150c', dark_background: '#17110b', dark_panel: '#251b12', dark_border: '#3e2f20' } },
+  { name: 'Forest', colors: { accent: '#1f6f4a', highlight: '#d4a72c', bar: '#0f2a1f', background: '#eef3ef', border: '#d3e0d7', dark_bar: '#0b1a13', dark_background: '#0c1712', dark_panel: '#13261d', dark_border: '#23402f' } },
 ];
+// A preset sets every color (the ones it doesn't list go back to standard).
+const presetColors = (p) => Object.fromEntries(COLOR_KEYS.map((k) => [k, p.colors[k] || null]));
 
 // ---------- light / dark ----------
 const themeChoice = () => { try { return localStorage.getItem('theme') || ''; } catch { return ''; } };
@@ -49,7 +56,9 @@ function applyLogo() {
   const a = look.saved;
   const img = document.querySelector('.brand-logo');
   if (!img || !a) return;
-  const onDark = isDark() || darkColor(look.previewBar ?? a.bar);
+  const colors = { ...a, ...(look.previewColors || {}) };
+  const bar = isDark() ? colors.dark_bar || STANDARD.dark_bar : colors.bar || STANDARD.bar;
+  const onDark = darkColor(bar);
   // The <source> follows the device, not these settings, so the script picks the logo itself
   // (remembering the page's standard logos first).
   const source = img.parentElement.querySelector('source');
@@ -74,7 +83,7 @@ async function applyBackground(a) {
 
 function applyAppearance(a) {
   look.saved = a;
-  look.previewBar = undefined;
+  look.previewColors = null;
   setAppearanceCss(a.css);
   applyLogo();
   applyBackground(a);
@@ -87,16 +96,21 @@ function renderAppearance() {
   if (!isAdmin()) return;
   const colors = { ...pick(a), ...look.draft };
   const f = $('#colorForm');
-  for (const key of Object.keys(STANDARD)) {
+  for (const key of COLOR_KEYS) {
     f[key].value = colors[key] || STANDARD[key];
     f.querySelector(`[data-default="${key}"]`).hidden = !colors[key];
   }
+  f.column_clear.value = colors.column_clear ?? 0;
+  $('#columnClearValue').textContent = `${colors.column_clear ?? 0}%`;
+  // Swatches show the look this device is in (light or dark).
+  const d = isDark() ? 'dark_' : '';
   $('#themePresets').replaceChildren(...PRESETS.map((p) => {
     const c = { ...STANDARD, ...Object.fromEntries(Object.entries(p.colors).filter(([, v]) => v)) };
-    const active = Object.keys(STANDARD).every((k) => (colors[k] || null) === (p.colors[k] || null));
-    return h('button', { type: 'button', class: 'preset', 'aria-pressed': String(active), onclick: () => { look.draft = { ...p.colors }; renderAppearance(); preview(); } },
-      h('span', { class: 'preset-swatch', style: `background:${c.background}` },
-        h('i', { style: `background:${c.bar}` }), h('i', { style: `background:${c.accent}` }), h('i', { style: `background:${c.highlight}` })),
+    const active = COLOR_KEYS.every((k) => (colors[k] || null) === (p.colors[k] || null));
+    return h('button', { type: 'button', class: 'preset', 'aria-pressed': String(active), onclick: () => { look.draft = { ...look.draft, ...presetColors(p) }; renderAppearance(); preview(); } },
+      h('span', { class: 'preset-swatch', style: `background:${c[`${d}background`]}` },
+        h('i', { style: `background:${c[`${d}bar`]}` }), h('i', { style: `background:${c[`${d}panel`]}; border-color:${c[`${d}border`]}` }),
+        h('i', { style: `background:${c.accent}` }), h('i', { style: `background:${c.highlight}` })),
       p.name);
   }));
   for (const box of document.querySelectorAll('.image-setting')) {
@@ -111,7 +125,7 @@ function renderAppearance() {
   $('#bgDimValue').textContent = `${a.background_dim ?? 70}%`;
   $('#bgDim').closest('label').hidden = !a.background_image;
 }
-const pick = (a) => Object.fromEntries(Object.keys(STANDARD).map((k) => [k, a[k] || null]));
+const pick = (a) => ({ ...Object.fromEntries(COLOR_KEYS.map((k) => [k, a[k] || null])), column_clear: a.column_clear ?? 0 });
 
 // Shows the panel's colors on the whole app without saving.
 function preview() {
@@ -120,7 +134,7 @@ function preview() {
     try {
       const { css } = await api('/api/appearance/preview', { method: 'POST', body: { ...pick(look.saved), ...look.draft } });
       setAppearanceCss(css);
-      look.previewBar = 'bar' in look.draft ? look.draft.bar : undefined;
+      look.previewColors = { ...look.draft };
       applyLogo();
     } catch (err) { fail(err); }
   }, 120);
@@ -145,7 +159,7 @@ async function saveColors(e) {
 
 function undoColors() {
   look.draft = {};
-  look.previewBar = undefined;
+  look.previewColors = null;
   applyLogo();
   setAppearanceCss(look.saved.css);
   renderAppearance();
@@ -220,7 +234,7 @@ function initAppearance() {
   f.addEventListener('submit', saveColors);
   f.addEventListener('input', (e) => {
     if (!e.target.name) return;
-    look.draft[e.target.name] = e.target.value;
+    look.draft[e.target.name] = e.target.name === 'column_clear' ? Number(e.target.value) : e.target.value;
     renderAppearance();
     preview();
   });

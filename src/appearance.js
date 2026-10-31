@@ -7,9 +7,14 @@ const crypto = require('node:crypto');
 const { HttpError } = require('./leads');
 const { imageType } = require('./jobs');
 
-const COLORS = ['accent', 'highlight', 'bar', 'background'];
+// Buttons/links and highlight apply to both looks; the rest is set for the light and dark look separately.
+const LOOK_COLORS = ['bar', 'background', 'panel', 'border'];
+const COLORS = ['accent', 'highlight', ...LOOK_COLORS, ...LOOK_COLORS.map((k) => `dark_${k}`)];
 const IMAGES = { background: 8_000_000, logo: 2_000_000, logo_dark: 2_000_000 };
-const DEFAULTS = { accent: null, highlight: null, bar: null, background: null, background_image: null, background_dim: 70, logo: null, logo_dark: null };
+const DEFAULTS = {
+  ...Object.fromEntries(COLORS.map((k) => [k, null])),
+  column_clear: 0, background_image: null, background_dim: 70, logo: null, logo_dark: null,
+};
 const isHex = (v) => /^#[0-9a-f]{6}$/i.test(String(v));
 
 // Black or white text, whichever reads better on the color.
@@ -18,6 +23,26 @@ function textOn(hex) {
     .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return lum > 0.4 ? '#0e1a2b' : '#ffffff';
+}
+
+// One look's colors: top bar (with readable text on it), page, columns and cards (text follows
+// their color so it stays readable), and borders.
+function lookVars(a, prefix) {
+  const v = [];
+  const bar = a[`${prefix}bar`];
+  const panel = a[`${prefix}panel`];
+  if (bar) {
+    const t = textOn(bar);
+    v.push(`--bar: ${bar}`, `--bar-text: ${t}`, `--bar-muted: color-mix(in srgb, ${t} 62%, ${bar})`,
+      `--bar-field: color-mix(in srgb, ${t} 7%, ${bar})`, `--bar-border: color-mix(in srgb, ${t} 20%, ${bar})`);
+  }
+  if (a[`${prefix}background`]) v.push(`--bg: ${a[`${prefix}background`]}`);
+  if (panel) {
+    const t = textOn(panel);
+    v.push(`--panel: ${panel}`, `--text: ${t}`, `--muted: color-mix(in srgb, ${t} 62%, ${panel})`);
+  }
+  if (a[`${prefix}border`]) v.push(`--border: ${a[`${prefix}border`]}`);
+  return v;
 }
 
 function createAppearanceService(db, { photosDir }) {
@@ -47,6 +72,11 @@ function createAppearanceService(db, { photosDir }) {
       if (v == null || v === '') next[key] = null;
       else if (isHex(v)) next[key] = v.toLowerCase();
       else throw new HttpError(400, 'Pick a color.');
+    }
+    if ('column_clear' in input) {
+      const clear = Number(input.column_clear);
+      if (!Number.isFinite(clear) || clear < 0 || clear > 80) throw new HttpError(400, 'See-through goes from 0 to 80%.');
+      next.column_clear = Math.round(clear);
     }
     if ('background_dim' in input) {
       const dim = Number(input.background_dim);
@@ -113,28 +143,29 @@ function createAppearanceService(db, { photosDir }) {
   // The CSS that applies the settings on every page.
   function css(a = get()) {
     const out = [];
-    const light = [];
     const both = [];
-    if (a.accent) {
-      both.push(`--accent: ${a.accent}`, `--accent-text: ${textOn(a.accent)}`);
-      light.push(`--link: ${a.accent}`);
-      out.push(`@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --link: color-mix(in srgb, ${a.accent} 55%, #ffffff); } }`,
-        `:root[data-theme="dark"] { --link: color-mix(in srgb, ${a.accent} 55%, #ffffff); }`);
-    }
+    if (a.accent) both.push(`--accent: ${a.accent}`, `--accent-text: ${textOn(a.accent)}`);
     if (a.highlight) both.push(`--highlight: ${a.highlight}`);
-    // The header and page colors are for the light look; the dark look keeps its dark colors.
-    if (a.bar) {
-      const t = textOn(a.bar);
-      light.push(`--bar: ${a.bar}`, `--bar-text: ${t}`, `--bar-muted: color-mix(in srgb, ${t} 62%, ${a.bar})`,
-        `--bar-field: color-mix(in srgb, ${t} 7%, ${a.bar})`, `--bar-border: color-mix(in srgb, ${t} 20%, ${a.bar})`);
-    }
-    if (a.background) light.push(`--bg: ${a.background}`);
     // Listed with the dark look's own selectors so these win in both looks.
-    if (both.length) out.unshift(`:root, :root:not([data-theme="light"]), :root[data-theme] { ${both.join('; ')}; }`);
+    if (both.length) out.push(`:root, :root:not([data-theme="light"]), :root[data-theme] { ${both.join('; ')}; }`);
+
+    const light = lookVars(a, '');
+    if (a.accent) light.push(`--link: ${a.accent}`);
     if (light.length) {
       // Light look: picked under Appearance, or "match my device" on a device set to light.
       out.push(`:root[data-theme="light"] { ${light.join('; ')}; }`,
         `@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { ${light.join('; ')}; } }`);
+    }
+    const dark = lookVars(a, 'dark_');
+    if (a.accent) dark.push(`--link: color-mix(in srgb, ${a.accent} 55%, #ffffff)`);
+    if (dark.length) {
+      out.push(`:root[data-theme="dark"] { ${dark.join('; ')}; }`,
+        `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${dark.join('; ')}; } }`);
+    }
+    // See-through columns let the background picture show; a light blur keeps cards readable.
+    if (a.column_clear > 0) {
+      const keep = 100 - a.column_clear;
+      out.push(`.column, .week-col { background: color-mix(in srgb, color-mix(in srgb, var(--panel) 55%, var(--bg)) ${keep}%, transparent); backdrop-filter: blur(6px); }`);
     }
     // The background image itself is put in place by the page's script (see applyAppearance).
     if (a.background_image) out.push(`body.app-page { --bg-dim: ${a.background_dim ?? 70}%; }`);
