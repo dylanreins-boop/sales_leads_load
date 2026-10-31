@@ -125,7 +125,7 @@ function createAlertService(db, { leads, users, push, texter, minutes = 15, hour
     });
   }
 
-  return { prefs, savePrefs, leadArrived, process, replied, inHours };
+  return { prefs, savePrefs, leadArrived, process, replied, inHours, notify: deliver };
 }
 
 module.exports = { createAlertService, ALERT_SOURCES };

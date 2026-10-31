@@ -519,7 +519,10 @@ function renderLead(lead) {
   fillInfoForm(lead);
   renderLeadJob(lead);
   renderQuoteSection(lead).catch(fail);
-  if (state.meta.currentRole !== 'shop') renderTexts(lead);
+  if (state.meta.currentRole !== 'shop') {
+    renderTexts(lead);
+    renderBookingLinks(lead);
+  }
 
   const stageSelect = $('#stageSelect');
   stageSelect.replaceChildren(...state.meta.stages.map((s) => h('option', { value: s.id, selected: s.id === lead.stage }, s.label)));
@@ -1285,6 +1288,7 @@ async function init() {
   initCommissions();
   initMessages();
   initAlerts();
+  initBookingLinks();
   if (shop) return showSection('calendar');
   if (isAdmin()) {
     loadUpdatesCount();

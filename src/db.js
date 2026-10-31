@@ -190,6 +190,26 @@ CREATE TABLE IF NOT EXISTS texts (
 );
 CREATE INDEX IF NOT EXISTS texts_lead ON texts (lead_id);
 
+-- Online booking links sent to customers.
+CREATE TABLE IF NOT EXISTS booking_links (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  token             TEXT NOT NULL UNIQUE,
+  lead_id           INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  amount_cents      INTEGER NOT NULL,
+  deposit_cents     INTEGER NOT NULL,
+  work_hours        REAL NOT NULL,
+  services          TEXT NOT NULL,                -- JSON list of service ids
+  created_by        TEXT,
+  created_at        TEXT NOT NULL,
+  expires_at        TEXT NOT NULL,
+  cancelled_at      TEXT,
+  job_id            INTEGER,                      -- set once the customer books
+  booked_at         TEXT,
+  stripe_session_id TEXT,
+  deposit_paid_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS booking_links_lead ON booking_links (lead_id);
+
 -- Phones and browsers that get alerts (Web Push), by person.
 CREATE TABLE IF NOT EXISTS push_subs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

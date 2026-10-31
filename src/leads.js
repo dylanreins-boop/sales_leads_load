@@ -214,6 +214,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     lead.reminders = stmt('SELECT * FROM reminders WHERE lead_id = ? ORDER BY due_at DESC').all(id);
     lead.emails = stmt('SELECT * FROM emails WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.texts = stmt('SELECT * FROM texts WHERE lead_id = ? ORDER BY id').all(id);
+    lead.booking_links = stmt('SELECT id, token, amount_cents, deposit_cents, work_hours, created_by, created_at, expires_at, cancelled_at, job_id, booked_at, deposit_paid_at FROM booking_links WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.quotes = stmt('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(id).map((q) => ({ ...q, lines: JSON.parse(q.lines) }));
     lead.jobs = stmt('SELECT * FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id).map((j) => decorateJob(j));
     return lead;

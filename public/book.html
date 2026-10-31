@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Book your appointment · Bob Moses Ceramic Coating</title>
+  <meta name="theme-color" content="#00142b">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/icons/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Customer booking page: a navy band with the logo, one card. */
+    body.book-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; background: var(--bg); padding: 0 max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); height: auto; }
+    .book-band { position: absolute; inset: 0 0 auto; height: 230px; background: linear-gradient(160deg, #00142b 0%, #0b2a4f 100%); border-bottom: 4px solid var(--highlight); z-index: 0; }
+    .book-wrap { position: relative; z-index: 1; width: 100%; max-width: 560px; margin-top: 28px; display: grid; gap: 18px; }
+    .book-brand { display: grid; justify-items: center; gap: 6px; color: #f1f4f8; text-align: center; }
+    .book-brand img { width: 140px; height: auto; }
+    .book-brand p { margin: 0; font: 600 12px/1.3 var(--font-brand); letter-spacing: 0.14em; text-transform: uppercase; color: #a9b6c7; }
+    .book-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; box-shadow: 0 12px 32px rgba(0, 20, 43, 0.18); display: grid; gap: 16px; }
+    .book-card h1 { font: 700 22px/1.25 var(--font-brand); margin: 0; }
+    .book-card h2 { font: 700 15px/1.3 var(--font-brand); margin: 0; }
+    .summary { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+    .summary dt { color: var(--muted); }
+    .summary dd { margin: 0; font-weight: 600; }
+    .summary .price { font: 700 20px/1.2 var(--font-brand); }
+    .days { display: grid; gap: 14px; }
+    .week h3 { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .week-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+    .day { display: grid; gap: 1px; padding: 10px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); text-align: center; font-size: 13px; }
+    .day b { font: 700 18px/1.1 var(--font-brand); }
+    .day[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+    .choice { padding: 12px 14px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); font-size: 14px; }
+    .go { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; }
+    .done { text-align: center; display: grid; gap: 8px; }
+    .done .check { font-size: 40px; line-height: 1; color: var(--ok); }
+    .book-error { color: var(--danger); font-weight: 600; margin: 0; }
+    .contact { font-size: 14px; color: var(--muted); text-align: center; }
+    .contact a { font-weight: 700; }
+    .loading-note { text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body class="book-page">
+  <div class="book-band" aria-hidden="true"></div>
+  <main class="book-wrap">
+    <div class="book-brand">
+      <img src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="140" height="79">
+      <p>Book your appointment</p>
+    </div>
+    <section class="book-card" id="card" aria-live="polite"><p class="loading-note">Loading…</p></section>
+    <p class="contact" id="contact"></p>
+  </main>
+  <script>
+    'use strict';
+    const token = location.pathname.split('/').filter(Boolean)[1];
+    const card = document.getElementById('card');
+    const money = (c) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    let data = null;
+    let picked = null;
+
+    function el(tag, attrs = {}, ...kids) {
+      const n = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+        else if (k === 'class') n.className = v;
+        else n.setAttribute(k, v === true ? '' : v);
+      }
+      for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+      return n;
+    }
+
+    async function call(method, path, body) {
+      const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Something went wrong. Please call or text us.');
+      return json;
+    }
+
+    // Like replaceChildren, skipping the empty bits (false/null/undefined) of conditional content.
+    const fill = (node, ...kids) => node.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
+
+    function contactLine() {
+      const c = data?.company || {};
+      const phone = c.phone && el('a', { href: `tel:${c.phone.replace(/[^\d+]/g, '')}` }, c.phone);
+      fill(document.getElementById('contact'), phone && ['Questions? Call or text ', phone], c.address && [el('br'), c.address]);
+    }
+
+    function summary() {
+      return el('dl', { class: 'summary' },
+        el('dt', {}, 'Vehicle'), el('dd', {}, data.vehicle),
+        el('dt', {}, 'Services'), el('dd', {}, data.services),
+        el('dt', {}, 'Time in the shop'), el('dd', {}, `About ${data.work_label}`),
+        el('dt', {}, 'Price'), el('dd', { class: 'price' }, money(data.amount_cents)),
+        data.deposit_cents > 0 && el('dt', {}, 'Deposit'),
+        data.deposit_cents > 0 && el('dd', {}, `${money(data.deposit_cents)}${data.deposit_paid ? ' (paid, thank you)' : ' to hold your day'}`));
+    }
+
+    // Open days grouped by week: "Week of Nov 9".
+    function dayPicker() {
+      const weeks = new Map();
+      for (const d of data.days) {
+        const date = new Date(d.drop_off);
+        const sunday = new Date(date); sunday.setDate(date.getDate() - date.getDay());
+        const key = sunday.toDateString();
+        if (!weeks.has(key)) weeks.set(key, { label: `Week of ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: [] });
+        weeks.get(key).days.push(d);
+      }
+      return el('div', { class: 'days', role: 'group', 'aria-label': 'Open days' }, ...[...weeks.values()].map((w) => el('div', { class: 'week' },
+        el('h3', {}, w.label),
+        el('div', { class: 'week-days' }, ...w.days.map((d) => {
+          const date = new Date(d.drop_off);
+          return el('button', {
+            type: 'button', class: 'day', 'aria-pressed': String(picked?.date === d.date),
+            onclick: () => { picked = d; render(); document.getElementById('go')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); },
+          }, date.toLocaleDateString('en-US', { weekday: 'short' }), el('b', {}, date.getDate()), date.toLocaleDateString('en-US', { month: 'short' }));
+        })))));
+    }
+
+    const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+    function render(error) {
+      contactLine();
+      const hi = data.first_name ? `Hi ${data.first_name}!` : 'Hi!';
+      if (data.status === 'expired' || data.status === 'cancelled') {
+        fill(card, el('h1', {}, 'This link isn\'t active anymore'), el('p', {}, 'Call or text us and we\'ll find you a day.'));
+        return;
+      }
+      if (data.status === 'booked') {
+        const paid = new URLSearchParams(location.search).has('paid') && data.deposit_paid;
+        fill(card,
+          el('div', { class: 'done' }, el('div', { class: 'check', 'aria-hidden': 'true' }, '✓'), el('h1', {}, 'You\'re booked!'),
+            data.booked && el('p', {}, `Drop-off: ${data.booked.drop_off}`, el('br'), `Expected pick-up: ${data.booked.pick_up}`),
+            paid && el('p', {}, 'Your deposit is paid. Thank you!')),
+          summary(),
+          error && el('p', { class: 'book-error', role: 'alert' }, error),
+          data.pay_online && el('button', { type: 'button', class: 'primary go', onclick: pay }, `Pay your ${money(data.deposit_cents)} deposit by card`),
+          el('p', { class: 'muted' }, 'We sent your confirmation by text or email. Need to change the day? Just call or text us.'));
+        return;
+      }
+      fill(card,
+        el('h1', {}, `${hi} Pick your drop-off day`),
+        el('p', { class: 'muted' }, `Drop-off is at opening time. We'll have your ${data.vehicle} for about ${data.work_label}.`),
+        summary(),
+        data.days.length ? dayPicker() : el('p', {}, 'We\'re fully booked for the next few weeks. Call or text us and we\'ll fit you in.'),
+        picked && el('div', { class: 'choice' }, `Drop-off ${when(picked.drop_off)}`, el('br'), `Expected pick-up ${when(picked.pick_up)}`),
+        error && el('p', { class: 'book-error', role: 'alert' }, error),
+        picked && el('button', { type: 'button', id: 'go', class: 'primary go', onclick: book },
+          data.pay_online ? `Book it and pay the ${money(data.deposit_cents)} deposit` : 'Book this day'));
+    }
+
+    async function book(e) {
+      e.target.disabled = true;
+      e.target.textContent = 'Booking…';
+      try {
+        const result = await call('POST', `/api/public/booking/${token}`, { date: picked.date });
+        if (result.redirect) { location.href = result.redirect; return; }
+        await load();
+      } catch (err) {
+        await load().catch(() => {});
+        render(err.message);
+      }
+    }
+
+    async function pay(e) {
+      e.target.disabled = true;
+      try {
+        location.href = (await call('POST', `/api/public/booking/${token}/pay`)).redirect;
+      } catch (err) { render(err.message); }
+    }
+
+    async function load() {
+      const paid = new URLSearchParams(location.search).get('paid');
+      data = await call('GET', `/api/public/booking/${token}${paid ? `?paid=${encodeURIComponent(paid)}` : ''}`);
+      if (picked && !data.days.some((d) => d.date === picked.date)) picked = null;
+      render();
+    }
+
+    load().catch((err) => fill(card, el('h1', {}, 'This link doesn\'t work'), el('p', {}, err.message)));
+  </script>
+</body>
+</html>

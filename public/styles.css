@@ -893,3 +893,11 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
 .my-alerts { margin-bottom: 14px; }
 .alert-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .my-alerts .inline-form { margin-top: 6px; }
+
+/* Online booking links (lead drawer) */
+.book-links:not(:empty) { margin-bottom: 10px; }
+.book-link-maker summary { cursor: pointer; color: var(--link); font-weight: 600; padding: 4px 0; }
+.book-link-maker[open] summary { margin-bottom: 6px; }
+.book-link-maker form { display: grid; gap: 10px; }
+.book-link-maker .info-grid label { margin: 0; }
+.send-by { display: flex; flex-wrap: wrap; gap: 4px 16px; }

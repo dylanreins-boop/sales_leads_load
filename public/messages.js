@@ -243,3 +243,75 @@ function initAlerts() {
   $('#alertsTest').addEventListener('click', testAlert);
   $('#alertPhoneForm').addEventListener('submit', saveAlertPhone);
 }
+
+// ---------- online booking links (lead drawer) ----------
+const linkUrl = (l) => `${location.origin}/book/${l.token}`;
+function linkStatus(l) {
+  if (l.cancelled_at) return ['Turned off', 'muted'];
+  if (l.job_id) return [`Booked online ${fmtDateTime(l.booked_at)}${l.deposit_paid_at ? ' · deposit paid by card' : ''}`, 'ok'];
+  if (new Date(l.expires_at) < new Date()) return ['Expired', 'muted'];
+  return [`Waiting for the customer · works until ${new Date(l.expires_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}`, ''];
+}
+
+async function copyLink(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('Link copied. Paste it into a text or message.');
+  } catch {
+    window.prompt('Copy this link:', url);
+  }
+}
+
+function renderBookingLinks(lead) {
+  const links = lead.booking_links || [];
+  $('#bookLinks').replaceChildren(...links.map((l) => {
+    const [text, kind] = linkStatus(l);
+    const open = !l.cancelled_at && !l.job_id && new Date(l.expires_at) >= new Date();
+    return h('li', {},
+      h('div', { class: 'email-line' },
+        h('span', {}, `${money(l.amount_cents)} · ${ShopTime.label(l.work_hours, shopHours())} of work`),
+        h('span', { class: `muted ${kind === 'ok' ? 'status sent' : ''}` }, text),
+        h('span', { class: 'muted' }, `Made ${fmtDateTime(l.created_at)}${l.created_by ? ` by ${l.created_by}` : ''}`)),
+      open && h('div', { class: 'small-btns' },
+        h('button', { type: 'button', onclick: () => copyLink(linkUrl(l)) }, 'Copy link'),
+        h('button', { type: 'button', onclick: () => cancelLink(l.id) }, 'Turn off')));
+  }));
+  $('#bookLinks').hidden = !links.length;
+  const form = $('#bookLinkForm');
+  const quote = lead.quotes?.[0];
+  form.amount.value = quote ? (quote.total_cents / 100).toFixed(2) : '';
+  const hours = ShopTime.defaultHours(lead.pipeline, shopHours());
+  form.work_hours.replaceChildren(...ShopTime.options(shopHours(), hours).map((o) => h('option', { value: o.hours, selected: o.hours === hours }, o.label)));
+  renderServiceChecks($('#bookLinkServices'), lead, lead.booked_services?.length ? lead.booked_services : ['full_decon_coat']);
+  form.querySelector('[value=text]').disabled = !lead.phone || lead.sms_opt_in === 0 || !state.meta.textingConfigured;
+  form.querySelector('[value=email]').disabled = !lead.email;
+  if (form.querySelector('[name=send]:checked')?.disabled) form.querySelector('[value=none]').checked = true;
+}
+
+async function makeBookingLink(e) {
+  e.preventDefault();
+  const f = e.target;
+  const send = f.querySelector('[name=send]:checked').value;
+  const services = checkedServices($('#bookLinkServices'));
+  if (!services.length) return toast('Pick at least one service', 'error');
+  try {
+    const { link, lead, sent } = await api(`/api/leads/${state.openLeadId}/booking-links`, { method: 'POST', body: { amount: f.amount.value, work_hours: Number(f.work_hours.value), services, send } });
+    renderLead(lead);
+    $('#bookLinkMaker').open = false;
+    if (sent) toast(`Booking link sent by ${sent}`);
+    else await copyLink(link.url);
+  } catch (err) { fail(err); }
+}
+
+async function cancelLink(id) {
+  try {
+    await api(`/api/booking-links/${id}/cancel`, { method: 'POST' });
+    toast('Booking link turned off');
+    await openLead(state.openLeadId);
+  } catch (err) { fail(err); }
+}
+
+function initBookingLinks() {
+  if (state.meta.currentRole === 'shop') return;
+  $('#bookLinkForm').addEventListener('submit', makeBookingLink);
+}

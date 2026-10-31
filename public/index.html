@@ -282,6 +282,28 @@
         <ul id="quoteList" class="quote-list"></ul>
       </section>
 
+      <section class="card-section" id="bookLinkSection">
+        <h3>Online booking</h3>
+        <ul id="bookLinks" class="list book-links"></ul>
+        <details id="bookLinkMaker" class="book-link-maker">
+          <summary>Send a booking link</summary>
+          <p class="muted">The customer sees the price, picks an open day (only days with room in the shop show) and can pay the deposit. It books the job for you.</p>
+          <form id="bookLinkForm" novalidate>
+            <div class="info-grid">
+              <label>Price <input name="amount" inputmode="decimal" placeholder="From the quote" autocomplete="off"></label>
+              <label>Work time <select name="work_hours"></select></label>
+            </div>
+            <fieldset class="services"><legend>Services</legend><div id="bookLinkServices" class="checks"></div></fieldset>
+            <div class="send-by" role="radiogroup" aria-label="Send it by">
+              <label class="check"><input type="radio" name="send" value="text" checked> Text it</label>
+              <label class="check"><input type="radio" name="send" value="email"> Email it</label>
+              <label class="check"><input type="radio" name="send" value="none"> Just copy the link</label>
+            </div>
+            <button type="submit" class="primary">Make booking link</button>
+          </form>
+        </details>
+      </section>
+
       <section class="card-section" id="leadJobSection" hidden>
         <h3>Shop job</h3>
         <div id="leadJob"></div>

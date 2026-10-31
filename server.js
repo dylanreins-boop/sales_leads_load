@@ -23,6 +23,8 @@ const { createTexter } = require('./src/sms');
 const { createMessageService } = require('./src/messages');
 const { createPush } = require('./src/push');
 const { createAlertService } = require('./src/alerts');
+const { createStripe } = require('./src/stripe');
+const { createBookingService } = require('./src/bookings');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -179,6 +181,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     leads, jobs, texter, mailer, brand: config.brand,
     onReply: (lead, text) => alerts.replied(lead, text, { baseUrl: config.publicUrl }).catch((err) => console.error('Reply alert failed:', err.message)),
   });
+  const stripe = createStripe(config.stripe, fetchImpl);
+  const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand: config.brand });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
     .catch((err) => ({ sent: [], problems: [err.message] }));
@@ -237,6 +241,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     recoatMonths: config.recoatMonths,
     shopHours: jobs.getShopHours(),
     textingConfigured: texter.configured,
+    paymentsConfigured: stripe.configured,
     depositMethods: DEPOSIT_METHODS,
     commissionOwedWhen: OWED_WHEN,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
@@ -467,6 +472,55 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     res.end('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   }, { isPublic: true });
 
+  // ---- Online booking links ----
+  // The rep makes a link (price, work time, services) and sends it by text or email, or copies it.
+  route('POST', '/api/leads/:id/booking-links', async ({ req, params, body, actor }) => {
+    const id = Number(params.id);
+    const link = bookings.create(id, body, actor);
+    const url = `${baseUrl(req)}/book/${link.token}`;
+    const lead = leads.getLead(id);
+    const money = (c) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    let sent = null;
+    if (body.send === 'text') {
+      await messages.sendText(id, messages.render(
+        'Hi {{first_name}}, {{rep}} from {{company}}. Your {{vehicle}} comes to {{price}}. Pick your drop-off day here: {{booking_link}}',
+        lead, { rep: actor.user, extra: { booking_link: url, price: money(link.amount_cents) } },
+      ), { ...actor, trigger: 'booking_link' });
+      sent = 'text';
+    } else if (body.send === 'email') {
+      if (!lead.email) throw new HttpError(400, 'This lead has no email address. Copy the link or text it instead.');
+      if (!mailer.configured) throw new HttpError(400, 'Email sending isn\'t set up yet. Copy the link or text it instead.');
+      const message = {
+        to: lead.email,
+        subject: `Book your appointment with ${config.brand.name}`,
+        text: messages.render(`Hi {{first_name}},\n\nThanks for your interest in ceramic coating for your {{vehicle}}. The price is {{price}}{{deposit_line}}.\n\nPick the day that works for you here:\n{{booking_link}}\n\nQuestions? Reply to this email or call {{company_phone}}.\n\n{{rep}}\n{{company}}`,
+          lead, { rep: actor.user, extra: { booking_link: url, price: money(link.amount_cents), deposit_line: link.deposit_cents ? `, with a ${money(link.deposit_cents)} deposit to hold your spot` : '' } }),
+      };
+      try {
+        await mailer.send(message);
+        leads.recordEmail(id, message, { status: 'sent', trigger: 'booking_link', user: actor.user, label: 'Booking link' });
+      } catch (err) {
+        leads.recordEmail(id, message, { status: 'failed', error: err.message, trigger: 'booking_link', user: actor.user, label: 'Booking link' });
+        throw new HttpError(502, `The email didn't go out: ${err.message}`);
+      }
+      sent = 'email';
+    }
+    return { link: { ...link, url }, sent, lead: leads.getLead(id) };
+  });
+  route('POST', '/api/booking-links/:id/cancel', ({ params, actor }) => bookings.cancel(Number(params.id), actor));
+  // What the customer's booking page shows; ?paid= is Stripe sending them back after paying.
+  route('GET', '/api/public/booking/:token', async ({ params, query }) => {
+    if (query.get('paid')) await bookings.confirmPayment(params.token, query.get('paid')).catch((err) => console.error('Payment check failed:', err.message));
+    return bookings.view(params.token);
+  }, { isPublic: true });
+  route('POST', '/api/public/booking/:token', ({ req, params, body }) => bookings.book(params.token, body, { baseUrl: baseUrl(req) }), { isPublic: true });
+  route('POST', '/api/public/booking/:token/pay', async ({ req, params }) => ({ redirect: await bookings.startPayment(params.token, { baseUrl: baseUrl(req) }) }), { isPublic: true });
+  // Stripe: "checkout.session.completed" marks the deposit paid (signature checked).
+  route('POST', '/webhooks/stripe', ({ raw, req }) => {
+    if (!stripe.verify(raw.toString('utf8'), req.headers['stripe-signature'])) throw new HttpError(400, 'Bad signature');
+    return { received: true, recorded: bookings.paymentWebhook(JSON.parse(raw.toString('utf8'))) };
+  }, { isPublic: true, rawBody: true });
+
   // ---- Phone alerts (new leads, customer replies) ----
   route('GET', '/api/alerts/me', ({ actor }) => ({
     ...alerts.prefs(actor.user || 'admin'),
@@ -603,6 +657,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
             if (users.anyLogins() && authenticate(req)) return send(res, 302, '', { Location: '/' });
             return serveStatic(req, res, '/login.html');
           }
+          // Customers' booking pages are public; the link itself is the key.
+          if (/^\/book\/[\w-]+\/?$/.test(url.pathname)) return serveStatic(req, res, '/book.html');
           const openAsset = url.pathname.startsWith('/icons/') || url.pathname.startsWith('/brand/')
             || ['/styles.css', '/login.html', '/manifest.webmanifest'].includes(url.pathname);
           if (!openAsset && !authenticate(req)) return send(res, 302, '', { Location: '/login' });
