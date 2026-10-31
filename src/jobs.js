@@ -498,4 +498,4 @@ function createJobService(db, { leads, photosDir }) {
   };
 }
 
-module.exports = { createJobService, checklistFor, parseAmount, hideAmount, JOB_STATUSES, PHOTO_PHASES, CLOSED };
+module.exports = { createJobService, checklistFor, parseAmount, hideAmount, imageType, JOB_STATUSES, PHOTO_PHASES, CLOSED };

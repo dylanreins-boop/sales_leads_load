@@ -16,8 +16,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&display=swap">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/appearance.css">
+  <script>
+    // Light or Dark picked under Appearance (otherwise the device's setting).
+    try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch { /* storage unavailable */ }
+  </script>
 </head>
-<body>
+<body class="app-page">
   <header class="topbar">
     <div class="brand">
       <picture>
@@ -34,6 +39,7 @@
       <button type="button" data-section="revenue" class="admin-only">Revenue</button>
     </nav>
     <span id="currentUser" class="muted" hidden></span>
+    <button type="button" id="appearanceBtn" class="link-btn">Appearance</button>
     <button type="button" id="signOutBtn" class="link-btn" hidden>Sign out</button>
     <div class="filters lead-only">
       <input id="search" type="search" placeholder="Search name, phone, email, vehicle" aria-label="Search leads">
@@ -515,6 +521,85 @@
   </aside>
 
   <!-- Follow-up email template -->
+  <!-- Appearance: light/dark for each person; colors, background and logo for everyone (admins) -->
+  <aside id="appearancePanel" class="drawer" aria-label="Appearance" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Appearance</h2>
+        <div class="muted">How the app looks.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <section class="card-section">
+        <h3>For me</h3>
+        <div class="segmented theme-pick" role="radiogroup" aria-label="Light or dark">
+          <button type="button" role="radio" data-theme-choice="light">Light</button>
+          <button type="button" role="radio" data-theme-choice="dark">Dark</button>
+          <button type="button" role="radio" data-theme-choice="">Match my device</button>
+        </div>
+        <p class="hint">Only changes this phone or computer.</p>
+      </section>
+
+      <div class="admin-only">
+        <section class="card-section">
+          <h3>For everyone</h3>
+          <p class="muted">Changes show here right away; Save to use them for everyone (and on the sign-in and booking pages).</p>
+          <div id="themePresets" class="theme-presets" role="group" aria-label="Ready-made looks"></div>
+          <form id="colorForm" class="color-form">
+            <div class="color-row" data-color="accent"><span><b>Buttons and links</b><small>Main color</small></span><input type="color" name="accent"><button type="button" class="link-btn" data-default="accent">Default</button></div>
+            <div class="color-row" data-color="highlight"><span><b>Highlight</b><small>Stripe under the top bar, RV tags</small></span><input type="color" name="highlight"><button type="button" class="link-btn" data-default="highlight">Default</button></div>
+            <div class="color-row" data-color="bar"><span><b>Top bar</b><small>Light look</small></span><input type="color" name="bar"><button type="button" class="link-btn" data-default="bar">Default</button></div>
+            <div class="color-row" data-color="background"><span><b>Page background</b><small>Light look</small></span><input type="color" name="background"><button type="button" class="link-btn" data-default="background">Default</button></div>
+            <div class="appearance-actions">
+              <button type="button" id="colorUndo">Undo changes</button>
+              <button type="submit" class="primary">Save colors</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card-section">
+          <h3>Background picture</h3>
+          <div class="image-setting" data-image="background">
+            <div class="image-thumb wide" data-thumb></div>
+            <div class="image-actions">
+              <label class="upload-btn">Choose a picture<input type="file" accept="image/*" data-upload="background"></label>
+              <button type="button" data-remove="background" hidden>Remove</button>
+            </div>
+          </div>
+          <label class="dim-row">Fade it so the boards stay easy to read
+            <input type="range" id="bgDim" min="0" max="95" step="5"> <output id="bgDimValue"></output>
+          </label>
+        </section>
+
+        <section class="card-section">
+          <h3>Logo</h3>
+          <div class="image-setting" data-image="logo">
+            <div class="image-thumb" data-thumb></div>
+            <div class="image-actions">
+              <span class="muted">On light backgrounds (top bar)</span>
+              <label class="upload-btn">Choose a logo<input type="file" accept="image/png,image/jpeg,image/webp" data-upload="logo"></label>
+              <button type="button" data-remove="logo" hidden>Use the standard logo</button>
+            </div>
+          </div>
+          <div class="image-setting dark" data-image="logo_dark">
+            <div class="image-thumb" data-thumb></div>
+            <div class="image-actions">
+              <span class="muted">On dark backgrounds (dark look, sign-in and booking pages)</span>
+              <label class="upload-btn">Choose a logo<input type="file" accept="image/png,image/jpeg,image/webp" data-upload="logo_dark"></label>
+              <button type="button" data-remove="logo_dark" hidden>Use the standard logo</button>
+            </div>
+          </div>
+          <p class="hint">A PNG with a see-through background looks best.</p>
+        </section>
+
+        <section class="card-section">
+          <button type="button" id="appearanceReset" class="link-btn danger-link">Go back to the standard Bob Moses look</button>
+        </section>
+      </div>
+    </div>
+  </aside>
+
   <!-- Import leads (admins): bring in leads from a spreadsheet -->
   <aside id="importPanel" class="drawer wide" aria-label="Import leads" hidden>
     <div class="drawer-head">
@@ -770,5 +855,6 @@
   <script src="commissions.js"></script>
   <script src="messages.js"></script>
   <script src="import.js"></script>
+  <script src="appearance.js"></script>
 </body>
 </html>

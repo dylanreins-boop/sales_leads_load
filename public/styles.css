@@ -24,8 +24,9 @@
   --shadow: 0 1px 2px rgba(0, 20, 43, 0.06), 0 1px 3px rgba(0, 20, 43, 0.1);
   color-scheme: light;
 }
+/* Dark look: the device's setting, unless someone picked Light or Dark under Appearance. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #07111e;
     --panel: #0f1c2e;
     --text: #e6ecf3;
@@ -45,6 +46,26 @@
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #07111e;
+  --panel: #0f1c2e;
+  --text: #e6ecf3;
+  --muted: #97a3b4;
+  --border: #22324a;
+  --accent: #0f83ff;
+  --accent-text: #00142b;
+  --link: #5aa8ff;
+  --danger: #ef6a60;
+  --warn: #ffad43;
+  --ok: #3fbf87;
+  --bar: #00142b;
+  --bar-text: #f1f4f8;
+  --bar-muted: #97a3b4;
+  --bar-field: #0b2038;
+  --bar-border: #22324a;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -667,8 +688,9 @@ table.com-table { min-width: 760px; }
 .status-picked_up { --st: var(--muted); }
 .status-cancelled { --st: var(--danger); }
 @media (prefers-color-scheme: dark) {
-  .status-in_shop { --st: #ffad43; }
+  :root:not([data-theme="light"]) .status-in_shop { --st: #ffad43; }
 }
+:root[data-theme="dark"] .status-in_shop { --st: #ffad43; }
 
 /* ---------- Calendar ---------- */
 .calendar { overflow: auto; padding: 14px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left)); gap: 12px; }
@@ -975,3 +997,32 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
 .import-preview tr.skipped td .muted { text-decoration: none; display: block; }
 .import-notes { max-width: 260px; white-space: pre-wrap; }
 .import-result { margin: 0 0 12px; padding-left: 20px; }
+
+/* Appearance panel */
+.theme-pick { margin-bottom: 4px; }
+.theme-pick button[aria-checked="true"] { background: var(--accent); color: var(--accent-text); }
+.theme-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.preset { display: grid; gap: 6px; justify-items: center; padding: 8px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); font-size: 12px; font-weight: 600; }
+.preset[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.preset-swatch { display: flex; align-items: flex-end; gap: 3px; width: 100%; height: 40px; padding: 5px; border-radius: 7px; border: 1px solid var(--border); }
+.preset-swatch i { flex: 1; height: 100%; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.08); }
+.preset-swatch i:nth-child(n + 2) { height: 60%; }
+.color-form { display: grid; gap: 8px; }
+.color-row { display: grid; grid-template-columns: 1fr auto 64px; align-items: center; gap: 10px; }
+.color-row span { display: grid; }
+.color-row small { color: var(--muted); font-size: 12px; }
+.color-row input[type="color"] { width: 52px; height: 34px; padding: 2px; margin: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); cursor: pointer; }
+.appearance-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.image-setting { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.image-thumb { flex-shrink: 0; width: 120px; height: 64px; display: grid; place-items: center; border: 1px dashed var(--border); border-radius: 10px; background: #fff; overflow: hidden; font-size: 12px; }
+.image-setting.dark .image-thumb { background: #00142b; }
+.image-thumb.wide { width: 160px; height: 90px; }
+.image-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.image-thumb.wide img { width: 100%; height: 100%; object-fit: cover; }
+.image-actions { display: grid; gap: 6px; justify-items: start; }
+.dim-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
+.dim-row input { grid-column: 1; margin: 0; accent-color: var(--accent); }
+.danger-link { color: var(--danger); }
+/* A background picture shows through the page; panels stay solid so text stays readable. */
+body.has-bg { background-size: cover; background-position: center; background-attachment: fixed; }
+body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: transparent; }

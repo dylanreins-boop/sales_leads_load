@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&display=swap">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/appearance.css">
   <style>
     /* Customer booking page: a navy band with the logo, one card. */
     body.book-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; background: var(--bg); padding: 0 max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); height: auto; }
@@ -47,7 +48,7 @@
   <div class="book-band" aria-hidden="true"></div>
   <main class="book-wrap">
     <div class="book-brand">
-      <img src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="140" height="79">
+      <img class="brand-img" src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="140" height="79">
       <p>Book your appointment</p>
     </div>
     <p class="staff-banner" id="staffBanner" hidden>You're signed in to the app: this is what the customer sees. Booking a day here books it for them.</p>
@@ -183,6 +184,13 @@
     }
 
     load().catch((err) => fill(card, el('h1', {}, 'This link doesn\'t work'), el('p', {}, err.message)));
+  </script>
+  <script>
+    // The logo set under Appearance (the one for dark backgrounds, since these pages have a dark band).
+    fetch('/api/appearance').then((r) => r.json()).then((a) => {
+      const logo = a.logo_dark || a.logo;
+      if (logo) document.querySelectorAll('.brand-img').forEach((img) => { img.src = logo; img.removeAttribute('width'); img.removeAttribute('height'); Object.assign(img.style, { width: 'auto', maxWidth: '220px', maxHeight: '90px' }); });
+    }).catch(() => {});
   </script>
 </body>
 </html>

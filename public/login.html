@@ -12,6 +12,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&display=swap">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/appearance.css">
+  <script>
+    // Light or Dark picked under Appearance (otherwise the device's setting).
+    try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch { /* storage unavailable */ }
+  </script>
   <style>
     /* Sign-in: a navy band with the logo, one card with the form. */
     body.login-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; background: var(--bg); padding: 0 max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
@@ -38,7 +43,7 @@
   <div class="login-band" aria-hidden="true"></div>
   <main class="login-wrap">
     <div class="login-brand">
-      <img src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="150" height="85">
+      <img class="brand-img" src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="150" height="85">
       <p>Las Vegas · Lead Pipeline</p>
     </div>
     <form class="login-card" id="loginForm" novalidate>
@@ -96,6 +101,13 @@
       btn.textContent = 'Sign in';
       pass.select();
     });
+  </script>
+  <script>
+    // The logo set under Appearance (the one for dark backgrounds, since these pages have a dark band).
+    fetch('/api/appearance').then((r) => r.json()).then((a) => {
+      const logo = a.logo_dark || a.logo;
+      if (logo) document.querySelectorAll('.brand-img').forEach((img) => { img.src = logo; img.removeAttribute('width'); img.removeAttribute('height'); Object.assign(img.style, { width: 'auto', maxWidth: '220px', maxHeight: '90px' }); });
+    }).catch(() => {});
   </script>
 </body>
 </html>

@@ -27,6 +27,7 @@ const { createStripe } = require('./src/stripe');
 const { createBookingService } = require('./src/bookings');
 const { createDaySheetMailer } = require('./src/daysheet');
 const { createImportService } = require('./src/import');
+const { createAppearanceService } = require('./src/appearance');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -159,10 +160,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   });
   const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
   const mailer = createMailer(config.email, fetchImpl);
-  const jobs = createJobService(db, {
-    leads,
-    photosDir: photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos'),
-  });
+  const filesDir = photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos');
+  const jobs = createJobService(db, { leads, photosDir: filesDir });
+  const appearance = createAppearanceService(db, { photosDir: filesDir });
   const users = createUserService(db, { serverUsers: config.users });
   const quotes = createQuoteService(db, { leads, brand: config.brand });
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
@@ -577,6 +577,25 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="lead-import-template.csv"' });
     res.end(importer.template());
   }, { roles: ADMIN });
+
+  // ---- Appearance: colors, background image and logo (admins set them for everyone) ----
+  route('GET', '/appearance.css', ({ res }) => {
+    res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(appearance.css());
+  }, { isPublic: true });
+  // Public: the sign-in and booking pages use the logo and colors too.
+  route('GET', '/api/appearance', () => appearance.view(), { isPublic: true });
+  route('GET', '/api/appearance/files/:file', ({ params, res }) => {
+    const file = appearance.imagePath(params.file);
+    const data = fs.readFileSync(file.path);
+    res.writeHead(200, { 'Content-Type': file.mime, 'Content-Length': data.length, 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+    res.end(data);
+  }, { isPublic: true });
+  route('PUT', '/api/appearance', ({ body }) => appearance.save(body), { roles: ADMIN });
+  route('POST', '/api/appearance/reset', () => appearance.reset(), { roles: ADMIN });
+  route('POST', '/api/appearance/preview', ({ body }) => appearance.preview(body), { roles: ADMIN });
+  route('POST', '/api/appearance/:kind', ({ params, raw }) => appearance.setImage(params.kind, raw), { roles: ADMIN, rawBody: true, bodyLimit: 8_000_000 });
+  route('DELETE', '/api/appearance/:kind', ({ params }) => appearance.removeImage(params.kind), { roles: ADMIN });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });

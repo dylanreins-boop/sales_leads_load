@@ -413,6 +413,19 @@ Old & Dead Leads, old booked customers to Past Customers), all on the board, or 
 app and repeats in the file are skipped, columns that aren't matched are kept in the lead's notes, imports
 don't set off new-lead alerts, and every import can be **undone**. There's a sample file to start from.
 
+## Appearance
+
+**Appearance** (top bar, everyone) has **Light / Dark / Match my device** for that phone or computer.
+Admins also get settings for everyone:
+
+- **Colors:** buttons and links, highlight, top bar and page background, or one of the ready-made looks
+  (Bob Moses, Midnight, Carbon, Clean white, Desert, Forest). Changes show right away; **Save colors** uses
+  them for everyone, including the sign-in and booking pages.
+- **Background picture** behind the boards and calendar, with a fade slider so cards stay easy to read.
+- **Logo:** your own logo for light backgrounds, and one for dark backgrounds (dark look, a dark top bar,
+  the sign-in and booking pages).
+- **Go back to the standard Bob Moses look** undoes it all.
+
 ## Using it on a phone
 
 The app is a Progressive Web App, so the same site works in a browser and as a home-screen app.
@@ -567,6 +580,7 @@ src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xl
 public/shop-time.js  work time and hours per day (shared by the server and the browser)
 public/messages.js   texts, alerts, booking links and the Texts & reminders panel
 public/import.js     the Import leads panel
+public/appearance.js light/dark and the Appearance panel; src/appearance.js its settings and CSS
 public/book.html     the customer's online booking page
 scripts/backup-offsite.js  nightly copy of the database and photos to a cloud bucket
 public/              dashboard (HTML/CSS/JS), app manifest, service worker, icons
