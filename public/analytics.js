@@ -162,7 +162,7 @@ function timeChart(host, { rows, unit, series, type, dollars }) {
     for (const x of series) {
       const pts = rows.map((r, i) => `${cx(i)},${y(x.value(r))}`).join(' ');
       svg.append(s('polyline', { points: pts, fill: 'none', stroke: x.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
-      if (slot >= 16) rows.forEach((r, i) => svg.append(s('circle', { cx: cx(i), cy: y(x.value(r)), r: 4, fill: x.color, stroke: 'var(--panel)', 'stroke-width': 2 })));
+      if (slot >= 16) rows.forEach((r, i) => svg.append(s('circle', { cx: cx(i), cy: y(x.value(r)), r: 4, fill: x.color, style: 'stroke: var(--panel)', 'stroke-width': 2 })));
     }
   } else {
     const bw = Math.min(24, Math.max(2, (slot - 6) / series.length - 2));
@@ -227,16 +227,37 @@ function drawCharts() {
   document.querySelectorAll('#anBody .an-chart-host').forEach((host) => host.__draw(host));
 }
 
+// ---------- colors from the person's look ----------
+// The look's colors come as CSS (some mixed); turn one into plain rgb so SVG and the contrast check can use it.
+const vizCanvas = document.createElement('canvas');
+function vizColor(name) {
+  const probe = h('span', { style: `color: var(${name})`, hidden: true });
+  $('#analyticsSection').append(probe);
+  const css = getComputedStyle(probe).color;
+  probe.remove();
+  const ctx = vizCanvas.getContext('2d', { willReadFrequently: true });
+  vizCanvas.width = 1; vizCanvas.height = 1;
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.fillStyle = '#000';
+  ctx.fillStyle = css;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  return `rgb(${r}, ${g}, ${b})`;
+}
+function luminance(rgb) {
+  const [r, g, b] = rgb.match(/\d+/g).map(Number).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 // ---------- the page ----------
 function renderAnalytics(d) {
   const k = d.kpis;
   const p = d.prev;
   const noSpend = k.ad_spend_cents == null;
   const totalBooked = d.trend.rows.reduce((n, r) => n + r.booked, 0);
-  const css = getComputedStyle($('#analyticsSection'));
-  const c1 = css.getPropertyValue('--viz-1').trim();
-  const c2 = css.getPropertyValue('--viz-2').trim();
-  const ramp = ['--viz-r1', '--viz-r2', '--viz-r3', '--viz-r4'].map((v) => css.getPropertyValue(v).trim());
+  const c1 = vizColor('--viz-1');
+  const c2 = vizColor('--viz-2');
+  const ramp = ['--viz-r1', '--viz-r2', '--viz-r3', '--viz-r4'].map(vizColor);
 
   // Headline numbers.
   const kpis = h('div', { class: 'an-kpis' },
@@ -273,14 +294,10 @@ function renderAnalytics(d) {
   // The new leads, followed through.
   const sp = d.speed;
   const spTotal = sp.buckets.reduce((n, b) => n + b.n, 0);
-  const segColors = [...ramp, 'color-mix(in srgb, var(--muted) 45%, var(--panel))'];
+  const segColors = [...ramp, vizColor('--viz-none')];
   const isDark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
-  // Text inside a block: near-black on the light blues, white on the deep ones.
-  const inkFor = (i) => {
-    if (i === 4) return 'dark-ink';
-    if (isDark) return i <= 1 ? 'dark-ink' : 'light-ink';
-    return i >= 3 ? 'dark-ink' : 'light-ink';
-  };
+  // Text inside a block: near-black on light colors, white on deep ones.
+  const inkFor = (i) => (luminance(segColors[i]) > 0.38 ? 'dark-ink' : 'light-ink');
   const speedBar = spTotal ? h('div', { class: 'an-seg', role: 'img', 'aria-label': sp.buckets.map((b) => `${b.label}: ${b.n}`).join(', ') },
     ...sp.buckets.map((b, i) => (b.n ? h('div', { class: inkFor(i), style: `flex:${b.n} 1 0; background:${segColors[i]}`, title: `${b.label}: ${b.n} (${anPct(b.n / spTotal)})` }, (b.n / spTotal) >= 0.08 ? anPct(b.n / spTotal) : '') : null)))
     : h('p', { class: 'an-empty' }, 'No new leads in this period.');
@@ -487,7 +504,13 @@ function initAnalytics() {
     clearTimeout(an.resizeTimer);
     an.resizeTimer = setTimeout(() => { if (!$('#analyticsSection').hidden && an.data) drawCharts(); }, 150);
   });
-  // A theme change repaints the charts in the new colors.
-  new MutationObserver(() => { if (!$('#analyticsSection').hidden && an.data) renderAnalytics(an.data); })
-    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  // Light/dark, the device's setting, or a new look repaints the charts in the new colors.
+  let repaintTimer;
+  const repaint = () => {
+    clearTimeout(repaintTimer);
+    repaintTimer = setTimeout(() => { if (!$('#analyticsSection').hidden && an.data) renderAnalytics(an.data); }, 50);
+  };
+  new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style', 'class'] });
+  new MutationObserver(repaint).observe(document.head, { childList: true, subtree: true, characterData: true });
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', repaint);
 }

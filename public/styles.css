@@ -1075,17 +1075,19 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 /* ---------- Analytics (admins) ---------- */
 .analytics { overflow: auto; padding: 14px max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); gap: 14px; }
 .analytics > * { flex-shrink: 0; }
-/* Chart colors: two series hues and a one-hue ramp, checked for color blindness on the light and dark cards. */
+/* Chart colors follow each person's look: the first series is their link color (already set to read
+   well on their cards in light and dark), the second their highlight color nudged toward the text color
+   for contrast, and the ramp steps the first color down toward the card color. */
 .analytics {
-  --viz-1: #2a78d6; --viz-2: #eb6834;
-  --viz-r1: #1c5cab; --viz-r2: #2a78d6; --viz-r3: #5598e7; --viz-r4: #86b6ef;
+  --viz-1: var(--link);
+  --viz-2: color-mix(in srgb, var(--highlight) 78%, var(--text));
+  --viz-r1: var(--viz-1);
+  --viz-r2: color-mix(in srgb, var(--viz-1) 72%, var(--panel));
+  --viz-r3: color-mix(in srgb, var(--viz-1) 50%, var(--panel));
+  --viz-r4: color-mix(in srgb, var(--viz-1) 32%, var(--panel));
   --viz-grid: color-mix(in srgb, var(--border) 70%, transparent); --viz-axis: var(--border);
-  --viz-good: #006300; --viz-bad: #c7392f;
+  --viz-good: var(--ok); --viz-bad: var(--danger);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .analytics { --viz-1: #3987e5; --viz-2: #d95926; --viz-r1: #b7d3f6; --viz-r2: #6da7ec; --viz-r3: #3987e5; --viz-r4: #1c5cab; --viz-good: #0ca30c; --viz-bad: #e66767; }
-}
-:root[data-theme="dark"] .analytics { --viz-1: #3987e5; --viz-2: #d95926; --viz-r1: #b7d3f6; --viz-r2: #6da7ec; --viz-r3: #3987e5; --viz-r4: #1c5cab; --viz-good: #0ca30c; --viz-bad: #e66767; }
 .an-custom { display: inline-flex; gap: 6px; align-items: center; }
 .an-custom input { width: auto; margin: 0; }
 .an-body { display: grid; gap: 22px; transition: opacity 0.15s; }
@@ -1152,3 +1154,4 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
   .an-tile .val { font-size: 22px; }
   .an-heat { grid-template-columns: 30px repeat(24, minmax(0, 1fr)); gap: 1px; }
 }
+.analytics { --viz-none: color-mix(in srgb, var(--muted) 45%, var(--panel)); }
