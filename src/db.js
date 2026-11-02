@@ -224,6 +224,13 @@ CREATE TABLE IF NOT EXISTS job_payments (
 CREATE INDEX IF NOT EXISTS job_payments_job ON job_payments (job_id);
 
 -- Monthly ad spend by lead source (for cost per lead on the source report).
+-- Google Local Services leads already brought in (so a repeat caller isn't logged twice).
+CREATE TABLE IF NOT EXISTS lsa_seen (
+  lsa_id   TEXT PRIMARY KEY,
+  lead_id  INTEGER,
+  seen_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ad_spend (
   month      TEXT NOT NULL,                    -- YYYY-MM
   source     TEXT NOT NULL,

@@ -1200,6 +1200,20 @@ async function addLead(e) {
   } catch (err) { fail(err); }
 }
 
+async function syncGoogle() {
+  const btn = $('#syncGoogle');
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  try {
+    const { fetched, created } = await api('/api/google/sync', { method: 'POST' });
+    toast(`Google: ${created} new of ${fetched} leads checked`);
+    await loadLeads();
+  } catch (err) { fail(err); } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync Google';
+  }
+}
+
 async function syncFacebook() {
   const btn = $('#syncFb');
   btn.disabled = true;
@@ -1237,6 +1251,7 @@ async function init() {
   document.body.dataset.role = state.meta.currentRole;
   if (!shop) state.emailSettings = await api('/api/settings/email');
   $('#syncFb').hidden = !state.meta.facebookConfigured || !isAdmin();
+  $('#syncGoogle').hidden = !state.meta.googleLsaConfigured || !isAdmin();
   applyBrand(state.meta.brand);
   pickPipeline();
   initCalendar();
@@ -1245,6 +1260,7 @@ async function init() {
   $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
   $('#syncFb').addEventListener('click', syncFacebook);
+  $('#syncGoogle').addEventListener('click', syncGoogle);
   fillVehicleTypes($('#addLeadForm').vehicle_type);
   fillHeardAbout($('#addLeadForm').heard_about);
   $('#addLeadBtn').addEventListener('click', () => {

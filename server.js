@@ -7,6 +7,7 @@ const { openDatabase } = require('./src/db');
 const { createLeadService, HttpError } = require('./src/leads');
 const { STAGES, DISPOSITIONS } = require('./src/pipeline');
 const facebook = require('./src/facebook');
+const { createGoogleLsaClient } = require('./src/google-lsa');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
@@ -195,6 +196,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const campaigns = createCampaignService(db, { leads, messages, bookings, mailer, texter, publicUrl: config.publicUrl });
   const referrals = createReferralService(db, { leads, brand: config.brand });
   const adSpend = createAdSpendService(db);
+  const googleLsa = createGoogleLsaClient(config.googleAds, { db, leads, fetchImpl });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -259,6 +261,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     commissionOwedWhen: OWED_WHEN,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
     facebookFormIds: config.facebook.formIds,
+    googleLsaConfigured: googleLsa.configured,
     emailConfigured: mailer.configured,
     emailPlaceholders: PLACEHOLDERS,
     vehicleFields: VEHICLE_FIELDS,
@@ -757,6 +760,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return { fetched, created };
   }, { roles: ADMIN });
 
+  // Google Local Services leads: pulled every 5 minutes, or now from the Sync Google button.
+  route('POST', '/api/google/sync', () => googleLsa.sync(), { roles: ADMIN });
+  route('GET', '/api/google/status', () => ({ configured: googleLsa.configured, ...googleLsa.status() }), { roles: ADMIN });
+
   // Phone install details, named after the company.
   route('GET', '/manifest.webmanifest', ({ res }) => {
     send(res, 200, JSON.stringify({
@@ -843,6 +850,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
     daySheets.sendDue().catch((err) => console.error('Day sheet email failed:', err.message));
     campaigns.sendQuoteFollowups().catch((err) => console.error('Quote follow-ups failed:', err.message));
+    if (googleLsa.configured) googleLsa.sync().catch((err) => console.error('Google Local Services sync failed:', err.message));
   };
   const noticeTimer = setInterval(sendReminders, 5 * 60000);
   noticeTimer.unref();

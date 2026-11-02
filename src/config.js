@@ -116,4 +116,15 @@ module.exports = {
     formIds: list(process.env.FB_FORM_IDS),
     graphVersion: process.env.FB_GRAPH_VERSION || 'v23.0',
   },
+
+  // Google Local Services Ads leads, read through the Google Ads API.
+  googleAds: {
+    developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
+    clientId: process.env.GOOGLE_ADS_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
+    refreshToken: process.env.GOOGLE_ADS_REFRESH_TOKEN || '',
+    customerId: (process.env.GOOGLE_ADS_CUSTOMER_ID || '').replace(/\D/g, ''),
+    loginCustomerId: (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '').replace(/\D/g, ''),
+    apiVersion: process.env.GOOGLE_ADS_API_VERSION || 'v25',
+  },
 };
