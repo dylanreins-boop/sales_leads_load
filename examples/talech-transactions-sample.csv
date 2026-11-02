@@ -1,0 +1,7 @@
+Talech Transactions Report
+
+Transaction ID,Date,Type,Status,Tender,Customer,Card,Amount,Tip
+88213,11/2/2026 9:39 PM,Sale,Approved,Visa,AMANDA ORTIZ,************7781,"$1,705.50",0.00
+88214,11/2/2026 9:39 PM,Sale,Approved,Mastercard,JOHN PEREZ,************1290,45.00,5.00
+88215,11/2/2026 9:39 PM,Sale,Declined,Visa,AMANDA ORTIZ,************7781,"$1,705.50",0.00
+88216,11/2/2026 9:39 PM,Sale,Approved,Cash,,,20.00,0.00
