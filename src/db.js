@@ -296,7 +296,7 @@ function migrate(db) {
   for (const column of ['signoff_name', 'signoff_at', 'signoff_by', 'signoff_file', 'signoff_terms']) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   }
-  for (const column of ['confirm_sent_at', 'reminder_sent_at']) {
+  for (const column of ['confirm_sent_at', 'reminder_sent_at', 'ready_sent_at']) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   }
   if (!has('jobs', 'work_hours')) db.exec('ALTER TABLE jobs ADD COLUMN work_hours REAL');

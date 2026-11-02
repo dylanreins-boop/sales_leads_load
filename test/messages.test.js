@@ -170,3 +170,22 @@ test('admins edit the automatic messages', async () => {
   const got = (await call('GET', '/api/settings/notices')).data;
   assert.equal(got.textingConfigured, true);
 });
+
+test('marking a job Ready for pickup texts the customer once, with the balance due', async () => {
+  const lead = await newLead();
+  const booked = (await call('POST', `/api/leads/${lead.id}/disposition`, {
+    disposition: 'booked', note: 'Booked', services: ['full_decon_coat'], job_start: at('2027-06-01', 8), job_hours: 4, job_amount: '1300', send_confirmation: false,
+    deposit_taken: true, deposit_method: 'Card',
+  })).data;
+  outbox.length = 0;
+  await call('PATCH', `/api/jobs/${booked.job.id}`, { status: 'in_shop' }, SHOP);
+  assert.equal(outbox.length, 0);
+  await call('PATCH', `/api/jobs/${booked.job.id}`, { status: 'ready' }, SHOP);
+  const text = outbox.find((m) => m.kind === 'text');
+  assert.match(text.body, /^Hi Ana, your 2023 Tesla Model 3 is ready for pickup at Bob Moses Ceramic Coating! Balance due at pickup: \$1,170\.00\./);
+  assert.equal(outbox.find((m) => m.kind === 'email').subject, 'Your 2023 Tesla Model 3 is ready for pickup');
+  outbox.length = 0;
+  await call('PATCH', `/api/jobs/${booked.job.id}`, { status: 'in_shop' }, SHOP);
+  await call('PATCH', `/api/jobs/${booked.job.id}`, { status: 'ready' }, SHOP);
+  assert.equal(outbox.length, 0, 'once per job');
+});

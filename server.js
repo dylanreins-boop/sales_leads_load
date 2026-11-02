@@ -342,11 +342,17 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   // The job's price: sales and admins set it; shop logins never see it.
   route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
   route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
-  route('PATCH', '/api/jobs/:id', ({ params, body, actor }) => {
+  route('PATCH', '/api/jobs/:id', async ({ params, body, actor }) => {
     const before = jobs.getJob(Number(params.id));
     const job = commissions.watchOwed(Number(params.id), () => jobs.updateJob(Number(params.id), body, actor), actor);
     if (job.start_at !== before.start_at) messages.jobMoved(job.id);
-    return { ...payments.decorate(commissions.figures(job)), shop_time: jobs.capacityFor(job) };
+    const figures = payments.decorate(commissions.figures(job));
+    // Marked Ready for pickup: tell the customer, with what's still owed (never shown to the shop).
+    if (job.status === 'ready' && before.status !== 'ready') {
+      await messages.sendReady(job.id, { user: actor.user, balanceCents: figures.amount_due_cents })
+        .catch((err) => console.error('Ready-for-pickup message failed:', err.message));
+    }
+    return { ...figures, shop_time: jobs.capacityFor(job) };
   }, { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>

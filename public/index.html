@@ -697,6 +697,14 @@
           <label>Email <textarea name="reminder_email" rows="6"></textarea></label>
         </section>
         <section class="card-section">
+          <h3>Ready for pickup</h3>
+          <label class="check"><input type="checkbox" name="ready_enabled"> Send when the shop marks the job Ready for pickup</label>
+          <label>Text <textarea name="ready_text" rows="3"></textarea></label>
+          <label>Email subject <input name="ready_subject" maxlength="200"></label>
+          <label>Email <textarea name="ready_email" rows="6"></textarea></label>
+          <p class="hint">{{balance_due}} becomes "Balance due at pickup: $X." or "Your balance is paid in full."</p>
+        </section>
+        <section class="card-section">
           <h3>Send by</h3>
           <label class="check"><input type="checkbox" name="by_text"> Text (customers who haven't opted out)</label>
           <label class="check"><input type="checkbox" name="by_email"> Email</label>

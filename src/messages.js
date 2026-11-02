@@ -26,8 +26,20 @@ const DEFAULT_NOTICES = {
   reminder_text: 'Hi {{first_name}}, a reminder from {{company}}: we see your {{vehicle}} tomorrow, {{drop_off}}. {{address}} Need to change it? Reply here or call {{company_phone}}.',
   reminder_subject: 'See you tomorrow: {{drop_off}}',
   reminder_email: 'Hi {{first_name}},\n\nA quick reminder that your {{vehicle}} is booked with {{company}} tomorrow, {{drop_off}}.\n{{address}}\n\nNeed to change it? Reply to this email or call {{company_phone}}.\n\n{{company}}',
+  // When the shop marks the job Ready for pickup.
+  ready_enabled: true,
+  ready_text: 'Hi {{first_name}}, your {{vehicle}} is ready for pickup at {{company}}! {{balance_due}} {{address}} See you soon.',
+  ready_subject: 'Your {{vehicle}} is ready for pickup',
+  ready_email: 'Hi {{first_name}},\n\nGood news: your {{vehicle}} is ready for pickup at {{company}}.\n\n{{balance_due}}\n{{address}}\n\nQuestions? Reply to this email or call {{company_phone}}.\n\n{{company}}',
 };
-const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email'];
+const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'by_text', 'by_email'];
+// Each automatic message: the job column that marks it sent, and how it's logged.
+const KINDS = {
+  confirm: { sentColumn: 'confirm_sent_at', trigger: 'confirmation', email: 'Booking confirmation', name: 'Booking confirmation' },
+  reminder: { sentColumn: 'reminder_sent_at', trigger: 'reminder', email: 'Reminder email', name: 'Day-before reminder' },
+  ready: { sentColumn: 'ready_sent_at', trigger: 'ready', email: 'Ready-for-pickup email', name: 'Ready-for-pickup message' },
+};
 
 const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];
 const START_WORDS = ['start', 'unstop', 'yes'];
@@ -63,7 +75,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
   const getNotices = () => ({ ...DEFAULT_NOTICES, ...readSetting('customer_notices', {}) });
   function saveNotices(input = {}) {
     const next = getNotices();
-    for (const key of ['confirm_enabled', 'reminder_enabled', 'by_text', 'by_email']) if (key in input) next[key] = Boolean(input[key]);
+    for (const key of NOTICE_FLAGS) if (key in input) next[key] = Boolean(input[key]);
     if ('reminder_hour' in input) {
       const hour = Number(input.reminder_hour);
       if (!Number.isInteger(hour) || hour < 6 || hour > 20) throw new HttpError(400, 'Pick a reminder time between 6 AM and 8 PM.');
@@ -93,6 +105,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
       pick_up: upcoming ? when(upcoming.end_at) : '',
       services: upcoming ? serviceLabels(typeof upcoming.services === 'string' ? JSON.parse(upcoming.services || '[]') : upcoming.services || []) : '',
       booking_link: '',
+      balance_due: '',
       ...extra,
     };
   }
@@ -163,22 +176,23 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
 
   // ---- booking confirmation and the day-before reminder ----
   // Sends one of the automatic messages by text and/or email, whichever the lead has and is set up.
-  async function notify(jobId, kind, { user } = {}) {
+  async function notify(jobId, kind, { user, extra = {} } = {}) {
     const settings = getNotices();
     const job = jobs.getJob(jobId);
     const lead = leads.getLead(job.lead_id);
+    const k = KINDS[kind];
     const sent = [];
     const problems = [];
     const canText = settings.by_text && texter.configured && lead.phone && toE164(lead.phone) && lead.sms_opt_in !== 0;
     if (canText) {
       try {
-        await sendText(lead.id, render(settings[`${kind}_text`], lead, { job, rep: user }), { user, trigger: kind === 'confirm' ? 'confirmation' : 'reminder' });
+        await sendText(lead.id, render(settings[`${kind}_text`], lead, { job, rep: user, extra }), { user, trigger: k.trigger });
         sent.push('text');
       } catch (err) { problems.push(err.message); }
     }
     if (settings.by_email && lead.email && mailer.configured) {
-      const message = { to: lead.email, subject: render(settings[`${kind}_subject`], lead, { job, rep: user }), text: render(settings[`${kind}_email`], lead, { job, rep: user }) };
-      const label = kind === 'confirm' ? 'Booking confirmation' : 'Reminder email';
+      const message = { to: lead.email, subject: render(settings[`${kind}_subject`], lead, { job, rep: user, extra }), text: render(settings[`${kind}_email`], lead, { job, rep: user, extra }) };
+      const label = k.email;
       try {
         await mailer.send(message);
         leads.recordEmail(lead.id, message, { status: 'sent', trigger: kind, user, label });
@@ -188,7 +202,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
         problems.push(err.message);
       }
     }
-    stmt(`UPDATE jobs SET ${kind === 'confirm' ? 'confirm_sent_at' : 'reminder_sent_at'} = ? WHERE id = ?`).run(now(), jobId);
+    stmt(`UPDATE jobs SET ${k.sentColumn} = ? WHERE id = ?`).run(now(), jobId);
     if (!sent.length && !problems.length) {
       const why = !texter.configured && !mailer.configured ? 'texting and email aren\'t connected yet'
         : !lead.phone && !lead.email ? 'no phone or email on file'
@@ -196,9 +210,18 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
             : !texter.configured ? 'no email on file (texting isn\'t connected yet)'
               : !mailer.configured ? 'no mobile number on file (email isn\'t connected yet)'
                 : 'no way to reach the customer';
-      leads.logActivity(lead.id, 'notice', { note: `${kind === 'confirm' ? 'Booking confirmation' : 'Day-before reminder'} not sent: ${why}`, user });
+      leads.logActivity(lead.id, 'notice', { note: `${k.name} not sent: ${why}`, user });
     }
     return { sent, problems };
+  }
+
+  // When the shop marks a job Ready for pickup: once per job, with what's still owed.
+  async function sendReady(jobId, { user, balanceCents } = {}) {
+    if (!getNotices().ready_enabled) return { sent: [], problems: [], off: true };
+    if (stmt('SELECT ready_sent_at FROM jobs WHERE id = ?').get(jobId)?.ready_sent_at) return { sent: [], problems: [], already: true };
+    const balance = balanceCents == null ? ''
+      : balanceCents > 0 ? `Balance due at pickup: ${money(balanceCents)}.` : 'Your balance is paid in full.';
+    return notify(jobId, 'ready', { user, extra: { balance_due: balance } });
   }
 
   async function sendConfirmation(jobId, options) {
@@ -236,7 +259,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
 
   return {
     getTemplates, saveTemplates, getNotices, saveNotices, render, valuesFor,
-    sendText, receiveText, sendConfirmation, sendDueReminders, jobMoved,
+    sendText, receiveText, sendConfirmation, sendReady, sendDueReminders, jobMoved,
   };
 }
 

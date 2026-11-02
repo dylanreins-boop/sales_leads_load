@@ -4,7 +4,9 @@
 
 const msg = { templates: [], notices: null };
 const TEXT_PLACEHOLDERS = ['first_name', 'last_name', 'vehicle', 'rep', 'company', 'company_phone', 'address', 'quote_total', 'drop_off', 'pick_up', 'services'];
-const NOTICE_PLACEHOLDERS = ['first_name', 'vehicle', 'company', 'company_phone', 'address', 'drop_off', 'pick_up', 'services'];
+const NOTICE_PLACEHOLDERS = ['first_name', 'vehicle', 'company', 'company_phone', 'address', 'drop_off', 'pick_up', 'services', 'balance_due'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'by_text', 'by_email'];
+const NOTICE_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email'];
 
 // ---------- texts on a lead ----------
 function renderTexts(lead) {
@@ -111,8 +113,8 @@ async function openMessagesPanel() {
   status.hidden = !missing.length;
   status.textContent = `Not connected yet: ${missing.join(' and ')}. You can set up the messages now; they go out once the server has the keys.`;
   const form = $('#noticesForm');
-  for (const key of ['confirm_enabled', 'reminder_enabled', 'by_text', 'by_email']) form[key].checked = n[key];
-  for (const key of ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email']) form[key].value = n[key];
+  for (const key of NOTICE_FLAGS) form[key].checked = n[key];
+  for (const key of NOTICE_FIELDS) form[key].value = n[key];
   form.reminder_hour.replaceChildren(...Array.from({ length: 15 }, (_, i) => i + 6).map((hr) => h('option', { value: hr, selected: hr === n.reminder_hour },
     new Date(2026, 0, 1, hr).toLocaleTimeString([], { hour: 'numeric' }))));
   renderTemplateRows();
@@ -131,8 +133,8 @@ async function saveNotices(e) {
   e.preventDefault();
   const f = e.target;
   const body = { reminder_hour: Number(f.reminder_hour.value) };
-  for (const key of ['confirm_enabled', 'reminder_enabled', 'by_text', 'by_email']) body[key] = f[key].checked;
-  for (const key of ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email']) body[key] = f[key].value;
+  for (const key of NOTICE_FLAGS) body[key] = f[key].checked;
+  for (const key of NOTICE_FIELDS) body[key] = f[key].value;
   try {
     msg.notices = { ...msg.notices, ...await api('/api/settings/notices', { method: 'PUT', body }) };
     toast('Automatic messages saved');
