@@ -355,6 +355,7 @@ function renderLeadJob(lead) {
       h('button', { type: 'button', class: 'primary', onclick: () => openScheduleDialog(lead) }, 'Put on calendar')),
     open && open.status !== 'cancelled' && amountEditor(open, { editable: true, onSaved: () => openLead(lead.id) }),
     open && open.status !== 'cancelled' && depositEditor(open, { onSaved: () => openLead(lead.id) }),
+    open && open.status !== 'cancelled' && paymentsBox(open, { onSaved: () => openLead(lead.id) }),
     open && commissionLine(open)].filter(Boolean));
 }
 

@@ -210,6 +210,19 @@ CREATE TABLE IF NOT EXISTS booking_links (
 );
 CREATE INDEX IF NOT EXISTS booking_links_lead ON booking_links (lead_id);
 
+-- Payments on a job after the deposit (final payment, partial payments, refunds).
+CREATE TABLE IF NOT EXISTS job_payments (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id    INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  kind      TEXT NOT NULL DEFAULT 'payment',   -- payment | refund
+  cents     INTEGER NOT NULL,
+  method    TEXT NOT NULL,
+  note      TEXT,
+  paid_by   TEXT,                              -- who recorded it
+  paid_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_payments_job ON job_payments (job_id);
+
 -- Spreadsheet imports of leads from before the app (each can be undone).
 CREATE TABLE IF NOT EXISTS import_batches (
   id            TEXT PRIMARY KEY,

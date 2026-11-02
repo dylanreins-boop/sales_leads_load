@@ -499,6 +499,7 @@ function renderJob() {
       job.message && h('div', { class: 'message' }, job.message),
       job.services.length > 0 && h('div', { class: 'service-chips' }, ...job.services.map((id) => h('span', { class: 'service-chip' }, serviceLabels([id])))),
       state.meta.currentRole !== 'shop' && amountEditor(job, { editable: isAdmin() }),
+      state.meta.currentRole !== 'shop' && job.status !== 'cancelled' && paymentsBox(job, { onSaved: (j) => { cal.job = { ...cal.job, ...j }; } }),
       state.meta.currentRole !== 'shop' && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
 
     // Notes

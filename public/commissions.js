@@ -253,3 +253,55 @@ function initCommissions() {
   $('#comSettings').addEventListener('submit', saveComSettings);
   if (state.meta.currentRole !== 'shop') api('/api/settings/commission').then((s) => { com.settings = s; }).catch(() => {});
 }
+
+// ---------- payments after the deposit (lead's Shop job box and the job panel) ----------
+// Shows paid so far and the balance due, the payments, and a form to record one.
+function paymentsBox(job, { onSaved } = {}) {
+  const box = h('div', { class: 'payments-box' });
+  const methods = state.meta.depositMethods || [];
+  const show = () => {
+    const rows = job.amount_payments || [];
+    const due = job.amount_due_cents;
+    fill(box,
+      h('div', { class: 'job-amount' },
+        h('span', { class: 'amount-label' }, 'Balance'),
+        due == null ? h('span', { class: 'amount-missing' }, 'Add the job amount first')
+          : due === 0 ? h('span', { class: 'paid-tag' }, 'Paid in full')
+            : h('span', { class: 'amount-value' }, `${money(due)} due`),
+        h('span', { class: 'muted' }, `Paid ${money(job.amount_paid_cents || 0)}${job.deposit_cents ? ' incl. deposit' : ''}`),
+        due !== null && h('button', { type: 'button', class: 'amount-edit', onclick: edit }, due > 0 ? 'Record payment' : 'Refund / payment')),
+      rows.length > 0 && h('ul', { class: 'payment-list' }, ...rows.map((p) => h('li', {},
+        h('span', {}, `${p.kind === 'refund' ? 'Refund ' : ''}${money(p.cents)} · ${p.method}${p.note ? ` · ${p.note}` : ''}`),
+        h('span', { class: 'muted' }, `${shortDate(p.paid_at)}${p.paid_by ? ` · ${p.paid_by}` : ''}`),
+        isAdmin() && h('button', { type: 'button', class: 'icon-btn remove', title: 'Remove (entered by mistake)', 'aria-label': `Remove payment of ${money(p.cents)}`, onclick: () => removePayment(p) }, '×')))));
+  };
+  const save = async (body) => {
+    try {
+      Object.assign(job, await api(`/api/jobs/${job.id}/payments`, { method: 'POST', body }));
+      toast(body.kind === 'refund' ? 'Refund recorded' : job.amount_due_cents === 0 ? 'Payment recorded: paid in full' : `Payment recorded · ${money(job.amount_due_cents)} still due`);
+      show();
+      onSaved?.(job);
+    } catch (err) { fail(err); }
+  };
+  const removePayment = async (p) => {
+    if (!window.confirm(`Remove the ${money(p.cents)} ${p.kind} entered on ${shortDate(p.paid_at)}?`)) return;
+    try {
+      Object.assign(job, await api(`/api/payments/${p.id}`, { method: 'DELETE' }));
+      show();
+      onSaved?.(job);
+    } catch (err) { fail(err); }
+  };
+  const edit = () => {
+    const due = job.amount_due_cents || 0;
+    const amount = h('input', { inputmode: 'decimal', 'aria-label': 'Amount', value: due ? (due / 100).toFixed(2) : '', placeholder: '$' });
+    const method = h('select', { 'aria-label': 'Paid by' }, ...methods.map((m) => h('option', { value: m }, m)));
+    const kind = h('select', { 'aria-label': 'Payment or refund' }, h('option', { value: 'payment' }, 'Payment'), h('option', { value: 'refund' }, 'Refund'));
+    const note = h('input', { 'aria-label': 'Note', placeholder: 'Note (check #, etc.)', maxlength: '200' });
+    fill(box, h('form', { class: 'amount-form payment-form', onsubmit: (e) => { e.preventDefault(); save({ amount: amount.value, method: method.value, kind: kind.value, note: note.value }); } },
+      kind, amount, method, note,
+      h('button', { type: 'submit', class: 'primary' }, 'Save'), h('button', { type: 'button', onclick: show }, 'Cancel')));
+    amount.focus();
+  };
+  show();
+  return box;
+}

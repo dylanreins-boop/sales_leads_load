@@ -28,6 +28,7 @@ const { createBookingService } = require('./src/bookings');
 const { createDaySheetMailer } = require('./src/daysheet');
 const { createImportService } = require('./src/import');
 const { createAppearanceService } = require('./src/appearance');
+const { createPaymentService } = require('./src/payments');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -167,7 +168,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const quotes = createQuoteService(db, { leads, brand: config.brand });
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
   const commissions = createCommissionService(db, { leads, jobs });
-  leads.setJobDecorator((job) => commissions.figures(job));
+  const payments = createPaymentService(db, { leads, jobs });
+  leads.setJobDecorator((job) => payments.decorate(commissions.figures(job)));
   const texter = createTexter(config.sms, fetchImpl);
   const push = createPush(db, {
     subject: config.publicUrl || `mailto:${config.email.from || 'alerts@example.com'}`,
@@ -295,9 +297,13 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return { ...job, shop_time: jobs.capacityFor(job), confirmation };
   });
   route('GET', '/api/jobs/:id', ({ params }) => {
-    const job = jobs.getJob(Number(params.id));
+    const job = payments.decorate(commissions.figures(jobs.getJob(Number(params.id))));
     return { ...job, shop_time: jobs.capacityFor(job) };
   }, { roles: ANY_LOGIN });
+  // Payments after the deposit (sales and admins; the shop never sees money).
+  route('POST', '/api/jobs/:id/payments', ({ params, body, actor }) => payments.add(Number(params.id), body, actor));
+  route('DELETE', '/api/payments/:id', ({ params, actor }) => payments.remove(Number(params.id), actor), { roles: ADMIN });
+  route('GET', '/api/payments/owed', () => payments.owed(), { roles: ADMIN });
   // The job's price: sales and admins set it; shop logins never see it.
   route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
   route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
@@ -305,7 +311,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     const before = jobs.getJob(Number(params.id));
     const job = commissions.watchOwed(Number(params.id), () => jobs.updateJob(Number(params.id), body, actor), actor);
     if (job.start_at !== before.start_at) messages.jobMoved(job.id);
-    return { ...job, shop_time: jobs.capacityFor(job) };
+    return { ...payments.decorate(commissions.figures(job)), shop_time: jobs.capacityFor(job) };
   }, { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
@@ -328,8 +334,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   }, { roles: ANY_LOGIN });
   // Customer sign-off at drop-off (signature drawn on the tablet or phone).
   route('POST', '/api/jobs/:id/signoff', ({ params, body, actor }) =>
-    jobs.signOff(Number(params.id), body, { ...actor, company: config.brand.name }), { roles: CALENDAR, bodyLimit: 1_000_000 });
-  route('DELETE', '/api/jobs/:id/signoff', ({ params, actor }) => jobs.clearSignOff(Number(params.id), actor), { roles: ADMIN });
+    payments.decorate(commissions.figures(jobs.signOff(Number(params.id), body, { ...actor, company: config.brand.name }))), { roles: CALENDAR, bodyLimit: 1_000_000 });
+  route('DELETE', '/api/jobs/:id/signoff', ({ params, actor }) => payments.decorate(commissions.figures(jobs.clearSignOff(Number(params.id), actor))), { roles: ADMIN });
   route('GET', '/api/jobs/:id/signoff.png', ({ params, res }) => {
     const data = fs.readFileSync(jobs.signOffImage(Number(params.id)));
     res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': data.length, 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' });

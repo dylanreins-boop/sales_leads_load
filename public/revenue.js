@@ -20,7 +20,7 @@ async function loadRevenue() {
   rev.year = year;
   rev.jobs = await api(`/api/revenue?from=${from.toISOString()}&to=${to.toISOString()}`);
   renderRevenue();
-  await loadSources();
+  await Promise.all([loadSources(), loadOwed()]);
 }
 
 function countedJobs() {
@@ -197,6 +197,26 @@ function renderSourceTable(table, title, rows, keyOf) {
     h('tfoot', {}, h('tr', {}, h('th', {}, 'Total'), h('th', { class: 'num' }, all.leads), h('th', { class: 'num' }, all.booked),
       h('th', { class: 'num' }, pct(all)), h('th', { class: 'num' }, money(all.revenue, { cents: false })),
       h('th', { class: 'num' }, all.leads ? money(Math.round(all.revenue / all.leads), { cents: false }) : '–'))));
+}
+
+// Balances left on finished jobs: who still owes, with a way to record the payment.
+async function loadOwed() {
+  const jobs = await api('/api/payments/owed');
+  $('#revOwed').hidden = !jobs.length;
+  if (!jobs.length) return;
+  $('#revOwedTotal').textContent = `${money(jobs.reduce((n, j) => n + j.amount_due_cents, 0))} across ${jobs.length} job${jobs.length === 1 ? '' : 's'}`;
+  const name = (j) => j.full_name || [j.first_name, j.last_name].filter(Boolean).join(' ') || j.phone || 'Customer';
+  $('#revOwedTable').replaceChildren(
+    h('thead', {}, h('tr', {}, ...['Customer', 'Vehicle', 'Status', 'Pick-up', 'Job', 'Paid', 'Still owed', ''].map((t) => h('th', {}, t)))),
+    h('tbody', {}, ...jobs.map((j) => h('tr', {},
+      h('td', {}, name(j)),
+      h('td', {}, [j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(' ') || j.vehicle_type || ''),
+      h('td', {}, h('span', { class: `job-status status-${j.status}` }, state.meta.jobStatuses.find((s) => s.id === j.status)?.label || j.status)),
+      h('td', {}, shortDate(j.end_at)),
+      h('td', { class: 'num' }, money(j.amount_cents)),
+      h('td', { class: 'num' }, money(j.amount_paid_cents)),
+      h('td', { class: 'num owed' }, money(j.amount_due_cents)),
+      h('td', {}, h('button', { type: 'button', onclick: () => openLead(j.lead_id) }, 'Open'))))));
 }
 
 function initRevenue() {

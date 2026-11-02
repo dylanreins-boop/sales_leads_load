@@ -1031,3 +1031,13 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .look-scope { display: flex; margin: 0 0 12px; }
 .look-scope button { flex: 1; }
 .look-scope button[aria-selected="true"], .theme-pick button[aria-checked="true"] { background: var(--accent); color: var(--accent-text); }
+
+/* Payments (lead's Shop job box and the job panel) */
+.payments-box { display: grid; gap: 6px; }
+.paid-tag { font-size: 12px; font-weight: 700; color: #fff; background: var(--ok); padding: 1px 8px; border-radius: 999px; }
+.payment-list { list-style: none; margin: 0; padding: 0 0 0 12px; display: grid; gap: 2px; font-size: 13px; }
+.payment-list li { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.payment-form { flex-wrap: wrap; }
+.payment-form input { min-width: 90px; }
+.rev-owed { margin-bottom: 16px; }
+.rev-owed td.owed { color: var(--danger); font-weight: 700; }
