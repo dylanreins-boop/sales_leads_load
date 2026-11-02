@@ -428,11 +428,29 @@ function laborGroup(l) {
       tile('Work done to pick-up', anHours(l.done_to_pickup_hours), { sub: 'average' }))),
     h('div', { style: 'grid-column: 1 / -1' }, card('Hours by person', 'Clock time during the period.', hbars(l.people.map((p) => ({ label: `${p.name} (${p.jobs} job${p.jobs === 1 ? '' : 's'})`, value: p.hours })), { fmt: anHours }))),
     h('div', { style: 'grid-column: 1 / -1' }, card('By vehicle type', 'Finished jobs: real time against the time they were booked for.', vsRows(l.by_vehicle, 'Vehicle'))),
-    h('div', { style: 'grid-column: 1 / -1' }, card('By service', 'Use these averages to set work time when booking.', vsRows(l.by_service, 'Services'))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('By paint color', 'Finished jobs by paint color. Dark paint usually needs more correction and wipe-downs.', vsRows(l.by_color, 'Paint color'))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('By service', null, vsRows(l.by_service, 'Services'))),
+    l.learned && h('div', { style: 'grid-column: 1 / -1' }, learnedCard(l.learned)),
     h('div', { style: 'grid-column: 1 / -1' }, card('Finished jobs', 'Most recent first. Ran long by more than 15% is marked.',
       table([{ label: 'Customer', num: false }, { label: 'Vehicle', num: false }, { label: 'Services', num: false }, { label: 'Who', num: false }, 'Booked', 'Real time', 'Against booked', 'Per work hour', { label: 'Finished', num: false }],
         l.jobs.map((j) => [j.name, j.vehicle || j.vehicle_type, j.services, j.people.join(', '), anHours(j.booked_hours), anHours(j.actual_hours),
           `${j.actual_hours > j.booked_hours * 1.15 ? '⚠ ' : ''}${anVs(j.booked_hours ? j.actual_hours / j.booked_hours : null)}`, anMoney(j.per_hour_cents), anDate(j.finished_at, { month: 'short', day: 'numeric' })])))));
+}
+
+// What new bookings start from: learned from every job finished on the work timer, newest counting most.
+function learnedCard(m) {
+  const factor = (f) => {
+    const pct = Math.round((f - 1) * 100);
+    return Math.abs(pct) < 3 ? 'about the same' : `${Math.abs(pct)}% ${pct > 0 ? 'longer' : 'shorter'}`;
+  };
+  return card('What booking suggestions use now',
+    `When a lead is booked, its work time starts from these, learned from all ${anNum(m.samples)} jobs finished on the work timer so far (newer jobs count more). Each one leans on the standard time until a few jobs back it up. Reps can always change it.`,
+    !m.samples ? h('p', { class: 'an-empty' }, 'Nothing learned yet: bookings use the standard times until jobs are finished on the work timer.')
+      : h('div', { class: 'an-grid' },
+        table([{ label: 'Vehicle', num: false }, 'Jobs', 'Suggested start', 'Standard'], m.types.map((t) => [t.type, t.jobs, anHours(t.hours), anHours(t.standard_hours)])),
+        h('div', { style: 'display:grid; gap:12px' },
+          table([{ label: 'Paint color', num: false }, 'Jobs', 'Effect'], m.colors.map((c) => [c.color, c.jobs, factor(c.factor)])),
+          m.services.length > 0 && table([{ label: 'Extra service', num: false }, 'Jobs', 'Effect'], m.services.map((s) => [s.label, s.jobs, factor(s.factor)])))));
 }
 
 function heatmap(grid) {

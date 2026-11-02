@@ -268,6 +268,17 @@ function createJobService(db, { leads, photosDir }) {
       .map((r) => ({ ...r, booked_services: parseServices(r.booked_services) }));
   }
 
+  // Work time for a new job when none was picked: what the shop has learned (see estimates.js), or
+  // the standard time until the work timer has some history.
+  let estimator = null;
+  const setEstimator = (fn) => { estimator = fn; };
+  function defaultWork(lead, services) {
+    try {
+      if (estimator) return estimator(lead, services);
+    } catch (err) { console.error('Work time estimate failed:', err.message); }
+    return ShopTime.defaultHours(pipelineFor(lead.vehicle_type), getShopHours());
+  }
+
   // Puts a booked lead on the calendar, or moves its open job to the new times.
   function scheduleLead(leadId, { start, end, hours = null }, { user } = {}) {
     const lead = leads.getLead(leadId);
@@ -282,7 +293,7 @@ function createJobService(db, { leads, photosDir }) {
         leads.logActivity(leadId, 'job', { note: `Job moved: drop-off ${when(start)}, pick-up ${when(end)}`, user });
         return getJob(open.id);
       }
-      const work = hours ?? ShopTime.defaultHours(pipelineFor(lead.vehicle_type), getShopHours());
+      const work = hours ?? defaultWork(lead, services);
       const { lastInsertRowid } = stmt(`INSERT INTO jobs (lead_id, start_at, end_at, status, services, work_hours, created_by, created_at, updated_at)
                                         VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?, ?)`)
         .run(leadId, start, end, JSON.stringify(services), work, user ?? null, ts, ts);
@@ -493,6 +504,7 @@ function createJobService(db, { leads, photosDir }) {
   }
 
   return {
+    setEstimator, defaultWork,
     signOff, signOffImage, clearSignOff,
     getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,

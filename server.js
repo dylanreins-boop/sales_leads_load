@@ -10,6 +10,7 @@ const facebook = require('./src/facebook');
 const { createGoogleLsaClient } = require('./src/google-lsa');
 const { createAnalyticsService } = require('./src/analytics');
 const { createWorkTimeService } = require('./src/worktime');
+const { createEstimateService } = require('./src/estimates');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
@@ -200,7 +201,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const adSpend = createAdSpendService(db);
   const googleLsa = createGoogleLsaClient(config.googleAds, { db, leads, fetchImpl });
   const workTime = createWorkTimeService(db, { jobs, leads });
-  const analytics = createAnalyticsService(db, { commissions, payments, jobs, users });
+  const estimates = createEstimateService(db, { getShopHours: jobs.getShopHours });
+  jobs.setEstimator((lead, services) => estimates.suggest({ ...lead, services }).hours);
+  const analytics = createAnalyticsService(db, { commissions, payments, jobs, users, estimates });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -315,6 +318,16 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return { ...job, shop_time: jobs.capacityFor(job), work: workTime.summary(id) };
   };
   route('GET', '/api/jobs/:id', ({ params }) => jobView(Number(params.id)), { roles: ANY_LOGIN });
+  // Suggested work time from the shop's history: for a lead being booked, or a job already on the calendar.
+  route('GET', '/api/estimate', ({ query }) => {
+    const services = (query.get('services') || '').split(',').filter(Boolean);
+    if (query.get('job_id')) {
+      const job = jobs.getJob(Number(query.get('job_id')));
+      return estimates.suggest({ vehicle_type: job.vehicle_type, vehicle_color: job.vehicle_color, services: services.length ? services : job.services });
+    }
+    const lead = leads.getLead(Number(query.get('lead_id')));
+    return estimates.suggest({ ...lead, services: services.length ? services : lead.booked_services });
+  }, { roles: ANY_LOGIN });
   // The shop's work timer: Start work, Pause, Finished (shop and admins); admins correct the record.
   route('POST', '/api/jobs/:id/work/start', ({ params, actor }) => { workTime.start(Number(params.id), actor); return jobView(Number(params.id)); }, { roles: CALENDAR });
   route('POST', '/api/jobs/:id/work/pause', ({ params, actor }) => { workTime.pause(Number(params.id), actor); return jobView(Number(params.id)); }, { roles: CALENDAR });

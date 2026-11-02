@@ -11,6 +11,7 @@ const { pipelineFor, PIPELINES } = require('./vehicle');
 const { DISPOSITIONS } = require('./pipeline');
 const ShopTime = require('../public/shop-time');
 const { serviceLabels, parseServices } = require('./services');
+const { colorFamily } = require('./estimates');
 
 const DAY = 86400000;
 const WORK_TYPES = ['disposition', 'stage_change', 'text', 'note', 'email'];
@@ -42,7 +43,7 @@ const median = (xs) => {
 const sum = (xs, f = (x) => x) => xs.reduce((n, x) => n + (f(x) || 0), 0);
 const rate = (part, whole) => (whole ? part / whole : null);
 
-function createAnalyticsService(db, { commissions, payments, jobs, users }) {
+function createAnalyticsService(db, { commissions, payments, jobs, users, estimates }) {
   const stmt = (sql) => db.prepare(sql);
 
   // Period bounds from the query (ISO instants); the previous period is the same length just before.
@@ -464,7 +465,7 @@ function createAnalyticsService(db, { commissions, payments, jobs, users }) {
     const loggedMs = [...people.values()].reduce((n, p) => n + p.ms, 0);
 
     // Jobs whose work was finished during the period.
-    const names = new Map(stmt('SELECT id, full_name, first_name, last_name, vehicle_year, vehicle_make, vehicle_model FROM leads').all().map((l) => [l.id, l]));
+    const names = new Map(stmt('SELECT id, full_name, first_name, last_name, vehicle_year, vehicle_make, vehicle_model, vehicle_color FROM leads').all().map((l) => [l.id, l]));
     const byJob = new Map();
     for (const s of sessions) byJob.set(s.job_id, [...(byJob.get(s.job_id) || []), s]);
     const finished = allJobs.filter((j) => j.status !== 'cancelled' && inRange(j.work_finished_at) && byJob.has(j.id)).map((j) => {
@@ -477,6 +478,7 @@ function createAnalyticsService(db, { commissions, payments, jobs, users }) {
         name: l.full_name || [l.first_name, l.last_name].filter(Boolean).join(' ') || 'Customer',
         vehicle: [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' '),
         vehicle_type: leadById.get(j.lead_id)?.vehicle_type || 'Not given',
+        color: colorFamily(l.vehicle_color) || 'Not given',
         services: serviceLabels(parseServices(j.services)) || 'Not set',
         people: [...new Set(byJob.get(j.id).map((s) => s.user_name))],
         finished_at: j.work_finished_at,
@@ -528,8 +530,17 @@ function createAnalyticsService(db, { commissions, payments, jobs, users }) {
       people: [...people.values()].map((p) => ({ name: p.name, hours: round(p.ms / H), jobs: p.jobs.size })).sort((a, b) => b.hours - a.hours),
       by_vehicle: group((f) => f.vehicle_type),
       by_service: group((f) => f.services),
+      by_color: group((f) => f.color),
+      learned: learnedNow(),
       jobs: finished.sort((a, b) => (a.finished_at < b.finished_at ? 1 : -1)).slice(0, 50),
     };
+  }
+
+  // What the booking suggestions are using today (all finished jobs, not just this period).
+  function learnedNow() {
+    if (!estimates) return null;
+    const m = estimates.model();
+    return { samples: m.samples, types: m.types, colors: m.colors, services: m.services };
   }
 
   function commissionStats({ liveJobs, allJobs, inRange }) {

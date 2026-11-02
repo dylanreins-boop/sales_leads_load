@@ -417,6 +417,24 @@ The **Work time** section of Analytics shows hours worked by person, real time a
 vehicle type and by service), jobs that ran long, revenue per work hour, how long vehicles wait for work
 to start, and how long finished vehicles wait for pick-up.
 
+### Work time that learns
+
+Jobs finished on the work timer teach the app how long work really takes. When a lead is booked (from
+the lead, the calendar's Schedule button or an online booking link), the work time starts from:
+
+- the **average real time for that vehicle type**,
+- adjusted for the **paint color** (for example, if black cars keep running 15% longer, black bookings get
+  15% more time), and
+- adjusted for **extra services** such as paint correction.
+
+Newer jobs count more than old ones (a job from six months ago counts half), so the times keep adapting
+as the shop speeds up or the work changes. Each number leans on the standard time (4 hours for cars,
+2 days for RVs) until a few jobs back it up, so one odd job can't swing it. The booking form shows the
+suggestion and why ("SUVs here average 5.8 hours · Black paint runs 12% longer"), and the rep can still
+pick a different time; once they do, the suggestion becomes a "Use" button. Paint color comes from the
+lead's Color field, grouped into black, white, silver/gray and so on. Analytics → Work time shows the
+results by paint color and **What booking suggestions use now**.
+
 ## Analytics
 
 Admins get an **Analytics** tab with every number the app keeps, for one date range (last 7 or 30 days,
@@ -664,6 +682,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/analytics?from=&to=&pipeline=` | Everything on the Analytics page |
 | POST | `/api/jobs/:id/work/start` · `/pause` · `/finish` | The shop's work timer |
 | POST / PATCH / DELETE | `/api/jobs/:id/work`, `/api/work/:id` | Admins add, fix or remove work time |
+| GET | `/api/estimate?lead_id=&services=` or `?job_id=` | Suggested work time and why |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
 | GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
 | POST | `/webhooks/twilio/voice` | Incoming calls (forward, then text back if missed) |
@@ -697,6 +716,7 @@ src/referrals.js     customer referral and partner links; public/refer.html thei
 src/adspend.js       monthly ad spend by source
 src/analytics.js     the Analytics report; public/analytics.js its page and charts
 src/worktime.js      the shop's work timer
+src/estimates.js     work time learned from finished jobs (vehicle type, paint color, services)
 src/google-lsa.js    Google Local Services leads (Google Ads API)
 public/growth.js     referral links and the Referrals panel
 src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV

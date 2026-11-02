@@ -286,9 +286,30 @@ function renderBookingLinks(lead) {
   const hours = ShopTime.defaultHours(lead.pipeline, shopHours());
   form.work_hours.replaceChildren(...ShopTime.options(shopHours(), hours).map((o) => h('option', { value: o.hours, selected: o.hours === hours }, o.label)));
   renderServiceChecks($('#bookLinkServices'), lead, lead.booked_services?.length ? lead.booked_services : ['full_decon_coat']);
+  form.dataset.hoursTouched = '';
+  suggestLinkHours(lead);
   form.querySelector('[value=text]').disabled = !lead.phone || lead.sms_opt_in === 0 || !state.meta.textingConfigured;
   form.querySelector('[value=email]').disabled = !lead.email;
   if (form.querySelector('[name=send]:checked')?.disabled) form.querySelector('[value=none]').checked = true;
+}
+
+// The booking link's work time starts from what past jobs like this one took.
+async function suggestLinkHours(lead) {
+  const form = $('#bookLinkForm');
+  const services = [...$('#bookLinkServices').querySelectorAll('input:checked')].map((i) => i.value).join(',');
+  try {
+    const est = await api(`/api/estimate?${new URLSearchParams({ lead_id: lead.id, services })}`);
+    if (!form.dataset.hoursTouched) {
+      form.work_hours.replaceChildren(...ShopTime.options(shopHours(), est.hours).map((o) => h('option', { value: o.hours, selected: o.hours === est.hours }, o.label)));
+    }
+    let note = $('#bookLinkEstimate');
+    if (!note) {
+      note = h('div', { id: 'bookLinkEstimate', class: 'estimate-note' });
+      form.work_hours.closest('label').after(note);
+    }
+    note.classList.toggle('learned', est.learned);
+    fill(note, h('strong', {}, est.learned ? `From past jobs: ${ShopTime.label(est.hours, shopHours())}` : `Standard time: ${ShopTime.label(est.hours, shopHours())}`), h('span', {}, est.reasons.join(' · ')));
+  } catch { /* keep the standard time */ }
 }
 
 async function makeBookingLink(e) {
@@ -317,6 +338,8 @@ async function cancelLink(id) {
 function initBookingLinks() {
   if (state.meta.currentRole === 'shop') return;
   $('#bookLinkForm').addEventListener('submit', makeBookingLink);
+  $('#bookLinkForm').work_hours.addEventListener('change', () => { $('#bookLinkForm').dataset.hoursTouched = '1'; });
+  $('#bookLinkServices').addEventListener('change', () => { if (state.openLead) suggestLinkHours(state.openLead); });
 }
 
 // ---------- quote follow-ups (Texts & reminders panel) ----------

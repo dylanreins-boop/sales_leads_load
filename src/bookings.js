@@ -37,10 +37,10 @@ function createBookingService(db, { leads, jobs, commissions, messages, stripe, 
       ? lead.quotes?.[0]?.total_cents ?? null
       : Math.round(Number(String(amount).replace(/[$,\s]/g, '')) * 100);
     if (!Number.isFinite(cents) || cents <= 0) throw new HttpError(400, 'Enter the price for the job (or save a quote first).');
-    const hours = workHours ? Number(workHours) : ShopTime.defaultHours(pipelineFor(lead.vehicle_type), settings);
-    if (!Number.isFinite(hours) || hours < 0.5 || hours > 400) throw new HttpError(400, 'Pick how long the job takes.');
     const picked = cleanServices(services?.length ? services : lead.booked_services?.length ? lead.booked_services : ['full_decon_coat']);
     if (!picked.length) throw new HttpError(400, 'Pick at least one service.');
+    const hours = workHours ? Number(workHours) : jobs.defaultWork(lead, picked);
+    if (!Number.isFinite(hours) || hours < 0.5 || hours > 400) throw new HttpError(400, 'Pick how long the job takes.');
     const deposit = Math.round((cents * commissions.getSettings().deposit_pct) / 100);
     const token = crypto.randomBytes(18).toString('base64url');
     const ts = now();

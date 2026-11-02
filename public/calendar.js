@@ -143,17 +143,50 @@ function wireShopTime(form, { pipeline = () => 'other', jobId = () => null } = {
     if (Number.isNaN(start.getTime())) return;
     form.job_end.value = toLocalInput(ShopTime.finishAt(start, Number(form.job_hours.value), shopHours()));
   };
-  form.job_hours.addEventListener('change', () => { followWork(); refresh(); });
-  form.job_start.addEventListener('change', () => { followWork(); refresh(); });
-  form.job_end.addEventListener('change', refresh);
-  return function fill(hours, start, end) {
+  // The suggested work time from the shop's history, and why. It fills in the work time unless
+  // someone already picked one by hand; otherwise it offers a button to use it.
+  let touched = false;
+  let estSeq = 0;
+  const estNote = h('div', { class: 'estimate-note', hidden: true, 'aria-live': 'polite' });
+  form.job_hours.closest('label').after(estNote);
+  const setHours = (hours) => {
     form.job_hours.replaceChildren(...ShopTime.options(shopHours(), hours).map((o) => h('option', { value: o.hours }, o.label)));
     form.job_hours.value = String(hours);
+  };
+  async function suggest(query, { auto = true } = {}) {
+    const mine = ++estSeq;
+    let est;
+    try { est = await api(`/api/estimate?${new URLSearchParams(query)}`); } catch { estNote.hidden = true; return; }
+    if (mine !== estSeq) return;
+    if (auto && !touched && Number(form.job_hours.value) !== est.hours) {
+      setHours(est.hours);
+      followWork();
+      refresh();
+    }
+    const label = ShopTime.label(est.hours, shopHours());
+    const using = Number(form.job_hours.value) === est.hours;
+    estNote.hidden = false;
+    estNote.classList.toggle('learned', est.learned);
+    fill(estNote,
+      h('strong', {}, est.learned ? `${using ? 'Suggested from past jobs' : 'Past jobs suggest'}: ${label}` : `Standard time: ${label}`),
+      h('span', {}, est.reasons.join(' · ')),
+      !using && h('button', { type: 'button', class: 'link-btn', onclick: () => { setHours(est.hours); touched = true; followWork(); refresh(); suggest(query, { auto: false }); } }, `Use ${label}`));
+  }
+  form.job_hours.addEventListener('change', () => { touched = true; followWork(); refresh(); });
+  form.job_start.addEventListener('change', () => { followWork(); refresh(); });
+  form.job_end.addEventListener('change', refresh);
+  const fillForm = function fillTimes(hours, start, end) {
+    touched = false;
+    estSeq++;
+    estNote.hidden = true;
+    setHours(hours);
     if (start) form.job_start.value = toLocalInput(new Date(start));
     if (start) form.job_end.value = toLocalInput(end ? new Date(end) : ShopTime.finishAt(start, hours, shopHours()));
     renderShopTime(note, null);
     refresh();
   };
+  fillForm.suggest = suggest;
+  return fillForm;
 }
 
 // Shows the first warning after a booking or a move; the form already showed the details.
@@ -560,7 +593,10 @@ function renderJob() {
   }
   const form = $('#jobScheduleForm');
   if (form) {
-    wireShopTime(form, { pipeline: () => job.pipeline, jobId: () => job.id })(ShopTime.jobHours(job, shopHours()), job.start_at, job.end_at);
+    const fillTimes = wireShopTime(form, { pipeline: () => job.pipeline, jobId: () => job.id });
+    fillTimes(ShopTime.jobHours(job, shopHours()), job.start_at, job.end_at);
+    // Only a hint here: the job's work time already chosen stays until someone changes it.
+    if (job.status === 'scheduled') fillTimes.suggest({ job_id: job.id }, { auto: false });
   } else {
     renderShopTime($('#jobShopTime'), job.shop_time);
   }
@@ -929,6 +965,7 @@ function openScheduleDialog(lead) {
   cal.schedulePipeline = pipelineOf(lead.vehicle_type);
   const { start, end, hours } = defaultSlot(lead.vehicle_type);
   fillScheduleDialog(hours, start, end);
+  fillScheduleDialog.suggest({ lead_id: lead.id });
   $('#scheduleFor').textContent = `${leadName(lead)}${lead.vehicle_type ? ` · ${lead.vehicle_type}` : ''}`;
   $('#scheduleDialog').showModal();
 }

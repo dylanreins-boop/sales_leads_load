@@ -737,8 +737,15 @@ function syncDispoForm(fromDispositionChange = false) {
   if (def?.schedules && scheduleWasHidden && state.openLead) {
     const { start, end, hours } = defaultSlot(state.openLead.vehicle_type);
     state.fillBookingTime(hours, start, end);
+    suggestBookingTime();
   }
   if (!def?.schedules) setScheduleError(false);
+}
+
+// Work time learned from past jobs for this vehicle, its paint color and the services ticked.
+function suggestBookingTime() {
+  if (!state.openLead || $('#scheduleField').hidden) return;
+  state.fillBookingTime.suggest({ lead_id: state.openLead.id, services: checkedServices($('#serviceChecks')).join(',') });
 }
 
 function setScheduleError(show) {
@@ -1312,7 +1319,7 @@ async function init() {
     syncInfoForm();
   });
   $('#infoForm').addEventListener('submit', saveInfo);
-  $('#serviceChecks').addEventListener('change', () => { if (checkedServices($('#serviceChecks')).length) setServicesError(false); });
+  $('#serviceChecks').addEventListener('change', () => { if (checkedServices($('#serviceChecks')).length) setServicesError(false); suggestBookingTime(); });
   $('#noteForm').note.addEventListener('input', (e) => e.target.classList.remove('invalid'));
   $('#dispoForm').note.addEventListener('input', (e) => { if (e.target.value.trim()) setNoteError(false); });
   if (state.meta.currentUser) {
