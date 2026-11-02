@@ -487,6 +487,28 @@ one entered by mistake. **Invoice PDF** (or **Receipt PDF** once it's paid in fu
 the quote's line items, and **Email invoice** sends it to the customer. Revenue has a **Still owed** list of
 finished jobs with money still due. Shop logins never see any amounts.
 
+### Card payments from Talech / Elavon
+
+The shop's card payments run through Talech (Elavon). Talech doesn't offer an open connection for
+outside apps, so the app reads Talech's export instead: in the Talech back office (or Elavon's
+Converge / Merchant Connect) export the transactions or sales report for the days you want as Excel or
+CSV, then on **Revenue → Import card payments** choose the file. The app:
+
+- finds the columns (transaction ID, date, amount, type, status, tender, cardholder, card number, tip;
+  title lines above the columns are fine, and any column can be re-pointed if it guessed wrong);
+- leaves out declines, voids and cash, and treats refunds and negative amounts as refunds;
+- matches each card payment to its job by amount (the balance due, the job price or the deposit), the
+  cardholder's name ("DIAZ/BO" is Bo Diaz) and the date (around drop-off or pick-up), and marks each
+  one **Matched**, **Check this** or **No match**;
+- records the ones you keep as card payments on the job, dated when the card was run, with the last 4
+  digits and the processor's transaction number. A transaction is never recorded twice, so overlapping
+  exports are fine.
+
+Balances, Still owed, receipts and Analytics update right away. A live connection (payments flowing in on
+their own, or a "pay your balance" link) needs Elavon's approval: either Talech partner access through
+Elavon's WorksWith program, or API keys for Elavon's online gateway (Converge or the Elavon Payment
+Gateway). Ask the Elavon rep which one the account has.
+
 ## Ready for pickup
 
 When a job is moved to **Ready**, the customer gets a text and email saying their vehicle is ready, with the
@@ -739,6 +761,7 @@ src/adspend.js       monthly ad spend by source
 src/analytics.js     the Analytics report; public/analytics.js its page and charts
 src/worktime.js      the shop's work timer
 src/estimates.js     work time learned from finished jobs (vehicle type, paint color, services)
+src/cardimport.js    card payments from a Talech / Elavon export, matched to jobs
 src/google-lsa.js    Google Local Services leads (Google Ads API)
 public/growth.js     referral links and the Referrals panel
 src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV

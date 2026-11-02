@@ -388,6 +388,9 @@ function migrate(db) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   }
   if (!has('jobs', 'work_hours')) db.exec('ALTER TABLE jobs ADD COLUMN work_hours REAL');
+  // The card processor's transaction ID on a payment brought in from a Talech / Elavon export.
+  if (!has('job_payments', 'ref')) db.exec('ALTER TABLE job_payments ADD COLUMN ref TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS job_payments_ref ON job_payments (ref) WHERE ref IS NOT NULL');
   // When the shop first started on the job, and when they said the work was done.
   for (const column of ['work_started_at', 'work_finished_at', 'work_finished_by']) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);

@@ -219,6 +219,7 @@
           <button type="button" data-basis="job" aria-pressed="true">By job date</button>
           <button type="button" data-basis="booked" aria-pressed="false">By booking date</button>
         </div>
+        <button type="button" id="cardImportBtn">Import card payments</button>
         <select id="revPipeline" aria-label="Pipeline">
           <option value="">All vehicles</option>
           <option value="rv">RV Pipeline</option>
@@ -740,6 +741,25 @@
   </aside>
 
   <!-- Import leads (admins): bring in leads from a spreadsheet -->
+  <aside id="cardImportPanel" class="drawer wide" aria-label="Import card payments" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Import card payments</h2>
+        <div class="muted">Card payments from Talech / Elavon (or any card processor), matched to the jobs they paid for.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <section class="card-section">
+        <p>In your Talech back office (or Elavon's Converge / Merchant Connect), open the transactions or sales report for the days you want, export it to Excel or CSV, and choose the file here. The app matches each card payment to the job it paid for by amount, customer name and date. Check the matches, then record them. Declines, voids and cash are left out, and a payment already recorded is never added twice, so it's fine to upload overlapping dates.</p>
+        <label class="upload-btn">Choose the export
+          <input type="file" id="cardImportFile" accept=".xlsx,.csv,.tsv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </label>
+      </section>
+      <section id="cardImportResult" class="card-section" hidden></section>
+    </div>
+  </aside>
+
   <aside id="importPanel" class="drawer wide" aria-label="Import leads" hidden>
     <div class="drawer-head">
       <div>

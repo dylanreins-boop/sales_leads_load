@@ -11,6 +11,7 @@ const { createGoogleLsaClient } = require('./src/google-lsa');
 const { createAnalyticsService } = require('./src/analytics');
 const { createWorkTimeService } = require('./src/worktime');
 const { createEstimateService } = require('./src/estimates');
+const { createCardImportService } = require('./src/cardimport');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
@@ -203,6 +204,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const adSpend = createAdSpendService(db);
   const googleLsa = createGoogleLsaClient(config.googleAds, { db, leads, fetchImpl });
   const workTime = createWorkTimeService(db, { jobs, leads });
+  const cardImport = createCardImportService(db, { payments, leads });
   const estimates = createEstimateService(db, { getShopHours: jobs.getShopHours });
   jobs.setEstimator((lead, services) => estimates.suggest({ ...lead, services }).hours);
   const analytics = createAnalyticsService(db, { commissions, payments, jobs, users, estimates });
@@ -660,6 +662,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   });
 
   // ---- Importing leads from a spreadsheet (admins) ----
+  // Card payments from the processor's export (Talech / Elavon): upload, check the matches, record.
+  route('POST', '/api/card-import/upload', ({ raw, query }) => cardImport.load(raw, query.get('name')), { roles: ADMIN, rawBody: true, bodyLimit: 10_000_000 });
+  route('POST', '/api/card-import/check', ({ body }) => cardImport.check(body.token, body.columns), { roles: ADMIN });
+  route('POST', '/api/card-import/commit', ({ body, actor }) => cardImport.commit(body.token, body.columns, body.picks, actor), { roles: ADMIN });
   route('POST', '/api/import/upload', ({ raw, query }) => importer.load(raw, query.get('name')), { roles: ADMIN, rawBody: true, bodyLimit: 10_000_000 });
   route('POST', '/api/import/check', ({ body }) => importer.check(body.token, body.mapping), { roles: ADMIN });
   route('POST', '/api/import/commit', ({ body, actor }) => importer.commit(body.token, body.mapping, body, actor), { roles: ADMIN });

@@ -26,15 +26,16 @@ function createPaymentService(db, { leads, jobs }) {
     };
   }
 
-  function add(jobId, { amount, method, note, kind = 'payment' } = {}, { user } = {}) {
+  function add(jobId, { amount, method, note, kind = 'payment', paid_at: paidAt = null, ref = null } = {}, { user } = {}) {
     const job = decorate(jobs.getJob(jobId));
     if (!['payment', 'refund'].includes(kind)) throw new HttpError(400, 'Pick payment or refund.');
     const cents = amount == null || String(amount).trim() === '' ? job.amount_due_cents : parseAmount(amount);
     if (!cents || cents <= 0) throw new HttpError(400, 'Enter the amount paid.');
     const how = String(method || '').trim();
     if (!DEPOSIT_METHODS.includes(how)) throw new HttpError(400, `Pick how they paid: ${DEPOSIT_METHODS.join(', ')}.`);
-    stmt('INSERT INTO job_payments (job_id, kind, cents, method, note, paid_by, paid_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(jobId, kind, cents, how, String(note || '').trim().slice(0, 200) || null, user ?? null, now());
+    if (ref && stmt('SELECT 1 FROM job_payments WHERE ref = ?').get(ref)) throw new HttpError(400, 'That card payment is already recorded.');
+    stmt('INSERT INTO job_payments (job_id, kind, cents, method, note, paid_by, paid_at, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, kind, cents, how, String(note || '').trim().slice(0, 200) || null, user ?? null, paidAt || now(), ref);
     const after = decorate(jobs.getJob(jobId));
     const balance = after.amount_due_cents != null ? ` · balance ${money(after.amount_due_cents)}` : '';
     leads.logActivity(job.lead_id, 'payment', {

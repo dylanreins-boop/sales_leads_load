@@ -284,6 +284,7 @@ async function loadOwed() {
 }
 
 function initRevenue() {
+  initCardImport();
   $('#spendBtn').addEventListener('click', () => openSpend().catch(fail));
   $('#spendForm').month.addEventListener('change', fillSpend);
   $('#spendForm').addEventListener('submit', saveSpend);
@@ -300,3 +301,94 @@ function initRevenue() {
 }
 
 initRevenue();
+
+// ---------- card payments from Talech / Elavon (admins) ----------
+const cardIn = { data: null };
+const CARD_STATUS = { matched: ['Matched', 'good'], suggested: ['Check this', 'check'], unmatched: ['No match', 'none'], recorded: ['Already recorded', 'done'] };
+
+async function uploadCardExport(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const box = $('#cardImportResult');
+  box.hidden = false;
+  fill(box, h('p', { class: 'muted' }, `Reading ${file.name}…`));
+  try {
+    const res = await fetch(`/api/card-import/upload?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Couldn\'t read that file.');
+    cardIn.data = data;
+    renderCardImport();
+  } catch (err) { fill(box, h('p', { class: 'error-text' }, err.message)); }
+}
+
+async function recheckCardImport() {
+  try {
+    const d = cardIn.data;
+    cardIn.data = { ...d, ...await api('/api/card-import/check', { method: 'POST', body: { token: d.token, columns: d.columns } }) };
+    renderCardImport();
+  } catch (err) { fail(err); }
+}
+
+function renderCardImport() {
+  const d = cardIn.data;
+  const s = d.summary;
+  const when = (iso) => (iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '–');
+  const picker = (r) => {
+    if (r.status === 'recorded') return h('span', { class: 'muted' }, 'Already on a job');
+    const listed = new Set(r.options.map((o) => o.job_id));
+    const rest = r.kind === 'payment' ? d.open.filter((o) => !listed.has(o.job_id)) : [];
+    return h('select', { 'data-ref': r.ref, 'aria-label': `Job for ${money(r.cents)} on ${when(r.at)}` },
+      h('option', { value: '' }, 'Don\'t record'),
+      r.options.length > 0 && h('optgroup', { label: 'Best matches' }, ...r.options.map((o) => h('option', { value: o.job_id, selected: o.job_id === r.job_id }, `${o.label}${o.why.length ? ` (matches ${o.why.join(', ')})` : ''}`))),
+      rest.length > 0 && h('optgroup', { label: 'Other jobs with money due' }, ...rest.map((o) => h('option', { value: o.job_id }, o.label))));
+  };
+  const skipped = Object.entries({ declined: 'declined or voided', not_card: 'cash or other tenders', unreadable: 'rows without an amount' })
+    .filter(([k]) => d.skipped[k]).map(([k, label]) => `${d.skipped[k]} ${label}`).join(', ');
+  fill($('#cardImportResult'),
+    h('div', { class: 'card-import-summary' },
+      h('strong', {}, `${s.total} card payment${s.total === 1 ? '' : 's'} in ${d.file}`),
+      h('span', { class: 'ci-chip good' }, `${s.matched} matched`),
+      s.suggested > 0 && h('span', { class: 'ci-chip check' }, `${s.suggested} to check`),
+      s.unmatched > 0 && h('span', { class: 'ci-chip none' }, `${s.unmatched} no match`),
+      s.recorded > 0 && h('span', { class: 'ci-chip done' }, `${s.recorded} already recorded`)),
+    skipped && h('p', { class: 'muted' }, `Left out: ${skipped}.`),
+    h('details', { class: 'ci-columns' }, h('summary', {}, 'Columns read from the file'),
+      h('div', { class: 'ci-col-grid' }, ...d.fields.map((f) => h('label', {}, f.label,
+        h('select', { onchange: (e) => { if (e.target.value === '') delete d.columns[f.key]; else d.columns[f.key] = Number(e.target.value); recheckCardImport(); } },
+          h('option', { value: '' }, '(none)'),
+          ...d.headers.map((hd, i) => h('option', { value: i, selected: d.columns[f.key] === i }, hd || `Column ${i + 1}`))))))),
+    h('div', { class: 'table-scroll' }, h('table', { class: 'matrix ci-table' },
+      h('thead', {}, h('tr', {}, ...['When', 'Amount', 'Card', 'Cardholder', 'Match', 'Record on job'].map((t, i) => h('th', { class: i === 1 ? 'num' : null }, t)))),
+      h('tbody', {}, ...d.rows.map((r) => h('tr', { class: `ci-${r.status}` },
+        h('td', {}, when(r.at)),
+        h('td', { class: 'num' }, `${r.kind === 'refund' ? '−' : ''}${money(r.cents)}`, r.kind === 'refund' && h('small', { class: 'muted' }, ' refund')),
+        h('td', {}, r.last4 ? `…${r.last4}` : '–'),
+        h('td', {}, r.name || '–'),
+        h('td', {}, h('span', { class: `ci-chip ${CARD_STATUS[r.status][1]}` }, CARD_STATUS[r.status][0])),
+        h('td', { class: 'ci-pick' }, picker(r))))))),
+    h('div', { class: 'ci-actions' },
+      h('button', { type: 'button', class: 'primary', onclick: recordCardImport }, 'Record the payments picked'),
+      h('span', { class: 'muted' }, `Recorded as card payments on each job, dated when the card was run.${d.columns.tip != null && /total|grand/i.test(d.headers[d.columns.amount] || '') ? ' Tips are taken off the totals.' : ''}`)));
+}
+
+async function recordCardImport() {
+  const d = cardIn.data;
+  const picks = [...document.querySelectorAll('#cardImportResult select[data-ref]')].filter((s) => s.value).map((s) => ({ ref: s.dataset.ref, job_id: Number(s.value) }));
+  if (!picks.length) return toast('Pick a job for at least one payment.', 'error');
+  try {
+    const r = await api('/api/card-import/commit', { method: 'POST', body: { token: d.token, columns: d.columns, picks } });
+    toast(`${r.recorded} card payment${r.recorded === 1 ? '' : 's'} recorded (${money(r.cents)})`);
+    cardIn.data = null;
+    fill($('#cardImportResult'), h('p', {}, `Done: ${r.recorded} payment${r.recorded === 1 ? '' : 's'} recorded on their jobs. Balances, Still owed and Analytics are updated.`));
+    loadRevenue().catch(() => {});
+  } catch (err) { fail(err); }
+}
+
+function initCardImport() {
+  $('#cardImportBtn').addEventListener('click', () => {
+    if (!cardIn.data) $('#cardImportResult').hidden = true;
+    showPanel($('#cardImportPanel'));
+  });
+  $('#cardImportFile').addEventListener('change', uploadCardExport);
+}
