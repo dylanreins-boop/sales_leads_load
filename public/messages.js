@@ -318,3 +318,116 @@ function initBookingLinks() {
   if (state.meta.currentRole === 'shop') return;
   $('#bookLinkForm').addEventListener('submit', makeBookingLink);
 }
+
+// ---------- quote follow-ups (Texts & reminders panel) ----------
+async function loadFollowups() {
+  try {
+    const s = await api('/api/settings/followups');
+    const f = $('#followupsForm');
+    f.quote_followup_enabled.checked = s.quote_followup_enabled;
+    for (const key of ['quote_followup_days_1', 'quote_followup_days_2', 'quote_followup_1', 'quote_followup_2', 'quote_followup_subject']) f[key].value = s[key];
+    $('#followupsWarning').hidden = s.publicUrl;
+  } catch (err) { fail(err); }
+}
+
+async function saveFollowups(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('/api/settings/followups', { method: 'PUT', body: {
+      quote_followup_enabled: f.quote_followup_enabled.checked,
+      quote_followup_days_1: Number(f.quote_followup_days_1.value),
+      quote_followup_days_2: Number(f.quote_followup_days_2.value),
+      quote_followup_1: f.quote_followup_1.value,
+      quote_followup_2: f.quote_followup_2.value,
+      quote_followup_subject: f.quote_followup_subject.value,
+    } });
+    toast('Quote follow-ups saved');
+  } catch (err) { fail(err); }
+}
+
+// ---------- win-back campaigns (admins) ----------
+const winback = { timer: null, count: 0 };
+function winbackBody() {
+  const f = $('#winbackForm');
+  return {
+    name: f.name.value,
+    statuses: ['old', 'dead'].filter((k) => f[k].checked),
+    pipeline: f.pipeline.value,
+    months: Number(f.months.value),
+    channel: f.channel.value,
+    text: f.text.value,
+    subject: f.subject.value,
+  };
+}
+
+function previewWinback() {
+  clearTimeout(winback.timer);
+  winback.timer = setTimeout(async () => {
+    const box = $('#winbackPreview');
+    const body = winbackBody();
+    if (!body.statuses.length) {
+      box.textContent = 'Pick old leads, dead leads or both.';
+      $('#winbackSend').disabled = true;
+      return;
+    }
+    try {
+      const r = await api('/api/campaigns/check', { method: 'POST', body });
+      winback.count = r.count;
+      fill(box,
+        h('p', { class: 'winback-count' }, `${r.count} lead${r.count === 1 ? '' : 's'}: ${r.by_text} by text, ${r.by_email} by email${r.unreachable ? ` · ${r.unreachable} can't be reached` : ''}`),
+        !r.texting && h('p', { class: 'hint' }, 'Texting isn\'t connected yet, so only email can go out.'),
+        r.sample && h('div', { class: 'bubble out' }, h('div', { class: 'bubble-body' }, r.sample.text), h('div', { class: 'bubble-meta' }, `What ${r.sample.name} would get`)));
+      $('#winbackSend').disabled = !r.count;
+      $('#winbackSend').textContent = r.count ? `Send to ${r.count} lead${r.count === 1 ? '' : 's'}` : 'Send';
+    } catch (err) { box.textContent = err.message; }
+  }, 250);
+}
+
+async function loadWinbackList() {
+  try {
+    const list = await api('/api/campaigns');
+    $('#winbackList').replaceChildren(...(list.length ? list.map((c) => h('li', {},
+      h('div', { class: 'email-line' },
+        h('span', {}, c.name),
+        h('span', { class: 'muted' }, `${fmtDateTime(c.created_at)}${c.created_by ? ` by ${c.created_by}` : ''} · ${c.status === 'sending' ? `sending (${c.sent} sent, ${c.pending} to go)` : c.status === 'stopped' ? `stopped after ${c.sent}` : `${c.sent} sent`}${c.failed ? ` · ${c.failed} failed` : ''}`),
+        h('span', { class: 'muted' }, `${c.replied} replied · ${c.booked} booked`)),
+      c.status === 'sending' && h('div', { class: 'small-btns' }, h('button', { type: 'button', onclick: () => stopCampaign(c.id) }, 'Stop'))))
+      : [h('li', { class: 'muted' }, 'No campaigns yet')]));
+  } catch (err) { fail(err); }
+}
+
+async function startCampaign(e) {
+  e.preventDefault();
+  const body = winbackBody();
+  if (!body.name.trim()) return toast('Give the campaign a name', 'error');
+  if (!window.confirm(`Send "${body.name}" to ${winback.count} lead${winback.count === 1 ? '' : 's'}? It can be stopped while it's sending.`)) return;
+  try {
+    const c = await api('/api/campaigns', { method: 'POST', body });
+    toast(`"${c.name}" is going out to ${c.pending} leads`);
+    e.target.name.value = '';
+    await loadWinbackList();
+    previewWinback();
+  } catch (err) { fail(err); }
+}
+
+async function stopCampaign(id) {
+  try {
+    await api(`/api/campaigns/${id}/stop`, { method: 'POST' });
+    toast('Campaign stopped');
+    await loadWinbackList();
+  } catch (err) { fail(err); }
+}
+
+function initWinback() {
+  if (!isAdmin()) return;
+  $('#winbackBtn').addEventListener('click', () => {
+    showPanel($('#winbackPanel'));
+    previewWinback();
+    loadWinbackList();
+  });
+  $('#winbackForm').addEventListener('input', previewWinback);
+  $('#winbackForm').addEventListener('submit', startCampaign);
+  $('#followupsForm').addEventListener('submit', saveFollowups);
+  $('#messagesBtn').addEventListener('click', loadFollowups);
+}

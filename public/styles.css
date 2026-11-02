@@ -1044,3 +1044,14 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .tag.call { background: #0f766e; }
 .tag.referral { background: #b45309; }
 .tag.google { background: #1a73e8; }
+
+/* Win-back campaigns */
+.winback-form { display: grid; gap: 10px; margin-bottom: 14px; }
+.winback-form label, .winback-form fieldset { margin: 0; }
+.winback-form fieldset { display: grid; gap: 6px; }
+.winback-preview { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.winback-preview:empty { display: none; }
+.winback-count { margin: 0; font-weight: 700; }
+.winback-preview .bubble { max-width: 100%; }
+.followups-form { display: grid; gap: 8px; }
+.followups-form label { margin: 0; }

@@ -30,6 +30,7 @@ const { createImportService } = require('./src/import');
 const { createAppearanceService } = require('./src/appearance');
 const { createPaymentService } = require('./src/payments');
 const { invoicePdf } = require('./src/invoices');
+const { createCampaignService } = require('./src/campaigns');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -189,6 +190,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const stripe = createStripe(config.stripe, fetchImpl);
   const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand: config.brand });
   const daySheets = createDaySheetMailer(db, { jobs, mailer, brand: config.brand });
+  const campaigns = createCampaignService(db, { leads, messages, bookings, mailer, texter, publicUrl: config.publicUrl });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -671,6 +673,14 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return appearance.view(actor.user);
   }, { roles: ADMIN });
 
+  // ---- Quote follow-ups and win-back campaigns ----
+  route('GET', '/api/settings/followups', () => ({ ...campaigns.getFollowups(), publicUrl: Boolean(config.publicUrl) }));
+  route('PUT', '/api/settings/followups', ({ body }) => campaigns.saveFollowups(body), { roles: ADMIN });
+  route('GET', '/api/campaigns', () => campaigns.list(), { roles: ADMIN });
+  route('POST', '/api/campaigns/check', ({ body }) => campaigns.check(body), { roles: ADMIN });
+  route('POST', '/api/campaigns', ({ body, actor }) => campaigns.start(body, actor), { roles: ADMIN });
+  route('POST', '/api/campaigns/:id/stop', ({ params, actor }) => campaigns.stop(Number(params.id), actor), { roles: ADMIN });
+
   // ---- Calls to the Twilio number (missed-call text-back) ----
   // Twilio's "A call comes in" webhook: ring the shop; if nobody answers, text the caller.
   const twiml = (res, body) => {
@@ -797,13 +807,15 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   sendReviews();
   const reviewTimer = setInterval(sendReviews, 15 * 60000);
   reviewTimer.unref();
-  // New-lead alerts and the "nobody called yet" alert to admins, checked every minute.
-  const alertTimer = setInterval(runAlerts, 60000);
+  // New-lead alerts and the "nobody called yet" alert to admins, and the next win-back messages, every minute.
+  const sendCampaigns = () => campaigns.sendNext().catch((err) => console.error('Campaign sending failed:', err.message));
+  const alertTimer = setInterval(() => { runAlerts(); sendCampaigns(); }, 60000);
   alertTimer.unref();
   // Day-before reminders to customers and the shop's morning day sheet, checked every 5 minutes.
   const sendReminders = () => {
     messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
     daySheets.sendDue().catch((err) => console.error('Day sheet email failed:', err.message));
+    campaigns.sendQuoteFollowups().catch((err) => console.error('Quote follow-ups failed:', err.message));
   };
   const noticeTimer = setInterval(sendReminders, 5 * 60000);
   noticeTimer.unref();

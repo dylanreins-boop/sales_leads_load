@@ -223,6 +223,31 @@ CREATE TABLE IF NOT EXISTS job_payments (
 );
 CREATE INDEX IF NOT EXISTS job_payments_job ON job_payments (job_id);
 
+-- Win-back campaigns to old and dead leads, and each message in them.
+CREATE TABLE IF NOT EXISTS campaigns (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL,
+  audience      TEXT NOT NULL,                 -- JSON: who it went to
+  text_body     TEXT NOT NULL,
+  email_subject TEXT,
+  status        TEXT NOT NULL,                 -- sending | done | stopped
+  created_by    TEXT,
+  created_at    TEXT NOT NULL,
+  stopped_by    TEXT
+);
+CREATE TABLE IF NOT EXISTS campaign_sends (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  campaign_id INTEGER NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,
+  lead_id     INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  channel     TEXT,                            -- text | email
+  status      TEXT NOT NULL,                   -- pending | sending | sent | failed | stopped
+  error       TEXT,
+  created_at  TEXT NOT NULL,
+  sent_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS campaign_sends_status ON campaign_sends (status, campaign_id);
+CREATE INDEX IF NOT EXISTS campaign_sends_lead ON campaign_sends (lead_id);
+
 -- Spreadsheet imports of leads from before the app (each can be undone).
 CREATE TABLE IF NOT EXISTS import_batches (
   id            TEXT PRIMARY KEY,
@@ -285,6 +310,9 @@ function migrate(db) {
     ['commission_rep', 'TEXT'], ['commission_override_cents', 'INTEGER'], ['commission_paid_cents', 'INTEGER'],
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
+  }
+  for (const column of ['followup1_at', 'followup2_at']) {
+    if (!has('quotes', column)) db.exec(`ALTER TABLE quotes ADD COLUMN ${column} TEXT`);
   }
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');

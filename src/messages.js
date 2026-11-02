@@ -125,7 +125,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     return stmt('SELECT * FROM texts WHERE id = ?').get(Number(lastInsertRowid));
   }
 
-  const LABELS = { missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
+  const LABELS = { quote_followup: 'Quote follow-up text', campaign: 'Win-back text', missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
 
   // Sends a text to a lead and logs it. Throws a 400 the rep can read when it can't go out.
   async function sendText(leadId, body, { user, trigger = 'manual' } = {}) {
@@ -162,6 +162,10 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     }
     recordText(lead.id, { direction: 'in', phone: from, body: text, status: 'received', provider_id: id });
     leads.logActivity(lead.id, 'text', { note: `Text from customer: ${text}` });
+    // An old lead (or a past customer) texting back goes back on the board to be worked.
+    if (lead.archived_at && !STOP_WORDS.includes(text.toLowerCase().replace(/[^a-z]/g, ''))) {
+      try { leads.restoreLead(lead.id); } catch { /* already back */ }
+    }
     const word = text.toLowerCase().replace(/[^a-z]/g, '');
     if (STOP_WORDS.includes(word)) {
       stmt('UPDATE leads SET sms_opt_in = 0, updated_at = ? WHERE id = ?').run(now(), lead.id);

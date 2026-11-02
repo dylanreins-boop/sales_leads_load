@@ -483,7 +483,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#winbackPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -1314,6 +1314,7 @@ async function init() {
   initAlerts();
   initBookingLinks();
   initImport();
+  initWinback();
   initAppearance();
   if (shop) return showSection('calendar');
   if (isAdmin()) {

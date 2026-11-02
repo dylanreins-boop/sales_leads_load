@@ -65,6 +65,7 @@
       <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Emails</button>
       <button id="messagesBtn" type="button" class="lead-only admin-only">Texts &amp; reminders</button>
       <button id="importBtn" type="button" class="lead-only admin-only">Import leads</button>
+      <button id="winbackBtn" type="button" class="lead-only admin-only">Win-back</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
@@ -625,6 +626,40 @@
     </div>
   </aside>
 
+  <!-- Win-back campaigns (admins): a message to old and dead leads, sent in an approved batch -->
+  <aside id="winbackPanel" class="drawer" aria-label="Win-back" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Win-back</h2>
+        <div class="muted">Reach out again to leads that went cold. Replies put them back on the board.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <form id="winbackForm" class="winback-form">
+        <label>Campaign name <input name="name" maxlength="60" placeholder="Spring RV special" required></label>
+        <fieldset class="services"><legend>Who it goes to</legend>
+          <label class="check"><input type="checkbox" name="old" checked> Old leads (never booked)</label>
+          <label class="check"><input type="checkbox" name="dead"> Dead leads (marked Waste; never Do Not Call or wrong numbers)</label>
+          <div class="info-grid">
+            <label>Vehicles <select name="pipeline"><option value="">All</option><option value="rv">RV Pipeline</option><option value="other">All Other Vehicles</option></select></label>
+            <label>Came in within <select name="months"><option value="3">3 months</option><option value="6">6 months</option><option value="12" selected>12 months</option><option value="24">2 years</option></select></label>
+          </div>
+          <label>Send by <select name="channel"><option value="both">Text, or email if no mobile number</option><option value="text">Text only</option><option value="email">Email only</option></select></label>
+        </fieldset>
+        <label>Message <textarea name="text" rows="4" maxlength="1000">Hi {{first_name}}, it's {{company}}. We have openings coming up for ceramic coating on your {{vehicle}}. Want a fresh quote? Just reply here or call {{company_phone}}.</textarea></label>
+        <label>Email subject <input name="subject" maxlength="200" value="A note from {{company}}"></label>
+        <p class="hint">Personalize with {{first_name}}, {{vehicle}}, {{company}} and {{company_phone}}. Anyone who got a win-back in the last 30 days or opted out of texts is left out. Messages go out a few at a time, 9 AM to 7 PM, Monday to Saturday.</p>
+        <div id="winbackPreview" class="winback-preview" aria-live="polite"></div>
+        <button type="submit" class="primary" id="winbackSend" disabled>Send</button>
+      </form>
+      <section class="card-section">
+        <h3>Campaigns</h3>
+        <ul id="winbackList" class="list"></ul>
+      </section>
+    </div>
+  </aside>
+
   <!-- Import leads (admins): bring in leads from a spreadsheet -->
   <aside id="importPanel" class="drawer wide" aria-label="Import leads" hidden>
     <div class="drawer-head">
@@ -721,6 +756,24 @@
         <p class="hint">Personalize with: <span class="placeholder-chips" data-for="notices"></span></p>
         <button type="submit" class="primary">Save automatic messages</button>
       </form>
+
+      <section class="card-section">
+        <h3>Quote follow-ups</h3>
+        <p class="muted">A quote that hasn't been booked gets a text (or an email if there's no mobile number) with a booking link, then one more. It stops if the customer replies, books, or the lead goes to Waste. Sent 9 AM to 7 PM, Monday to Saturday.</p>
+        <p id="followupsWarning" class="notice" hidden>Set PUBLIC_URL on the server so the follow-ups can include a booking link.</p>
+        <form id="followupsForm" class="followups-form">
+          <label class="check"><input type="checkbox" name="quote_followup_enabled"> Send quote follow-ups</label>
+          <div class="info-grid">
+            <label>First after <span class="pct-input"><input name="quote_followup_days_1" type="number" min="1" max="60"> days</span></label>
+            <label>Second after <span class="pct-input"><input name="quote_followup_days_2" type="number" min="1" max="60"> days</span></label>
+          </div>
+          <label>First message <textarea name="quote_followup_1" rows="3"></textarea></label>
+          <label>Second message <textarea name="quote_followup_2" rows="3"></textarea></label>
+          <label>Email subject (when there's no mobile number) <input name="quote_followup_subject" maxlength="200"></label>
+          <p class="hint">Personalize with {{first_name}}, {{vehicle}}, {{rep}}, {{company}}, {{quote_total}} and {{booking_link}}.</p>
+          <button type="submit" class="primary">Save follow-ups</button>
+        </form>
+      </section>
 
       <section class="card-section">
         <h3>Saved texts</h3>
