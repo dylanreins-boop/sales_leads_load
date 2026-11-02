@@ -194,6 +194,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     return stmt(`SELECT l.id, l.source, l.full_name, l.first_name, l.last_name, l.email, l.phone, l.stage,
                         l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type, l.booked_services, l.sms_opt_in,
                         l.campaign, l.form_name, l.message, l.heard_about, l.last_disposition, l.last_contacted_at,
+                        l.last_contact_by, l.last_contact_kind, l.last_opened_at, l.last_opened_by,
                         l.received_at, l.updated_at, l.archived_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at,
                         (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS jobs_done,
@@ -202,6 +203,16 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY l.received_at DESC`).all(...params)
       .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row) }));
+  }
+
+  // Someone opened the lead.
+  function markOpened(id, { user } = {}) {
+    stmt('UPDATE leads SET last_opened_at = ?, last_opened_by = ? WHERE id = ?').run(now(), user ?? null, id);
+  }
+
+  // A rep reached out some other way than a logged call (a text they sent).
+  function markContacted(id, { user, kind }) {
+    stmt('UPDATE leads SET last_contacted_at = ?, last_contact_by = ?, last_contact_kind = ? WHERE id = ?').run(now(), user ?? null, kind, id);
   }
 
   function getLead(id) {
@@ -318,9 +329,9 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       if (lead.archived_at && !(lead.stage === 'booked' && toStage === 'booked' && !def.schedules)) {
         bringBack(lead, { stage: lead.stage, note: 'Back on the board: call logged', user });
       }
-      const contactedAt = def.call === false ? lead.last_contacted_at : ts;
-      stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?`)
-        .run(toStage, def.id, contactedAt, ts, id);
+      const call = def.call !== false;
+      stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, last_contact_by = ?, last_contact_kind = ?, updated_at = ? WHERE id = ?`)
+        .run(toStage, def.id, call ? ts : lead.last_contacted_at, call ? user ?? null : lead.last_contact_by, call ? 'call' : lead.last_contact_kind, ts, id);
       if (booked) stmt('UPDATE leads SET booked_services = ? WHERE id = ?').run(JSON.stringify(booked), id);
       const fullNote = booked ? `Services booked: ${serviceLabels(booked)}\n${clean(note)}` : clean(note);
       logActivity(id, 'disposition', {
@@ -528,7 +539,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   return {
-    ingest, listLeads, getLead, updateLead, dispositionLead, addNote,
+    ingest, listLeads, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
     archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,

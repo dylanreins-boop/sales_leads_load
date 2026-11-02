@@ -368,6 +368,10 @@ function migrate(db) {
   }
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
+  // Who last opened the lead and when, and who last reached out (a call logged or a text) and how.
+  for (const column of ['last_opened_at', 'last_opened_by', 'last_contact_by', 'last_contact_kind']) {
+    if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
+  }
   // New-lead alerts: when it's due (alert hours), when it went out, and when admins were told nobody called.
   for (const column of ['alert_due_at', 'alerted_at', 'escalated_at']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);

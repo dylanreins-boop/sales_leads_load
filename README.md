@@ -258,6 +258,13 @@ dropdown.
 
 To change the stages or dispositions, edit `src/pipeline.js`.
 
+## Opened and contacted, on every card
+
+Each lead card shows the exact time the lead was **last opened** and by whom, and when it was **last
+contacted** (a call logged or a text a rep sent), how and by whom: "Opened Today 3:14 PM · Sam",
+"Contacted Yesterday 4:02 PM · call by Sam". Leads nobody has opened or contacted yet say "not yet" in
+orange. Notes and automatic texts (confirmations, follow-ups) don't count as contact.
+
 ## Lead info and vehicle details
 
 Each lead has a **Lead info** section that anyone can edit: first and last name, phone, email, and

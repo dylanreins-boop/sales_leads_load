@@ -141,6 +141,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
       const { id } = await texter.send({ to: lead.phone, body: text });
       const row = recordText(leadId, { direction: 'out', phone: lead.phone, body: text, status: 'sent', trigger, provider_id: id, user });
       leads.logActivity(leadId, 'text', { note: `${label} sent: ${text}`, user });
+      if (trigger === 'manual' && user) leads.markContacted(leadId, { user, kind: 'text' });
       return row;
     } catch (err) {
       recordText(leadId, { direction: 'out', phone: lead.phone, body: text, status: 'failed', error: err.message, trigger, user });

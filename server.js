@@ -458,7 +458,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     res.end(leadsWorkbook(rows, { title: label }));
   }, { roles: ADMIN });
   route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
-  route('GET', '/api/leads/:id', ({ params }) => leads.getLead(Number(params.id)));
+  route('GET', '/api/leads/:id', ({ params, query, actor }) => {
+    // Opening the lead (not a quiet refresh after a save) is recorded for the card's "Opened" line.
+    if (query.get('open') === '1') leads.markOpened(Number(params.id), actor);
+    return leads.getLead(Number(params.id));
+  });
   route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));
   route('POST', '/api/leads/:id/disposition', async ({ params, body, actor }) => {
     const id = Number(params.id);

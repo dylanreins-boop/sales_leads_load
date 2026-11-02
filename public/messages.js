@@ -69,6 +69,7 @@ async function sendLeadText(e) {
     const { lead } = await api(`/api/leads/${state.openLeadId}/texts`, { method: 'POST', body: { body: form.body.value } });
     form.body.value = '';
     renderLead(lead);
+    syncCard(lead);
     toast('Text sent');
   } catch (err) {
     fail(err);

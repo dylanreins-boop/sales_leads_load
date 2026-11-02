@@ -327,7 +327,27 @@ function leadCard(lead) {
   lead.booked_services?.length > 0 && h('div', { class: 'services-line' }, serviceLabels(lead.booked_services)),
   (lead.last_disposition || reminderPill || promisePill(lead)) && h('div', { class: 'row' },
     h('span', { class: 'muted' }, lead.last_disposition ? dispoLabel(lead.last_disposition) : ''),
-    reminderPill || promisePill(lead)));
+    reminderPill || promisePill(lead)),
+  h('div', { class: 'card-times' },
+    h('span', { class: lead.last_opened_at ? null : 'never' },
+      h('b', {}, 'Opened '), lead.last_opened_at ? `${exactTime(lead.last_opened_at)}${lead.last_opened_by ? ` · ${lead.last_opened_by}` : ''}` : 'not yet'),
+    h('span', { class: lead.last_contacted_at ? null : 'never' },
+      h('b', {}, 'Contacted '), lead.last_contacted_at
+        ? `${exactTime(lead.last_contacted_at)}${lead.last_contact_kind ? ` · ${lead.last_contact_kind === 'text' ? 'text' : 'call'}` : ''}${lead.last_contact_by ? ` by ${lead.last_contact_by}` : ''}`
+        : 'not yet')));
+}
+
+// The exact time, with Today / Yesterday for the last two days: "Today 3:14 PM", "Mon, Nov 2, 9:05 AM".
+function exactTime(iso) {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return `Today ${time}`;
+  if (diff === 1) return `Yesterday ${time}`;
+  const date = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
+  return `${date}, ${time}`;
 }
 
 async function moveStage(id, stage) {
@@ -495,11 +515,22 @@ function showPanel(panel) {
 
 async function openLead(id) {
   try {
-    const lead = await api(`/api/leads/${id}`);
+    // Opening it fresh counts as "opened"; reloading the lead already on screen after a save doesn't.
+    const fresh = state.openLeadId !== id || $('#drawer').hidden;
+    const lead = await api(`/api/leads/${id}${fresh ? '?open=1' : ''}`);
     state.openLeadId = id;
     renderLead(lead);
     showPanel($('#drawer'));
+    if (fresh) syncCard(lead);
   } catch (err) { fail(err); }
+}
+
+// Keeps the board's card in step with the lead just opened or contacted.
+function syncCard(lead) {
+  const i = state.leads.findIndex((l) => l.id === lead.id);
+  if (i < 0) return;
+  for (const k of ['last_opened_at', 'last_opened_by', 'last_contacted_at', 'last_contact_by', 'last_contact_kind', 'last_disposition']) state.leads[i][k] = lead[k];
+  renderBoard();
 }
 
 function renderLead(lead) {
