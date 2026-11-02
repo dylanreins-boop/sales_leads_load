@@ -69,3 +69,27 @@ test('admins see ready and picked-up jobs that still owe money', async () => {
   await call('POST', `/api/jobs/${job.id}/payments`, { method: 'Zelle' });
   assert.ok(!(await call('GET', '/api/payments/owed', undefined, ADMIN)).data.some((j) => j.id === job.id), 'paid in full drops off');
 });
+
+test('a job\'s invoice is a real PDF, and a receipt once it is paid in full', async () => {
+  const { job } = await book('1400', { deposit_taken: true, deposit_method: 'Card' });
+  const get = (a = SAM) => fetch(`${base}/api/jobs/${job.id}/invoice.pdf`, { headers: { Authorization: a } });
+  const res = await get();
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/pdf');
+  assert.match(res.headers.get('content-disposition'), /invoice-INV-\d{5}\.pdf/);
+  const pdf = Buffer.from(await res.arrayBuffer()).toString('latin1');
+  assert.ok(pdf.startsWith('%PDF-1.4') && pdf.trimEnd().endsWith('%%EOF'));
+  assert.match(pdf, /\(Balance due\) Tj/);
+  assert.match(pdf, /\(\$1,260\.00\) Tj/, 'job less the 10% deposit');
+  // Every object the cross-reference table points at starts where it says.
+  const xref = Number(pdf.match(/startxref\n(\d+)/)[1]);
+  const offsets = [...pdf.slice(xref).matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
+  offsets.forEach((o, i) => assert.ok(pdf.startsWith(`${i + 1} 0 obj`, o), `object ${i + 1} at ${o}`));
+  assert.equal((await get(SHOP)).status, 403, 'the shop never sees money');
+
+  await call('POST', `/api/jobs/${job.id}/payments`, { method: 'Cash' });
+  const receipt = await get();
+  assert.match(receipt.headers.get('content-disposition'), /receipt-R-\d{5}\.pdf/);
+  assert.match(Buffer.from(await receipt.arrayBuffer()).toString('latin1'), /\(Paid in full\) Tj/);
+  assert.match((await call('POST', `/api/jobs/${job.id}/invoice/email`, {})).data.error, /email address|isn't set up/);
+});

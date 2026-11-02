@@ -29,6 +29,7 @@ const { createDaySheetMailer } = require('./src/daysheet');
 const { createImportService } = require('./src/import');
 const { createAppearanceService } = require('./src/appearance');
 const { createPaymentService } = require('./src/payments');
+const { invoicePdf } = require('./src/invoices');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -304,6 +305,40 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   route('POST', '/api/jobs/:id/payments', ({ params, body, actor }) => payments.add(Number(params.id), body, actor));
   route('DELETE', '/api/payments/:id', ({ params, actor }) => payments.remove(Number(params.id), actor), { roles: ADMIN });
   route('GET', '/api/payments/owed', () => payments.owed(), { roles: ADMIN });
+  // The job's invoice (or receipt, once it's paid in full) as a PDF, to open or email to the customer.
+  const invoiceFor = (id) => {
+    const job = payments.decorate(commissions.figures(jobs.getJob(id)));
+    const lead = leads.getLead(job.lead_id);
+    const a = appearance.company();
+    return { job, lead, ...invoicePdf(job, lead, { brand: config.brand, colors: { bar: a.dark_bar, highlight: a.highlight } }) };
+  };
+  route('GET', '/api/jobs/:id/invoice.pdf', ({ params, res }) => {
+    const { buffer, filename } = invoiceFor(Number(params.id));
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': buffer.length, 'Content-Disposition': `inline; filename="${filename}"`, 'Cache-Control': 'private, no-store' });
+    res.end(buffer);
+  });
+  route('POST', '/api/jobs/:id/invoice/email', async ({ params, body, actor }) => {
+    const { filename, buffer, kind, number, lead } = invoiceFor(Number(params.id));
+    const to = String(body.to || lead.email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpError(400, 'Add the customer\'s email address first.');
+    if (!mailer.configured) throw new HttpError(400, 'Email sending isn\'t set up yet. Download the PDF and send it yourself.');
+    const first = lead.first_name || (lead.full_name || '').split(' ')[0] || 'there';
+    const message = {
+      to,
+      subject: `Your ${kind} from ${config.brand.name} (${number})`,
+      text: `Hi ${first},\n\nYour ${kind} is attached.${kind === 'invoice' ? '' : ' Thank you for your business!'}\n\n${config.brand.name}${config.brand.phone ? `\n${config.brand.phone}` : ''}`,
+      attachments: [{ filename, content: buffer, type: 'application/pdf' }],
+    };
+    const label = kind === 'invoice' ? 'Invoice' : 'Receipt';
+    try {
+      await mailer.send(message);
+      leads.recordEmail(lead.id, message, { status: 'sent', trigger: kind, user: actor.user, label });
+    } catch (err) {
+      leads.recordEmail(lead.id, message, { status: 'failed', error: err.message, trigger: kind, user: actor.user, label });
+      throw new HttpError(502, `The email didn't go out: ${err.message}`);
+    }
+    return { sent: to, kind };
+  });
   // The job's price: sales and admins set it; shop logins never see it.
   route('PATCH', '/api/jobs/:id/amount', ({ params, body, actor }) => jobs.setAmount(Number(params.id), body.amount, actor));
   route('GET', '/api/revenue', ({ query }) => jobs.revenueJobs({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });

@@ -1,6 +1,6 @@
 // Sends email through an HTTP email service (no SMTP library needed).
 // Supported: Resend, SendGrid, Postmark. Set EMAIL_PROVIDER, EMAIL_API_KEY
-// and EMAIL_FROM in .env.
+// and EMAIL_FROM in .env. A message can carry attachments: [{ filename, content (Buffer), type }].
 
 const PLACEHOLDERS = ['first_name', 'last_name', 'full_name', 'vehicle', 'email', 'phone'];
 
@@ -23,11 +23,14 @@ function createMailer({ provider, apiKey, from, replyTo }, fetchImpl = (...a) =>
   const configured = Boolean(provider && apiKey && from);
 
   const requests = {
-    resend: ({ to, subject, text }) => ['https://api.resend.com/emails', {
+    resend: ({ to, subject, text, attachments }) => ['https://api.resend.com/emails', {
       headers: { Authorization: `Bearer ${apiKey}` },
-      body: { from, to: [to], subject, text, ...(replyTo && { reply_to: replyTo }) },
+      body: {
+        from, to: [to], subject, text, ...(replyTo && { reply_to: replyTo }),
+        ...(attachments?.length && { attachments: attachments.map((a) => ({ filename: a.filename, content: a.content.toString('base64') })) }),
+      },
     }],
-    sendgrid: ({ to, subject, text }) => ['https://api.sendgrid.com/v3/mail/send', {
+    sendgrid: ({ to, subject, text, attachments }) => ['https://api.sendgrid.com/v3/mail/send', {
       headers: { Authorization: `Bearer ${apiKey}` },
       body: {
         personalizations: [{ to: [{ email: to }] }],
@@ -35,11 +38,15 @@ function createMailer({ provider, apiKey, from, replyTo }, fetchImpl = (...a) =>
         ...(replyTo && { reply_to: { email: replyTo } }),
         subject,
         content: [{ type: 'text/plain', value: text }],
+        ...(attachments?.length && { attachments: attachments.map((a) => ({ content: a.content.toString('base64'), filename: a.filename, type: a.type, disposition: 'attachment' })) }),
       },
     }],
-    postmark: ({ to, subject, text }) => ['https://api.postmarkapp.com/email', {
+    postmark: ({ to, subject, text, attachments }) => ['https://api.postmarkapp.com/email', {
       headers: { 'X-Postmark-Server-Token': apiKey, Accept: 'application/json' },
-      body: { From: from, To: to, Subject: subject, TextBody: text, ...(replyTo && { ReplyTo: replyTo }) },
+      body: {
+        From: from, To: to, Subject: subject, TextBody: text, ...(replyTo && { ReplyTo: replyTo }),
+        ...(attachments?.length && { Attachments: attachments.map((a) => ({ Name: a.filename, Content: a.content.toString('base64'), ContentType: a.type })) }),
+      },
     }],
   };
 

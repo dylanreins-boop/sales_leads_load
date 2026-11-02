@@ -270,6 +270,9 @@ function paymentsBox(job, { onSaved } = {}) {
             : h('span', { class: 'amount-value' }, `${money(due)} due`),
         h('span', { class: 'muted' }, `Paid ${money(job.amount_paid_cents || 0)}${job.deposit_cents ? ' incl. deposit' : ''}`),
         due !== null && h('button', { type: 'button', class: 'amount-edit', onclick: edit }, due > 0 ? 'Record payment' : 'Refund / payment')),
+      due !== null && h('div', { class: 'small-btns invoice-btns' },
+        h('a', { class: 'btn-link', href: `/api/jobs/${job.id}/invoice.pdf`, target: '_blank', rel: 'noopener' }, due === 0 ? 'Receipt PDF' : 'Invoice PDF'),
+        h('button', { type: 'button', onclick: emailInvoice }, due === 0 ? 'Email receipt' : 'Email invoice')),
       rows.length > 0 && h('ul', { class: 'payment-list' }, ...rows.map((p) => h('li', {},
         h('span', {}, `${p.kind === 'refund' ? 'Refund ' : ''}${money(p.cents)} · ${p.method}${p.note ? ` · ${p.note}` : ''}`),
         h('span', { class: 'muted' }, `${shortDate(p.paid_at)}${p.paid_by ? ` · ${p.paid_by}` : ''}`),
@@ -280,6 +283,13 @@ function paymentsBox(job, { onSaved } = {}) {
       Object.assign(job, await api(`/api/jobs/${job.id}/payments`, { method: 'POST', body }));
       toast(body.kind === 'refund' ? 'Refund recorded' : job.amount_due_cents === 0 ? 'Payment recorded: paid in full' : `Payment recorded · ${money(job.amount_due_cents)} still due`);
       show();
+      onSaved?.(job);
+    } catch (err) { fail(err); }
+  };
+  const emailInvoice = async () => {
+    try {
+      const { sent, kind } = await api(`/api/jobs/${job.id}/invoice/email`, { method: 'POST', body: {} });
+      toast(`${kind === 'invoice' ? 'Invoice' : 'Receipt'} emailed to ${sent}`);
       onSaved?.(job);
     } catch (err) { fail(err); }
   };
