@@ -76,6 +76,7 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  height: 100dvh; /* phones: the visible screen, not counting the browser's address bar */
   display: flex;
   flex-direction: column;
 }
@@ -473,9 +474,29 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .toast.warn { background: var(--highlight); color: #2b1a00; font-weight: 600; }
 
 @media (max-width: 640px) {
-  .topbar { padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); }
-  .actions { width: 100%; }
-  .actions button { flex: 1; }
+  /* Phones: a compact header so the board gets the screen. The buttons sit on one row you swipe
+     sideways (faded at the edge to show there's more), and the section menu does the same. */
+  .topbar { gap: 8px 10px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
+  .brand { gap: 8px; flex: 1 1 auto; }
+  .brand-logo { height: 34px; }
+  .brand-sub { font-size: 10px; padding-left: 8px; line-height: 1.35; }
+  .topbar #currentUser { display: none; }
+  .topbar .link-btn { font-size: 13px; padding: 6px 8px; }
+  .filters { flex: 1 1 100%; order: 2; }
+  .filters input, .filters select { padding: 8px 10px; font-size: 16px; min-width: 0; }
+  .actions {
+    width: calc(100% + 24px); margin: 0 -12px; padding: 0 12px; order: 3;
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .actions::-webkit-scrollbar { display: none; }
+  .actions button { flex: 0 0 auto; white-space: nowrap; padding: 8px 12px; font-size: 14px; }
+  .actions button:last-child { margin-right: 24px; }
+  /* The two used most come first: Reminders, then Add lead. */
+  .actions #remindersBtn { order: -2; }
+  .actions #addLeadBtn { order: -1; }
+  .main-nav { order: 4; }
   .board { padding: 10px 12px 12px; scroll-snap-type: x mandatory; }
   .column { flex-basis: 85vw; scroll-snap-align: start; }
 }
@@ -836,7 +857,7 @@ fieldset.services.schedule .info-grid label { margin-bottom: 6px; }
 .photo-dialog { width: min(1100px, calc(100vw - 24px)); max-width: none; padding: 0; background: #0b0d10; color: #f1f4f8; border: none; overflow: hidden; }
 .photo-dialog::backdrop { background: rgba(0, 0, 0, 0.8); }
 .photo-stage { position: relative; display: grid; place-items: center; background: #000; min-height: 240px; }
-.photo-stage img { max-width: 100%; max-height: calc(100vh - 160px); display: block; }
+.photo-stage img { max-width: 100%; max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); display: block; }
 .photo-nav { position: absolute; top: 50%; transform: translateY(-50%); border: none; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 34px; width: 46px; height: 64px; border-radius: 8px; }
 .photo-nav.prev { left: 8px; }
 .photo-nav.next { right: 8px; }
@@ -1197,3 +1218,15 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .card-times b { font-weight: 600; color: var(--text); }
 .card-times .never { color: var(--warn); }
 .card-times .never b { color: var(--warn); }
+
+/* Phones: the whole page scrolls, so the header slides away and the board, calendar and reports get
+   the full screen. The lead columns still swipe sideways; each column is as long as its cards. */
+@media (max-width: 640px) {
+  body.app-page { height: auto; min-height: 100vh; min-height: 100dvh; }
+  body.app-page .board { flex: none; align-items: flex-start; }
+  body.app-page .column { max-height: none; }
+  body.app-page .cards { overflow-y: visible; flex: none; }
+  body.app-page .section { flex: none; min-height: 0; }
+  body.app-page .revenue, body.app-page .analytics, body.app-page .calendar { overflow: visible; }
+  .due-banner { margin: 8px 12px 0; padding: 8px 10px; font-size: 13px; }
+}
