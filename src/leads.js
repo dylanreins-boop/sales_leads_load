@@ -195,6 +195,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                         l.vehicle_year, l.vehicle_make, l.vehicle_model, l.vehicle_color, l.vehicle_type, l.booked_services, l.sms_opt_in,
                         l.campaign, l.form_name, l.message, l.heard_about, l.last_disposition, l.last_contacted_at,
                         l.last_contact_by, l.last_contact_kind, l.last_opened_at, l.last_opened_by,
+                        l.welcome_due_at, l.welcome_sent_at, l.best_time, l.best_time_note, l.best_time_by,
                         l.received_at, l.updated_at, l.archived_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at,
                         (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS jobs_done,
@@ -268,6 +269,15 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
           params.push(value);
           const word = (v) => (v === 1 ? 'yes' : v === 0 ? 'no' : '(unknown)');
           changes.push(`OK to text: ${word(lead.sms_opt_in)} → ${word(value)}`);
+        }
+      }
+      // A rep sets the best time to reach them (when the customer said so on the phone).
+      if ('best_time' in patch) {
+        const value = clean(patch.best_time)?.slice(0, 60) ?? null;
+        if (value !== (lead.best_time ?? null)) {
+          sets.push('best_time = ?', 'best_time_note = NULL', 'best_time_by = ?', 'best_time_at = ?');
+          params.push(value, value ? user ?? 'rep' : null, value ? now() : null);
+          changes.push(`Best time to reach: ${lead.best_time || '(blank)'} → ${value || '(blank)'}`);
         }
       }
       if ('booked_services' in patch) {

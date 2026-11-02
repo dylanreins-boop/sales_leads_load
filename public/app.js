@@ -323,6 +323,7 @@ function leadCard(lead) {
   h('div', { class: 'row' },
     h('span', { class: 'phone' }, lead.phone || lead.email || ''),
     h('span', { class: 'muted' }, timeAgo(lead.received_at))),
+  bestTimeLine(lead),
   vehicleLine(lead) && h('div', { class: 'vehicle' }, vehicleLine(lead)),
   lead.booked_services?.length > 0 && h('div', { class: 'services-line' }, serviceLabels(lead.booked_services)),
   (lead.last_disposition || reminderPill || promisePill(lead)) && h('div', { class: 'row' },
@@ -335,6 +336,23 @@ function leadCard(lead) {
       h('b', {}, 'Contacted '), lead.last_contacted_at
         ? `${exactTime(lead.last_contacted_at)}${lead.last_contact_kind ? ` · ${lead.last_contact_kind === 'text' ? 'text' : 'call'}` : ''}${lead.last_contact_by ? ` by ${lead.last_contact_by}` : ''}`
         : 'not yet')));
+}
+
+// When to call: the customer's answer to the welcome text (or what a rep noted), right on the card.
+function bestTimeLine(lead) {
+  if (lead.best_time) {
+    const theirWords = lead.best_time_by === 'customer' && lead.best_time_note;
+    return h('div', { class: 'best-time', title: theirWords ? `They said: "${lead.best_time_note}"` : `Noted by ${lead.best_time_by || 'a rep'}` },
+      h('span', { class: 'bt-tag' }, 'Best time'), h('strong', {}, lead.best_time),
+      theirWords && h('span', { class: 'bt-note' }, `"${lead.best_time_note}"`));
+  }
+  if (lead.welcome_sent_at && !['booked', 'waste'].includes(lead.stage)) {
+    return h('div', { class: 'best-time waiting' }, h('span', { class: 'bt-tag' }, 'Best time'), 'asked, waiting for reply');
+  }
+  if (lead.welcome_due_at && !lead.welcome_sent_at) {
+    return h('div', { class: 'best-time waiting' }, h('span', { class: 'bt-tag' }, 'Best time'), `asks ${exactTime(lead.welcome_due_at)}`);
+  }
+  return null;
 }
 
 // The exact time, with Today / Yesterday for the last two days: "Today 3:14 PM", "Mon, Nov 2, 9:05 AM".
@@ -618,7 +636,7 @@ function setServicesError(show) {
 }
 
 // ---------- lead info ----------
-const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'heard_about'];
+const INFO_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'heard_about', 'best_time'];
 
 // Fills a Vehicle type dropdown, keeping any non-standard value a lead already has.
 function fillVehicleTypes(select, current = '') {
@@ -1229,6 +1247,7 @@ async function addLead(e) {
   e.preventDefault();
   const form = e.target;
   const body = Object.fromEntries(new FormData(form));
+  body.send_welcome = form.send_welcome.checked;
   try {
     const { lead, created } = await api('/api/leads', { method: 'POST', body });
     $('#addLeadDialog').close();

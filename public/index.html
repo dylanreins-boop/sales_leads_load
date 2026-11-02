@@ -383,6 +383,8 @@
           <label>Email <input name="email" type="email" autocomplete="off"></label>
           <label>How they heard about us <select name="heard_about" data-heard-about></select></label>
           <label class="check opt-in"><input type="checkbox" name="sms_opt_in"> OK to text (opted in)</label>
+          <label class="span-2">Best time to reach them <input name="best_time" list="bestTimes" maxlength="60" placeholder="Morning, afternoon, evening…"></label>
+          <datalist id="bestTimes"><option value="Morning"><option value="Afternoon"><option value="Evening"><option value="Anytime"><option value="Weekends"></datalist>
           <label class="span-2">Vehicle type <select name="vehicle_type" data-vehicle-types></select></label>
           <label>Year <input name="vehicle_year" inputmode="numeric" maxlength="4" placeholder="2024"></label>
           <label>Make <input name="vehicle_make" placeholder="Tesla"></label>
@@ -820,6 +822,14 @@
           <p class="hint">{{balance_due}} becomes "Balance due at pickup: $X." or "Your balance is paid in full."</p>
         </section>
         <section class="card-section">
+          <h3>Welcome text for new leads</h3>
+          <label class="check"><input type="checkbox" name="welcome_enabled"> Text every new lead right away (8 AM to 8 PM; night leads get it at 8 AM)</label>
+          <label>Text <textarea name="welcome_text" rows="3"></textarea></label>
+          <label class="check"><input type="checkbox" name="welcome_reply_enabled"> Thank them when they answer</label>
+          <label>Thank-you text <textarea name="welcome_reply_text" rows="2"></textarea></label>
+          <p class="hint">Their answer (morning, afternoon, evening, a time like "after 3") shows on the front of the lead. {{best_time}} becomes "in the afternoon", "in the evening" and so on. Leads from Facebook, the website, Google, referrals and texts get it; imported leads and missed callers don't, and leads added by hand only when you tick the box. Skipped if a rep already reached them.</p>
+        </section>
+        <section class="card-section">
           <h3>Missed calls</h3>
           <label class="check"><input type="checkbox" name="missed_call_enabled"> Text callers back when nobody answers</label>
           <label>Text <textarea name="missed_call_text" rows="3"></textarea></label>
@@ -1007,6 +1017,7 @@
         <label>Color <input name="vehicle_color" placeholder="Pearl White"></label>
       </div>
       <label>Notes <textarea name="message" rows="2"></textarea></label>
+      <label class="check"><input type="checkbox" name="send_welcome"> Text them the welcome message (asks the best time to reach them)</label>
       <div class="dialog-actions">
         <button type="button" data-cancel>Cancel</button>
         <button type="submit" class="primary">Add lead</button>

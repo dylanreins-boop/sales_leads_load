@@ -318,7 +318,9 @@ function renderAnalytics(d) {
       asTable([{ label: 'Wait', num: false }, 'Leads', 'Share'], sp.buckets.map((b) => [b.label, b.n, spTotal ? anPct(b.n / spTotal) : '–']))),
     card('Why leads didn\'t book', `The new leads marked Waste, by their last outcome, and the ones that went cold (two weeks with no booking). ${anNum(d.lost.still_open)} are still being worked.`,
       hbars(d.lost.reasons.map((x) => ({ label: x.reason, value: x.n })))),
-    card('When leads come in', 'New leads by day of the week and hour. Darker means more.', heatmap(d.arrivals)));
+    card('When leads come in', 'New leads by day of the week and hour. Darker means more.', heatmap(d.arrivals)),
+    d.best_times && card('Best time to reach them', `From the welcome text: ${anNum(d.best_times.answered)} of ${anNum(d.best_times.asked)} new leads answered (${anPct(d.best_times.asked ? d.best_times.answered / d.best_times.asked : null)}). Includes times reps noted.`,
+      hbars(d.best_times.rows.map((r) => ({ label: `${r.key} (${anPct(r.booking_rate)} booked)`, value: r.leads })))));
 
   // Where they came from.
   const srcHead = [{ label: 'Source', num: false }, 'Leads', 'Booked', 'Rate', 'Revenue', ...(noSpend ? [] : ['Ad spend', 'Cost per lead', 'Cost per booking', 'Return'])];

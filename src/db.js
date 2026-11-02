@@ -369,6 +369,10 @@ function migrate(db) {
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
   // Who last opened the lead and when, and who last reached out (a call logged or a text) and how.
+  // The welcome text ("what time of day is best to reach you?") and the customer's answer.
+  for (const column of ['welcome_due_at', 'welcome_sent_at', 'best_time', 'best_time_note', 'best_time_by', 'best_time_at']) {
+    if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
+  }
   for (const column of ['last_opened_at', 'last_opened_by', 'last_contact_by', 'last_contact_kind']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }

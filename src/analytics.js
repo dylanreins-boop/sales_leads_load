@@ -18,6 +18,8 @@ const WORK_TYPES = ['disposition', 'stage_change', 'text', 'note', 'email'];
 const REACHED = ['contacted_follow_up', 'callback_requested', 'booked'];
 const DISPO_LABEL = Object.fromEntries(DISPOSITIONS.map((d) => [d.id, d.label]));
 const TEXT_KINDS = {
+  welcome: 'Welcome texts (best time?)',
+  welcome_reply: 'Best-time thank-yous',
   manual: 'Sent by a rep',
   confirmation: 'Booking confirmations',
   reminder: 'Day-before reminders',
@@ -62,7 +64,8 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
     const inRange = (t, a = start, b = end) => t != null && t >= a && t < b;
 
     // ---- everything, loaded once (a shop's data is small) ----
-    const allLeads = stmt(`SELECT id, source, heard_about, vehicle_type, stage, last_disposition, received_at, archived_at, referrer_id, import_batch
+    const allLeads = stmt(`SELECT id, source, heard_about, vehicle_type, stage, last_disposition, received_at, archived_at, referrer_id, import_batch,
+                                  best_time, best_time_by, welcome_sent_at
                            FROM leads`).all().map((l) => ({ ...l, pipeline: pipelineFor(l.vehicle_type) }));
     const leadById = new Map(allLeads.map((l) => [l.id, l]));
     const inPipe = (leadId) => !pipeline || leadById.get(leadId)?.pipeline === pipeline;
@@ -153,6 +156,11 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
       vehicles: breakdown(cohort, (l) => l.vehicle_type || 'Not given'),
       lost: lost(cohort),
       arrivals: arrivals(cohort),
+      best_times: {
+        asked: cohort.filter((l) => l.welcome_sent_at).length,
+        answered: cohort.filter((l) => l.welcome_sent_at && l.best_time_by === 'customer').length,
+        rows: breakdown(cohort.filter((l) => l.best_time), (l) => l.best_time.split(/,| or /)[0].trim()),
+      },
       quotes: quoteStats({ quotes, jobsByLead, inRange }),
       messages: messageStats({ texts, inRange, cohort }),
       emails: emailStats({ inRange, inPipe, start, end }),

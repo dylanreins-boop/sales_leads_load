@@ -188,6 +188,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   leads.setCreatedHook((lead) => {
     alerts.leadArrived(lead);
     runAlerts();
+    // Every new lead gets a thank-you text asking the best time of day to reach them.
+    if (messages.queueWelcome(lead)) messages.sendWelcomes().catch((err) => console.error('Welcome text failed:', err.message));
   });
   const messages = createMessageService(db, {
     leads, jobs, texter, mailer, brand: config.brand,
@@ -457,7 +459,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     });
     res.end(leadsWorkbook(rows, { title: label }));
   }, { roles: ADMIN });
-  route('POST', '/api/leads', ({ body, actor }) => leads.ingest({ ...body, source: 'manual' }, actor));
+  route('POST', '/api/leads', async ({ body, actor }) => {
+    const result = leads.ingest({ ...body, source: 'manual' }, actor);
+    // Added by hand: the welcome text only when the rep ticks it (they may be on the phone with them).
+    if (result.created && body.send_welcome && messages.queueWelcome(result.lead, { force: true })) await messages.sendWelcomes().catch(() => {});
+    return { ...result, lead: leads.getLead(result.lead.id) };
+  });
   route('GET', '/api/leads/:id', ({ params, query, actor }) => {
     // Opening the lead (not a quiet refresh after a save) is recorded for the card's "Opened" line.
     if (query.get('open') === '1') leads.markOpened(Number(params.id), actor);
@@ -876,7 +883,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   reviewTimer.unref();
   // New-lead alerts and the "nobody called yet" alert to admins, and the next win-back messages, every minute.
   const sendCampaigns = () => campaigns.sendNext().catch((err) => console.error('Campaign sending failed:', err.message));
-  const alertTimer = setInterval(() => { runAlerts(); sendCampaigns(); }, 60000);
+  const sendWelcomes = () => messages.sendWelcomes().catch((err) => console.error('Welcome texts failed:', err.message));
+  const alertTimer = setInterval(() => { runAlerts(); sendCampaigns(); sendWelcomes(); }, 60000);
   alertTimer.unref();
   // Day-before reminders to customers and the shop's morning day sheet, checked every 5 minutes.
   const sendReminders = () => {

@@ -34,9 +34,14 @@ const DEFAULT_NOTICES = {
   // Texted to anyone whose call to the Twilio number wasn't answered.
   missed_call_enabled: true,
   missed_call_text: 'Hi, this is {{company}}. Sorry we missed your call! Text us back here with your vehicle (year, make and model) and what you would like done, and we will get right back to you.',
+  // Every new lead: thanks, and what time of day is best to reach them. Their answer goes on the lead.
+  welcome_enabled: true,
+  welcome_text: 'Hi {{first_name}}, thanks for your interest in {{company}}! What time of day is best to reach you: morning, afternoon or evening? Just reply here.',
+  welcome_reply_enabled: true,
+  welcome_reply_text: 'Thanks {{first_name}}! We will reach out {{best_time}}.',
 };
-const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text'];
-const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'by_text', 'by_email'];
+const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text', 'welcome_text', 'welcome_reply_text'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'welcome_enabled', 'welcome_reply_enabled', 'by_text', 'by_email'];
 // Each automatic message: the job column that marks it sent, and how it's logged.
 const KINDS = {
   confirm: { sentColumn: 'confirm_sent_at', trigger: 'confirmation', email: 'Booking confirmation', name: 'Booking confirmation' },
@@ -45,6 +50,47 @@ const KINDS = {
 };
 
 const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];
+
+// The welcome text goes out between these hours; a lead that comes in at night gets it in the morning.
+const WELCOME_HOURS = [8, 20];
+// Reads "afternoons work best", "after 3", "evenings or weekends", "anytime" into a short label.
+// Returns null when the reply doesn't say a time (then it's just a text on the lead).
+function parseBestTime(text) {
+  const t = ` ${String(text || '').toLowerCase().replace(/[’']/g, '')} `;
+  const parts = new Set();
+  if (/\b(any ?time|whenever|all day|doesnt matter|does not matter|flexible|any time is fine)\b/.test(t)) parts.add('Anytime');
+  if (/\b(mornings?|early|before noon|before lunch|breakfast|a\.?m\.?)\b/.test(t)) parts.add('Morning');
+  if (/\b(afternoons?|lunch|midday|mid day|noon)\b/.test(t)) parts.add('Afternoon');
+  if (/\b(evenings?|nights?|tonight|after work|dinner|p\.?m\.? ?(?:is|works)? ?(?:best|fine|good)?$)\b/.test(t)) parts.add('Evening');
+  // Clock times: "3pm", "10:30 am", "after 3", "around 5", "between 2 and 4".
+  for (const m of t.matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?=\W)/g)) {
+    let hour = Number(m[1]);
+    const ampm = (m[3] || '').replace(/\./g, '');
+    const before = t.slice(Math.max(0, m.index - 10), m.index);
+    if (!ampm && !/\b(after|before|around|at|by|between|and|til|until|from|-|to)\s*$/.test(before)) continue; // a number, not a time
+    if (hour < 1 || hour > 12 && !ampm) continue;
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    else if (!ampm && hour <= 7) hour += 12; // "after 3" means 3 PM
+    parts.add(hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening');
+  }
+  const order = ['Anytime', 'Morning', 'Afternoon', 'Evening'];
+  let label = order.filter((p) => parts.has(p)).join(' or ');
+  if (parts.has('Anytime') && parts.size > 1) label = order.filter((p) => p !== 'Anytime' && parts.has(p)).join(' or ');
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].filter((d) => new RegExp(`\\b${d}s?\\b`).test(t));
+  if (/\bweekends?\b|\bsaturdays?\b|\bsundays?\b/.test(t)) label = label ? `${label}, weekends` : 'Weekends';
+  else if (/\bweekdays?\b/.test(t) && label) label = `${label}, weekdays`;
+  else if (days.length) {
+    const named = days.map((d) => d[0].toUpperCase() + d.slice(1)).join(' or ');
+    label = label ? `${label}, ${named}` : named;
+  }
+  if (!label) return null;
+  return { label, note: String(text).trim().slice(0, 120) };
+}
+// What the thank-you reply says for each answer: "in the afternoon", "this weekend", "anytime".
+function bestTimePhrase(label) {
+  const first = label.split(/ or |, /)[0];
+  return { Anytime: 'soon', Morning: 'in the morning', Afternoon: 'in the afternoon', Evening: 'in the evening', Weekends: 'on the weekend' }[first] || 'soon';
+}
 const START_WORDS = ['start', 'unstop', 'yes'];
 const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -125,7 +171,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     return stmt('SELECT * FROM texts WHERE id = ?').get(Number(lastInsertRowid));
   }
 
-  const LABELS = { referral: 'Referral link text', quote_followup: 'Quote follow-up text', campaign: 'Win-back text', missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
+  const LABELS = { welcome: 'Welcome text', welcome_reply: 'Best-time thank-you', referral: 'Referral link text', quote_followup: 'Quote follow-up text', campaign: 'Win-back text', missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
 
   // Sends a text to a lead and logs it. Throws a 400 the rep can read when it can't go out.
   async function sendText(leadId, body, { user, trigger = 'manual' } = {}) {
@@ -177,9 +223,63 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     } else if (!created) {
       stmt('UPDATE leads SET updated_at = ? WHERE id = ?').run(now(), lead.id);
     }
+    if (!created && !STOP_WORDS.includes(word)) noteBestTime(lead, text);
     const fresh = leads.getLead(lead.id);
     if (!created) onReply(fresh, text);
     return fresh;
+  }
+
+  // ---- the welcome text: thanks, and the best time of day to reach them ----
+  // When it should go out: now during the day, otherwise 8 AM.
+  function welcomeTime(at = new Date()) {
+    const d = new Date(at);
+    if (d.getHours() >= WELCOME_HOURS[0] && d.getHours() < WELCOME_HOURS[1]) return d;
+    if (d.getHours() >= WELCOME_HOURS[1]) d.setDate(d.getDate() + 1);
+    d.setHours(WELCOME_HOURS[0], 0, 0, 0);
+    return d;
+  }
+
+  // Lines up the welcome text for a new lead (imports and missed callers don't get it; callers already got a text).
+  function queueWelcome(lead, { force = false, at = new Date() } = {}) {
+    const settings = getNotices();
+    if (!settings.welcome_enabled) return false;
+    if (!force && ['import', 'call', 'manual'].includes(lead.source)) return false;
+    if (!lead.phone || !toE164(lead.phone) || lead.sms_opt_in === 0) return false;
+    stmt('UPDATE leads SET welcome_due_at = ? WHERE id = ? AND welcome_sent_at IS NULL').run(welcomeTime(at).toISOString(), lead.id);
+    return true;
+  }
+
+  // Sends the welcome texts that are due. Skips leads a rep already reached or that are closed.
+  async function sendWelcomes(at = new Date()) {
+    const settings = getNotices();
+    if (!settings.welcome_enabled || !texter.configured) return 0;
+    const due = stmt(`SELECT id, stage, last_contacted_at, best_time FROM leads
+                      WHERE welcome_due_at IS NOT NULL AND welcome_due_at <= ? AND welcome_sent_at IS NULL`).all(at.toISOString());
+    let sent = 0;
+    for (const row of due) {
+      stmt('UPDATE leads SET welcome_sent_at = ? WHERE id = ?').run(at.toISOString(), row.id);
+      if (row.stage === 'waste' || row.best_time || row.last_contacted_at) continue;
+      try {
+        await sendText(row.id, render(settings.welcome_text, leads.getLead(row.id)), { trigger: 'welcome' });
+        sent++;
+      } catch { /* logged on the lead by sendText */ }
+    }
+    return sent;
+  }
+
+  // A reply after the welcome text that names a time goes on the lead, and the customer gets a short thanks.
+  function noteBestTime(lead, text) {
+    if (!lead.welcome_sent_at || lead.best_time_by === 'customer') return;
+    if (Date.now() - new Date(lead.welcome_sent_at) > 14 * 86400000) return;
+    const parsed = parseBestTime(text);
+    if (!parsed) return;
+    stmt('UPDATE leads SET best_time = ?, best_time_note = ?, best_time_by = ?, best_time_at = ? WHERE id = ?').run(parsed.label, parsed.note, 'customer', now(), lead.id);
+    leads.logActivity(lead.id, 'text', { note: `Best time to reach: ${parsed.label} ("${parsed.note}")` });
+    const settings = getNotices();
+    if (settings.welcome_reply_enabled && texter.configured) {
+      const fresh = leads.getLead(lead.id);
+      sendText(lead.id, render(settings.welcome_reply_text, fresh, { extra: { best_time: bestTimePhrase(parsed.label) } }), { trigger: 'welcome_reply' }).catch(() => {});
+    }
   }
 
   // ---- missed calls (Twilio voice) ----
@@ -298,7 +398,8 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
   return {
     getTemplates, saveTemplates, getNotices, saveNotices, render, valuesFor,
     sendText, receiveText, missedCall, answeredCall, sendConfirmation, sendReady, sendDueReminders, jobMoved,
+    queueWelcome, sendWelcomes,
   };
 }
 
-module.exports = { createMessageService, DEFAULT_TEMPLATES, DEFAULT_NOTICES };
+module.exports = { createMessageService, DEFAULT_TEMPLATES, DEFAULT_NOTICES, parseBestTime };

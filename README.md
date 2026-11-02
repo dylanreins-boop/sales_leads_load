@@ -258,6 +258,21 @@ dropdown.
 
 To change the stages or dispositions, edit `src/pipeline.js`.
 
+## Welcome text: the best time to reach them
+
+Every new lead from Facebook, the website, Google, a referral link or a text gets an automatic text right
+away: "Hi Ana, thanks for your interest in Bob Moses Ceramic Coating! What time of day is best to reach
+you: morning, afternoon or evening? Just reply here." Leads that come in between 8 PM and 8 AM get it at
+8 AM. When they answer, the app reads it ("afternoons", "after 3", "evenings or weekends", "Thursday",
+"anytime") and puts it on the **front of the lead card** as **Best time**, with their words, and texts a
+short thanks ("Thanks Ana! We will reach out in the afternoon."). Until they answer, the card says it's
+waiting. Reps can also type a best time in the lead's info (when the customer tells them on the phone).
+
+Imported leads and missed callers (who already got the missed-call text) don't get it; for leads added
+by hand there's a box on the Add lead form. It's skipped when a rep already reached the lead. Admins edit
+both texts or turn them off under **Texts & reminders → Welcome text for new leads**. Analytics shows how
+many answered and which times they picked.
+
 ## Opened and contacted, on every card
 
 Each lead card shows the exact time the lead was **last opened** and by whom, and when it was **last
