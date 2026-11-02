@@ -125,7 +125,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     return stmt('SELECT * FROM texts WHERE id = ?').get(Number(lastInsertRowid));
   }
 
-  const LABELS = { quote_followup: 'Quote follow-up text', campaign: 'Win-back text', missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
+  const LABELS = { referral: 'Referral link text', quote_followup: 'Quote follow-up text', campaign: 'Win-back text', missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
 
   // Sends a text to a lead and logs it. Throws a 400 the rep can read when it can't go out.
   async function sendText(leadId, body, { user, trigger = 'manual' } = {}) {

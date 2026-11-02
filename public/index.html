@@ -66,6 +66,7 @@
       <button id="messagesBtn" type="button" class="lead-only admin-only">Texts &amp; reminders</button>
       <button id="importBtn" type="button" class="lead-only admin-only">Import leads</button>
       <button id="winbackBtn" type="button" class="lead-only admin-only">Win-back</button>
+      <button id="referralsBtn" type="button" class="lead-only admin-only">Referrals</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
@@ -321,6 +322,11 @@
             <button type="submit" class="primary">Make booking link</button>
           </form>
         </details>
+      </section>
+
+      <section class="card-section" id="referSection" hidden>
+        <h3>Referrals</h3>
+        <div id="referBox"></div>
       </section>
 
       <section class="card-section" id="leadJobSection" hidden>
@@ -660,6 +666,37 @@
     </div>
   </aside>
 
+  <!-- Referrals and partners (admins) -->
+  <aside id="referralsPanel" class="drawer wide" aria-label="Referrals and partners" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Referrals and partners</h2>
+        <div class="muted">Who's sending you work, what it booked, and who to thank.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <section class="card-section">
+        <h3>Partners</h3>
+        <p class="muted">RV dealers, storage lots, detailers: each gets a link to hand out. Leads from it are tagged with the partner.</p>
+        <form id="partnerForm" class="partner-form">
+          <input name="name" placeholder="Partner name (e.g. Desert RV Storage)" maxlength="80" aria-label="Partner name" required>
+          <input name="contact" placeholder="Contact (name, phone or email)" maxlength="120" aria-label="Contact">
+          <button type="submit" class="primary">Add partner</button>
+        </form>
+        <div class="table-scroll"><table id="partnerTable" class="matrix"></table></div>
+      </section>
+      <section class="card-section">
+        <h3>Customers who refer</h3>
+        <div class="table-scroll"><table id="referrerTable" class="matrix"></table></div>
+      </section>
+      <section class="card-section">
+        <h3>Referred leads</h3>
+        <div class="table-scroll"><table id="referredTable" class="matrix"></table></div>
+      </section>
+    </div>
+  </aside>
+
   <!-- Import leads (admins): bring in leads from a spreadsheet -->
   <aside id="importPanel" class="drawer wide" aria-label="Import leads" hidden>
     <div class="drawer-head">
@@ -948,5 +985,6 @@
   <script src="messages.js"></script>
   <script src="import.js"></script>
   <script src="appearance.js"></script>
+  <script src="growth.js"></script>
 </body>
 </html>

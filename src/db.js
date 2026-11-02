@@ -223,6 +223,20 @@ CREATE TABLE IF NOT EXISTS job_payments (
 );
 CREATE INDEX IF NOT EXISTS job_payments_job ON job_payments (job_id);
 
+-- Referral links: one per past customer who shares one, and one per partner (dealers, storage lots...).
+CREATE TABLE IF NOT EXISTS referrers (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT NOT NULL UNIQUE,
+  kind        TEXT NOT NULL,                   -- customer | partner
+  lead_id     INTEGER REFERENCES leads (id) ON DELETE CASCADE,  -- the customer
+  name        TEXT NOT NULL,
+  contact     TEXT,
+  note        TEXT,
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_by  TEXT,
+  created_at  TEXT NOT NULL
+);
+
 -- Win-back campaigns to old and dead leads, and each message in them.
 CREATE TABLE IF NOT EXISTS campaigns (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,6 +324,11 @@ function migrate(db) {
     ['commission_rep', 'TEXT'], ['commission_override_cents', 'INTEGER'], ['commission_paid_cents', 'INTEGER'],
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
+  }
+  // Who referred the lead, and when the referrer was thanked.
+  if (!has('leads', 'referrer_id')) db.exec('ALTER TABLE leads ADD COLUMN referrer_id INTEGER');
+  for (const column of ['referral_rewarded_at', 'referral_rewarded_by']) {
+    if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }
   for (const column of ['followup1_at', 'followup2_at']) {
     if (!has('quotes', column)) db.exec(`ALTER TABLE quotes ADD COLUMN ${column} TEXT`);

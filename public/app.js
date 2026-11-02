@@ -483,7 +483,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#winbackPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -526,6 +526,7 @@ function renderLead(lead) {
   if (state.meta.currentRole !== 'shop') {
     renderTexts(lead);
     renderBookingLinks(lead);
+    renderReferral(lead);
   }
 
   const stageSelect = $('#stageSelect');
@@ -1314,6 +1315,7 @@ async function init() {
   initAlerts();
   initBookingLinks();
   initImport();
+  initGrowth();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');

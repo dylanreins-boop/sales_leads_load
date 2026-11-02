@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Get a quote · Bob Moses Ceramic Coating</title>
+  <meta name="theme-color" content="#00142b">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/icons/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/appearance.css">
+  <style>
+    /* Referral page: a navy band with the logo, one card with a short form. */
+    body.refer-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; background: var(--bg); padding: 0 max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); height: auto; }
+    .band { position: absolute; inset: 0 0 auto; height: 230px; background: linear-gradient(160deg, #00142b 0%, #0b2a4f 100%); border-bottom: 4px solid var(--highlight); z-index: 0; }
+    .wrap { position: relative; z-index: 1; width: 100%; max-width: 520px; margin-top: 28px; display: grid; gap: 18px; }
+    .brand { display: grid; justify-items: center; gap: 6px; color: #f1f4f8; text-align: center; }
+    .brand img { width: 140px; height: auto; }
+    .brand p { margin: 0; font: 600 12px/1.3 var(--font-brand); letter-spacing: 0.14em; text-transform: uppercase; color: #a9b6c7; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; box-shadow: 0 12px 32px rgba(0, 20, 43, 0.18); display: grid; gap: 14px; }
+    .card h1 { font: 700 22px/1.25 var(--font-brand); margin: 0; }
+    .card form { display: grid; gap: 10px; }
+    .card label { margin: 0; font-size: 13px; }
+    .card input, .card select, .card textarea { font-size: 16px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .go { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; }
+    .error { color: var(--danger); font-weight: 600; margin: 0; }
+    .done { text-align: center; display: grid; gap: 8px; }
+    .done .check-mark { font-size: 40px; line-height: 1; color: var(--ok); }
+    .contact { font-size: 14px; color: var(--muted); text-align: center; }
+    .hp { position: absolute; left: -5000px; }
+  </style>
+</head>
+<body class="refer-page">
+  <div class="band" aria-hidden="true"></div>
+  <main class="wrap">
+    <div class="brand">
+      <img class="brand-img" src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="140" height="79">
+      <p>Ceramic coating · Las Vegas</p>
+    </div>
+    <section class="card" id="card" aria-live="polite"><p class="muted">Loading…</p></section>
+    <p class="contact" id="contact"></p>
+  </main>
+  <script>
+    'use strict';
+    const code = window.__referralCode || location.pathname.split('/').filter(Boolean)[1];
+    const card = document.getElementById('card');
+    function el(tag, attrs = {}, ...kids) {
+      const n = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+        else if (k === 'class') n.className = v;
+        else n.setAttribute(k, v === true ? '' : v);
+      }
+      for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+      return n;
+    }
+    const fill = (node, ...kids) => node.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
+    async function call(method, path, body) {
+      const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Something went wrong. Please call or text us.');
+      return json;
+    }
+
+    function render(view, error) {
+      const c = view.company || {};
+      const phone = c.phone && el('a', { href: `tel:${c.phone.replace(/[^\d+]/g, '')}` }, c.phone);
+      fill(document.getElementById('contact'), phone && ['Rather talk? Call or text ', phone]);
+      const intro = view.kind === 'partner' ? `Recommended by ${view.from}` : `${view.from} sent you our way`;
+      const field = (label, name, attrs = {}) => el('label', {}, label, el('input', { name, ...attrs }));
+      fill(card,
+        el('h1', {}, intro),
+        el('p', { class: 'muted' }, `Tell us about your vehicle and ${c.name || 'we'} will get back to you with a quote.`),
+        error && el('p', { class: 'error', role: 'alert' }, error),
+        el('form', { onsubmit: send },
+          el('div', { class: 'row' }, field('First name', 'first_name', { required: true, autocomplete: 'given-name' }), field('Last name', 'last_name', { autocomplete: 'family-name' })),
+          el('div', { class: 'row' }, field('Phone', 'phone', { type: 'tel', autocomplete: 'tel', required: true }), field('Email (optional)', 'email', { type: 'email', autocomplete: 'email' })),
+          el('label', {}, 'What kind of vehicle?', el('select', { name: 'vehicle_type' }, el('option', { value: '' }, 'Pick one'), ...(view.vehicleTypes || []).map((t) => el('option', { value: t }, t)))),
+          field('Year, make and model', 'vehicle', { placeholder: '2022 Tesla Model Y' }),
+          el('label', {}, 'Anything else? (optional)', el('textarea', { name: 'message', rows: '3', maxlength: '1000' })),
+          el('label', { class: 'check' }, el('input', { type: 'checkbox', name: 'sms_opt_in', checked: true }), ' OK to text me about my quote. Reply STOP anytime.'),
+          el('input', { class: 'hp', name: '_gotcha', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' }),
+          el('button', { type: 'submit', class: 'primary go' }, 'Get my quote')));
+      async function send(e) {
+        e.preventDefault();
+        const f = e.target;
+        const body = Object.fromEntries(new FormData(f));
+        body.sms_opt_in = f.sms_opt_in.checked;
+        f.querySelector('button').disabled = true;
+        try {
+          await call('POST', `/api/public/referral/${code}`, body);
+          fill(card, el('div', { class: 'done' }, el('div', { class: 'check-mark', 'aria-hidden': 'true' }, '✓'), el('h1', {}, 'Thanks! We\'ll be in touch soon.'),
+            el('p', { class: 'muted' }, `Someone from ${c.name || 'our team'} will reach out shortly with your quote.`)));
+        } catch (err) { render(view, err.message); }
+      }
+    }
+
+    call('GET', `/api/public/referral/${code}`).then((v) => render(v))
+      .catch((err) => fill(card, el('h1', {}, 'This link isn\'t active'), el('p', {}, err.message)));
+    fetch('/api/appearance').then((r) => r.json()).then((a) => {
+      const logo = a.logo_dark || a.logo;
+      if (logo) document.querySelectorAll('.brand-img').forEach((img) => { img.src = logo; img.removeAttribute('width'); img.removeAttribute('height'); Object.assign(img.style, { width: 'auto', maxWidth: '220px', maxHeight: '90px' }); });
+    }).catch(() => {});
+  </script>
+</body>
+</html>

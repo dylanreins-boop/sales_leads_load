@@ -31,6 +31,7 @@ const { createAppearanceService } = require('./src/appearance');
 const { createPaymentService } = require('./src/payments');
 const { invoicePdf } = require('./src/invoices');
 const { createCampaignService } = require('./src/campaigns');
+const { createReferralService } = require('./src/referrals');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -191,6 +192,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand: config.brand });
   const daySheets = createDaySheetMailer(db, { jobs, mailer, brand: config.brand });
   const campaigns = createCampaignService(db, { leads, messages, bookings, mailer, texter, publicUrl: config.publicUrl });
+  const referrals = createReferralService(db, { leads, brand: config.brand });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -681,6 +683,26 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   route('POST', '/api/campaigns', ({ body, actor }) => campaigns.start(body, actor), { roles: ADMIN });
   route('POST', '/api/campaigns/:id/stop', ({ params, actor }) => campaigns.stop(Number(params.id), actor), { roles: ADMIN });
 
+  // ---- Referral and partner links ----
+  // A customer's own link to share; texting it to them is optional.
+  route('POST', '/api/leads/:id/referral-link', async ({ req, params, body, actor }) => {
+    const id = Number(params.id);
+    const r = referrals.forCustomer(id, actor);
+    const url = `${baseUrl(req)}/r/${r.code}`;
+    if (body.send === 'text') {
+      await messages.sendText(id, messages.render('Thanks again for choosing {{company}}, {{first_name}}! Know someone who would love their vehicle coated? Send them this link and we will take great care of them: {{referral_link}}',
+        leads.getLead(id), { rep: actor.user, extra: { referral_link: url } }), { ...actor, trigger: 'referral' });
+    }
+    return { code: r.code, url, lead: leads.getLead(id) };
+  });
+  route('GET', '/api/referrals', ({ req }) => ({ ...referrals.report(), base: baseUrl(req) }), { roles: ADMIN });
+  route('POST', '/api/partners', ({ body, actor }) => referrals.createPartner(body, actor), { roles: ADMIN });
+  route('PATCH', '/api/partners/:id', ({ params, body }) => referrals.updatePartner(Number(params.id), body), { roles: ADMIN });
+  route('POST', '/api/leads/:id/referral-reward', ({ params, body, actor }) => referrals.markRewarded(Number(params.id), body, actor), { roles: ADMIN });
+  // The public form behind every referral link.
+  route('GET', '/api/public/referral/:code', ({ params }) => ({ ...referrals.publicView(params.code), vehicleTypes: VEHICLE_TYPES }), { isPublic: true });
+  route('POST', '/api/public/referral/:code', ({ params, body }) => (isSpam(body) ? { ok: true } : referrals.submit(params.code, body)), { isPublic: true });
+
   // ---- Calls to the Twilio number (missed-call text-back) ----
   // Twilio's "A call comes in" webhook: ring the shop; if nobody answers, text the caller.
   const twiml = (res, body) => {
@@ -833,6 +855,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
           }
           // Customers' booking pages are public; the link itself is the key.
           if (/^\/book\/[\w-]+\/?$/.test(url.pathname)) return serveStatic(req, res, '/book.html');
+          if (/^\/r\/[a-z0-9]+\/?$/i.test(url.pathname)) return serveStatic(req, res, '/refer.html');
           const openAsset = url.pathname.startsWith('/icons/') || url.pathname.startsWith('/brand/')
             || ['/styles.css', '/login.html', '/manifest.webmanifest'].includes(url.pathname);
           if (!openAsset && !authenticate(req)) return send(res, 302, '', { Location: '/login' });
