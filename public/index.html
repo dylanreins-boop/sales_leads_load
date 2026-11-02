@@ -37,6 +37,7 @@
       <button type="button" data-section="calendar">Calendar</button>
       <button type="button" data-section="commissions">Commissions</button>
       <button type="button" data-section="revenue" class="admin-only">Revenue</button>
+      <button type="button" data-section="analytics" class="admin-only">Analytics</button>
     </nav>
     <span id="currentUser" class="muted" hidden></span>
     <button type="button" id="appearanceBtn" class="link-btn">Appearance</button>
@@ -175,6 +176,38 @@
       <input id="comPayNote" placeholder="Note (e.g. check #1042)" aria-label="Payment note" maxlength="100">
       <button type="button" id="comPayBtn" class="primary">Mark paid</button>
     </div>
+  </section>
+
+  <!-- Analytics (admins): every number the app tracks, for one date range -->
+  <section id="analyticsSection" class="section analytics" aria-labelledby="anTitle" hidden>
+    <div class="rev-toolbar an-toolbar">
+      <h2 id="anTitle" class="rev-title">Analytics</h2>
+      <div class="rev-controls">
+        <select id="anPeriod" aria-label="Period">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="month">This month</option>
+          <option value="lastmonth">Last month</option>
+          <option value="90">Last 90 days</option>
+          <option value="ytd">Year to date</option>
+          <option value="12m">Last 12 months</option>
+          <option value="custom">Pick dates…</option>
+        </select>
+        <span id="anCustom" class="an-custom" hidden>
+          <input type="date" id="anFrom" aria-label="From">
+          <span class="muted">to</span>
+          <input type="date" id="anTo" aria-label="To">
+        </span>
+        <select id="anPipeline" aria-label="Pipeline">
+          <option value="">All vehicles</option>
+          <option value="rv">RV Pipeline</option>
+          <option value="other">All Other Vehicles</option>
+        </select>
+        <button type="button" id="anExport">Download CSV</button>
+      </div>
+    </div>
+    <p id="anRange" class="muted rev-note"></p>
+    <div id="anBody" class="an-body"></div>
   </section>
 
   <!-- Revenue (admins): job amounts added up by day, week, month and year to date -->
@@ -993,5 +1026,6 @@
   <script src="import.js"></script>
   <script src="appearance.js"></script>
   <script src="growth.js"></script>
+  <script src="analytics.js"></script>
 </body>
 </html>

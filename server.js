@@ -8,6 +8,7 @@ const { createLeadService, HttpError } = require('./src/leads');
 const { STAGES, DISPOSITIONS } = require('./src/pipeline');
 const facebook = require('./src/facebook');
 const { createGoogleLsaClient } = require('./src/google-lsa');
+const { createAnalyticsService } = require('./src/analytics');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
@@ -197,6 +198,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const referrals = createReferralService(db, { leads, brand: config.brand });
   const adSpend = createAdSpendService(db);
   const googleLsa = createGoogleLsaClient(config.googleAds, { db, leads, fetchImpl });
+  const analytics = createAnalyticsService(db, { commissions, payments, jobs, users });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -735,6 +737,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     await messages.missedCall({ from: body.From });
     return twiml(res, sorry());
   }, { isPublic: true });
+
+  // ---- Analytics (admin): every number the app tracks, for a date range ----
+  route('GET', '/api/analytics', ({ query }) => analytics.report({ from: query.get('from'), to: query.get('to'), pipeline: query.get('pipeline') }), { roles: ADMIN });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });

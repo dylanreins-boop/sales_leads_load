@@ -185,8 +185,9 @@ function showSection(name) {
   $('#leadsSection').hidden = section !== 'leads';
   $('#calendarSection').hidden = section !== 'calendar';
   $('#revenueSection').hidden = section !== 'revenue';
+  $('#analyticsSection').hidden = section !== 'analytics';
   $('#commissionsSection').hidden = section !== 'commissions';
-  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue', commissions: 'Commissions' }[section] || 'Lead Pipeline';
+  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue', analytics: 'Analytics', commissions: 'Commissions' }[section] || 'Lead Pipeline';
   document.querySelectorAll('.main-nav button').forEach((b) => {
     if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -194,6 +195,7 @@ function showSection(name) {
   history.replaceState(null, '', `#${section === 'leads' ? state.pipeline : section}`);
   if (section === 'calendar') loadCalendar().catch(fail);
   else if (section === 'revenue') loadRevenue().catch(fail);
+  else if (section === 'analytics') loadAnalytics().catch(fail);
   else if (section === 'commissions') loadCommissions().catch(fail);
   else renderBoard();
 }
@@ -1332,6 +1334,7 @@ async function init() {
   initBookingLinks();
   initImport();
   initGrowth();
+  initAnalytics();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');
@@ -1340,7 +1343,8 @@ async function init() {
     setInterval(loadUpdatesCount, 60_000);
   }
   await Promise.all([loadLeads(), loadReminders()]);
-  showSection(location.hash === '#calendar' ? 'calendar' : 'leads');
+  const linked = location.hash.slice(1);
+  showSection(linked === 'calendar' || (isAdmin() && ['revenue', 'analytics'].includes(linked)) ? linked : 'leads');
   // Opened from a phone alert: /?lead=12 opens that lead.
   const fromAlert = Number(new URLSearchParams(location.search).get('lead'));
   if (fromAlert) {

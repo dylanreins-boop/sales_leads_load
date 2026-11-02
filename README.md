@@ -404,6 +404,28 @@ their commission) and sends the confirmation. With `STRIPE_SECRET_KEY` set, the 
 deposit on Stripe's payment page and it's recorded on the job; without it, they pay at drop-off. **Preview**
 shows the rep what the customer sees. Links work for 30 days and can be turned off.
 
+## Analytics
+
+Admins get an **Analytics** tab with every number the app keeps, for one date range (last 7 or 30 days,
+this or last month, 90 days, year to date, 12 months or any dates) and either board. Each headline number
+shows the change from the period just before.
+
+- **Headline:** new leads, booked, booking rate, revenue, money collected, average job, how fast new leads
+  get a first call or text, and cost per booking.
+- **Over time:** leads and bookings, and revenue and money collected, by day, week or month.
+- **The new leads:** how far they got (reached, quoted, booked, picked up), how fast they were worked,
+  why the rest didn't book, and which days and hours leads come in.
+- **Where they came from:** lead sources with ad spend, cost per lead and return; how they heard about us;
+  vehicle types.
+- **The team:** per person, leads worked, calls logged, texts, emails, quotes, bookings, close rate,
+  revenue, commission and how fast they respond.
+- **Follow-up and marketing:** quotes and follow-ups, online booking links and card deposits, texts and
+  reply rate, missed calls, emails, win-back campaigns, referrals and partners.
+- **The shop and the money:** drop-offs, pick-ups, days in the shop, how full the shop's hours were,
+  sign-offs, photos, reminders and review requests; deposits, payments, refunds, still owed and commissions.
+
+Every chart has **Show as a table**, and **Download CSV** saves all of it for Excel.
+
 ## Payments, balance due and invoices
 
 Every job shows its **balance**: the price minus the deposit and any payments. **Record payment** adds a
@@ -626,6 +648,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST | `/api/jobs/:id/payments` | Record a payment or refund `{ amount, method, note, kind }` |
 | GET | `/api/jobs/:id/invoice.pdf` | Invoice or receipt PDF |
 | GET / PUT | `/api/ad-spend` | Monthly ad spend by source |
+| GET | `/api/analytics?from=&to=&pipeline=` | Everything on the Analytics page |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
 | GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
 | POST | `/webhooks/twilio/voice` | Incoming calls (forward, then text back if missed) |
@@ -657,6 +680,7 @@ src/payments.js      payments and balance due; src/invoices.js invoice PDFs (src
 src/campaigns.js     quote follow-ups and win-back campaigns
 src/referrals.js     customer referral and partner links; public/refer.html their form
 src/adspend.js       monthly ad spend by source
+src/analytics.js     the Analytics report; public/analytics.js its page and charts
 src/google-lsa.js    Google Local Services leads (Google Ads API)
 public/growth.js     referral links and the Referrals panel
 src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV
