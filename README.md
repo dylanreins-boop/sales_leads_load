@@ -387,7 +387,7 @@ Email works with the email settings above; texts need Twilio.
 
 ## New-lead alerts (speed to lead)
 
-A new Facebook, website or text lead sends a **phone alert** to the sales team right away; tapping it opens
+A new Facebook, website, Google, referral, missed-call or text lead sends a **phone alert** to the sales team right away; tapping it opens
 the lead. If nobody has called, texted or logged anything on it within **15 minutes**, the admins get an
 alert too. Alerts go out 7 AM to 8 PM (`ALERT_HOURS`); overnight leads are alerted in the morning.
 
@@ -403,6 +403,73 @@ under the hours-per-day rule. Picking a day books the job on the calendar for th
 their commission) and sends the confirmation. With `STRIPE_SECRET_KEY` set, the customer then pays the
 deposit on Stripe's payment page and it's recorded on the job; without it, they pay at drop-off. **Preview**
 shows the rep what the customer sees. Links work for 30 days and can be turned off.
+
+## Payments, balance due and invoices
+
+Every job shows its **balance**: the price minus the deposit and any payments. **Record payment** adds a
+payment (blank amount = the whole balance) or a refund, by cash, card, Zelle and so on; admins can remove
+one entered by mistake. **Invoice PDF** (or **Receipt PDF** once it's paid in full) gives a branded PDF with
+the quote's line items, and **Email invoice** sends it to the customer. Revenue has a **Still owed** list of
+finished jobs with money still due. Shop logins never see any amounts.
+
+## Ready for pickup
+
+When a job is moved to **Ready**, the customer gets a text and email saying their vehicle is ready, with the
+balance due. It goes once per job, and admins edit the wording or turn it off under **Texts & reminders**.
+
+## Missed calls
+
+Point the Twilio number's voice webhook ("A call comes in") at `/webhooks/twilio/voice`. Calls ring through
+to `FORWARD_CALLS_TO` (the shop's real phone) for 20 seconds, showing the customer's number. If nobody picks
+up, the caller gets a text right away ("Sorry we missed your call...", editable under **Texts & reminders**,
+at most once every 12 hours) and an unknown number becomes a new lead tagged **Missed call**, which sets off
+the new-lead alerts. Their reply lands on the lead like any other text.
+
+## Quote follow-ups
+
+A quote that hasn't booked gets a friendly text from the rep **3 days** and **7 days** later, with a booking
+link (email if there's no number to text). They stop as soon as the customer replies, books, or the lead is
+marked lost. Follow-ups only go out Monday to Saturday, 9 AM to 7 PM. Admins change the days and the wording
+under **Texts & reminders → Quote follow-ups**. Booking links need `PUBLIC_URL`.
+
+## Win-back campaigns
+
+Admins: **Win-back** sends one text (or email) to a group of Old & Dead leads: pick old, dead or both, RVs
+or everything else, and how far back. **Check** shows how many it reaches and a sample of the message.
+People marked do-not-call, wrong number or duplicate, anyone who replied STOP, and anyone contacted in the
+last 30 days are left out. Messages go out up to 10 a minute, Monday to Saturday, 9 AM to 7 PM; the campaign list shows
+sent, replied and booked, and can be stopped. Anyone who replies goes back on the board.
+
+## Referrals and partners
+
+From a past customer's lead, **Referral link** makes their own link (or texts it to them). Whoever fills in
+the short form on it lands on the board tagged **Referral** with "Referred by" on their lead. Admins add
+**partners** (RV dealers, storage lots, detailers) under **Referrals**, each with their own link, and see
+who has sent leads, what they booked, and which customers are due a **thank-you** (mark it once they're
+thanked). A partner's link can be turned off.
+
+## Ad spend vs. results
+
+On **Revenue → Where leads come from**, admins open **Ad spend** and enter what was spent each month on
+Facebook, the website, Google Local Services, referral rewards and other ads. The lead source table then
+adds **Ad spend**, **Cost per lead**, **Cost per booking** and **Return** (revenue for every dollar spent)
+for the months in the chosen period.
+
+## Google Local Services leads
+
+With Google Ads API access, Local Services leads (calls, messages and bookings from the "Google Guaranteed"
+ads) come in by themselves every 5 minutes, tagged **Google**, with the customer's message when they sent
+one. Admins also get **Sync Google**. You need, from Google:
+
+1. A **developer token** (Google Ads → Tools → API Center; basic access is enough).
+2. An **OAuth client** (Google Cloud console → Credentials → OAuth client ID) and a **refresh token** for a
+   Google login that can see the ads account.
+3. The Local Services ads **customer ID** (and the manager account's ID if you sign in through one).
+
+Set `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`,
+`GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID` and, if needed, `GOOGLE_ADS_LOGIN_CUSTOMER_ID`.
+The first sync reaches back 30 days. Google only shares a caller's number when there is one (some are
+tracking numbers).
 
 ## Importing leads from before the app
 
@@ -555,6 +622,13 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST | `/api/reminders/:id/snooze` | `{ due_at }` |
 | GET / PUT | `/api/settings/email` | Follow-up email template `{ enabled, subject, body }` |
 | POST | `/api/facebook/sync` | Pull leads from `FB_FORM_IDS` |
+| POST | `/api/google/sync` | Pull Google Local Services leads now |
+| POST | `/api/jobs/:id/payments` | Record a payment or refund `{ amount, method, note, kind }` |
+| GET | `/api/jobs/:id/invoice.pdf` | Invoice or receipt PDF |
+| GET / PUT | `/api/ad-spend` | Monthly ad spend by source |
+| GET / POST | `/api/campaigns` | Win-back campaigns |
+| GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
+| POST | `/webhooks/twilio/voice` | Incoming calls (forward, then text back if missed) |
 | GET / POST | `/webhooks/facebook` | Facebook verification and lead events |
 | POST | `/api/intake/website` | Website form submissions |
 
@@ -579,6 +653,12 @@ src/sms.js           Twilio texting (send, webhook signature check)
 src/alerts.js        new-lead and reply alerts; src/push.js sends them (Web Push, no dependencies)
 src/bookings.js      online booking links; src/stripe.js card deposits (Stripe Checkout)
 src/daysheet.js      the shop's morning day-sheet email
+src/payments.js      payments and balance due; src/invoices.js invoice PDFs (src/pdf.js, no dependencies)
+src/campaigns.js     quote follow-ups and win-back campaigns
+src/referrals.js     customer referral and partner links; public/refer.html their form
+src/adspend.js       monthly ad spend by source
+src/google-lsa.js    Google Local Services leads (Google Ads API)
+public/growth.js     referral links and the Referrals panel
 src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV
 public/shop-time.js  work time and hours per day (shared by the server and the browser)
 public/messages.js   texts, alerts, booking links and the Texts & reminders panel
