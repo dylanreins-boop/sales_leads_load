@@ -3,6 +3,15 @@
 const crypto = require('node:crypto');
 
 // "(702) 555-0101" -> "+17025550101". US numbers without a country code get +1.
+// A US number the way people write it (702-555-0100); anything else as given.
+function prettyPhone(text) {
+  const raw = String(text ?? '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+  return raw || null;
+}
+
 function toE164(phone) {
   const raw = String(phone ?? '').trim();
   const digits = raw.replace(/\D/g, '');
@@ -52,4 +61,4 @@ function createTexter({ accountSid, authToken, from, messagingServiceSid }, fetc
   };
 }
 
-module.exports = { createTexter, toE164, twilioSignature };
+module.exports = { prettyPhone, createTexter, toE164, twilioSignature };

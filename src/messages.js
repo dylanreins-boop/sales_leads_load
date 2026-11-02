@@ -2,7 +2,7 @@
 // coming back in, the booking confirmation, and the reminder the day before drop-off.
 const { HttpError } = require('./leads');
 const { renderTemplate } = require('./email');
-const { toE164 } = require('./sms');
+const { toE164, prettyPhone } = require('./sms');
 const { serviceLabels } = require('./services');
 
 const DEFAULT_TEMPLATES = [
@@ -157,7 +157,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     let lead = stmt("SELECT * FROM leads WHERE phone_norm = ? ORDER BY (stage = 'waste'), id DESC LIMIT 1").get(digits);
     let created = false;
     if (!lead) {
-      lead = leads.ingest({ source: 'text', phone: from, message: text }).lead;
+      lead = leads.ingest({ source: 'text', phone: prettyPhone(from), message: text }).lead;
       created = true;
     }
     recordText(lead.id, { direction: 'in', phone: from, body: text, status: 'received', provider_id: id });
@@ -186,7 +186,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
   // at most once every 12 hours.
   async function missedCall({ from }) {
     if (!toE164(from)) return null;
-    const { lead, created } = leads.ingest({ source: 'call', phone: from, message: 'Called and nobody answered' });
+    const { lead, created } = leads.ingest({ source: 'call', phone: prettyPhone(from), message: 'Called and nobody answered' });
     if (!created) leads.logActivity(lead.id, 'call', { note: 'Missed call from the customer' });
     const settings = getNotices();
     const recent = stmt(`SELECT 1 FROM texts WHERE lead_id = ? AND trigger = 'missed_call' AND created_at > ?`)

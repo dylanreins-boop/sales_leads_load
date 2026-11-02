@@ -2,6 +2,7 @@
 // few minutes for new Local Services leads (calls, messages and bookings) and puts them on the
 // board like Facebook leads, tagged "Google". Each Google lead is brought in once.
 const { HttpError } = require('./leads');
+const { prettyPhone } = require('./sms');
 
 const TYPES = { PHONE_CALL: 'Called', MESSAGE: 'Sent a message', BOOKING: 'Booked a time' };
 const LOOKBACK_DAYS = 30; // the first sync reaches back this far
@@ -86,7 +87,7 @@ function createGoogleLsaClient(config, { db, leads, fetchImpl = fetch }) {
           source: 'google',
           external_id: String(g.id),
           full_name: contact.consumerName,
-          phone: contact.phoneNumber,
+          phone: prettyPhone(contact.phoneNumber),
           email: contact.email,
           message: [TYPES[g.leadType] || g.leadType, text].filter(Boolean).join(': '),
           campaign: 'Google Local Services',

@@ -3,6 +3,7 @@
 // in the app, or earlier in the file) are skipped, nothing is lost (columns that aren't matched go into
 // the lead's notes), and an import can be undone.
 const crypto = require('node:crypto');
+const { prettyPhone } = require('./sms');
 const { HttpError } = require('./leads');
 const { readSheet } = require('./sheets');
 const { normalizeVehicleType, VEHICLE_TYPES } = require('./vehicle');
@@ -94,13 +95,6 @@ function parseDate(value) {
   if (!text) return null;
   const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T12:00:00` : text);
   return Number.isNaN(d.getTime()) || d.getFullYear() < 2000 || d > new Date(Date.now() + 86400000) ? null : d.toISOString();
-}
-
-function prettyPhone(text) {
-  const digits = clean(text).replace(/\D/g, '');
-  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  if (digits.length === 11 && digits.startsWith('1')) return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
-  return clean(text) || null;
 }
 
 // One spreadsheet row -> a lead, using the column mapping. Unmatched columns go into the notes.

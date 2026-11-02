@@ -186,7 +186,7 @@ function spendCells(g) {
   if (!g.spend) return [h('td', { class: 'num muted' }, ''), h('td', { class: 'num' }, ''), h('td', { class: 'num' }, ''), h('td', { class: 'num' }, '')];
   return [
     h('td', { class: 'num' }, money(g.spend, { cents: false })),
-    h('td', { class: 'num' }, g.leads ? money(Math.round(g.spend / g.leads)) : '–'),
+    h('td', { class: 'num' }, g.leads ? money(Math.round(g.spend / g.leads), { cents: false }) : '–'),
     h('td', { class: 'num' }, g.booked ? money(Math.round(g.spend / g.booked), { cents: false }) : '–'),
     h('td', { class: `num ${g.revenue >= g.spend ? 'good' : 'bad'}` }, `${(g.revenue / g.spend).toFixed(1)}×`),
   ];
