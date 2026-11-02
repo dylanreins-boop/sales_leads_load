@@ -32,6 +32,7 @@ const { createPaymentService } = require('./src/payments');
 const { invoicePdf } = require('./src/invoices');
 const { createCampaignService } = require('./src/campaigns');
 const { createReferralService } = require('./src/referrals');
+const { createAdSpendService, PAID_SOURCES } = require('./src/adspend');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -193,6 +194,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const daySheets = createDaySheetMailer(db, { jobs, mailer, brand: config.brand });
   const campaigns = createCampaignService(db, { leads, messages, bookings, mailer, texter, publicUrl: config.publicUrl });
   const referrals = createReferralService(db, { leads, brand: config.brand });
+  const adSpend = createAdSpendService(db);
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -733,6 +735,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
+  // Monthly ad spend by source, for cost per lead and per booking on that report.
+  route('GET', '/api/ad-spend', ({ query }) => ({ sources: PAID_SOURCES, rows: adSpend.list({ from: query.get('from'), to: query.get('to') }) }), { roles: ADMIN });
+  route('PUT', '/api/ad-spend', ({ body, actor }) => adSpend.save(body, actor), { roles: ADMIN });
   route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body), { roles: ADMIN });
   route('GET', '/api/reminders', ({ query }) => leads.listReminders({ status: query.get('status') || 'open' }));
   route('POST', '/api/reminders/:id/complete', ({ params, actor }) => leads.completeReminder(Number(params.id), actor));

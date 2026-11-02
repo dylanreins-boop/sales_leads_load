@@ -225,8 +225,14 @@
           <option value="90">Last 90 days</option>
           <option value="ytd" selected>Year to date</option>
         </select>
+        <button type="button" id="spendBtn">Ad spend</button>
       </div>
-      <p class="muted rev-note">Leads that came in during the period, how many booked, and what their jobs brought in.</p>
+      <p class="muted rev-note">Leads that came in during the period, how many booked, and what their jobs brought in. Enter what you spend on ads each month (Ad spend) to see the cost per lead and per booking.</p>
+      <form id="spendForm" class="com-settings spend-form" hidden>
+        <label>Month <select name="month"></select></label>
+        <div id="spendInputs" class="spend-inputs"></div>
+        <button type="submit" class="primary">Save spend</button>
+      </form>
       <div class="rev-grid even">
         <div class="table-scroll"><table id="srcBySource" class="matrix rev-table"></table></div>
         <div class="table-scroll"><table id="srcByHeard" class="matrix rev-table"></table></div>

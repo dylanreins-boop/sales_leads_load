@@ -156,7 +156,8 @@ function renderReps(jobs) {
 }
 
 // ---------- Where leads come from ----------
-const SOURCE_NAMES = { facebook: 'Facebook', website: 'Website', manual: 'Phone / walk-in' };
+const SOURCE_NAMES = { facebook: 'Facebook', website: 'Website', manual: 'Phone / walk-in', text: 'Text message', import: 'Imported', call: 'Missed call', referral: 'Referrals & partners', google: 'Google Local Services', online: 'Online booking', other: 'Other ads' };
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 function sourceRange() {
   const now = new Date();
@@ -168,13 +169,30 @@ function sourceRange() {
 
 async function loadSources() {
   const [from, to] = sourceRange();
-  const rows = await api(`/api/reports/sources?from=${from.toISOString()}&to=${to.toISOString()}`);
+  const [rows, spend] = await Promise.all([
+    api(`/api/reports/sources?from=${from.toISOString()}&to=${to.toISOString()}`),
+    api(`/api/ad-spend?from=${monthKey(from)}&to=${monthKey(addDays(to, -1))}`),
+  ]);
   const pick = rows.filter((r) => !rev.pipeline || r.pipeline === rev.pipeline);
-  renderSourceTable($('#srcBySource'), 'Lead source', pick, (r) => SOURCE_NAMES[r.source] || r.source);
+  // Ad spend for the months the period touches, by source (not split by pipeline).
+  const spent = new Map();
+  for (const s of spend.rows) spent.set(SOURCE_NAMES[s.source] || s.source, (spent.get(SOURCE_NAMES[s.source] || s.source) || 0) + s.cents);
+  renderSourceTable($('#srcBySource'), 'Lead source', pick, (r) => SOURCE_NAMES[r.source] || r.source, spent);
   renderSourceTable($('#srcByHeard'), 'How they heard about us', pick, (r) => r.heard_about || 'Not asked');
 }
 
-function renderSourceTable(table, title, rows, keyOf) {
+// Columns for spend: what was spent, cost per lead and per booking, and revenue per dollar.
+function spendCells(g) {
+  if (!g.spend) return [h('td', { class: 'num muted' }, ''), h('td', { class: 'num' }, ''), h('td', { class: 'num' }, ''), h('td', { class: 'num' }, '')];
+  return [
+    h('td', { class: 'num' }, money(g.spend, { cents: false })),
+    h('td', { class: 'num' }, g.leads ? money(Math.round(g.spend / g.leads)) : '–'),
+    h('td', { class: 'num' }, g.booked ? money(Math.round(g.spend / g.booked), { cents: false }) : '–'),
+    h('td', { class: `num ${g.revenue >= g.spend ? 'good' : 'bad'}` }, `${(g.revenue / g.spend).toFixed(1)}×`),
+  ];
+}
+
+function renderSourceTable(table, title, rows, keyOf, spent = null) {
   const groups = new Map();
   for (const r of rows) {
     const k = keyOf(r);
@@ -184,19 +202,65 @@ function renderSourceTable(table, title, rows, keyOf) {
     g.revenue += r.revenue_cents || 0;
     groups.set(k, g);
   }
+  if (spent) {
+    for (const [k, cents] of spent) {
+      const g = groups.get(k) || { leads: 0, booked: 0, revenue: 0 };
+      g.spend = cents;
+      groups.set(k, g);
+    }
+  }
   const sorted = [...groups.entries()].sort((a, b) => b[1].revenue - a[1].revenue || b[1].leads - a[1].leads);
   const pct = (g) => (g.leads ? `${Math.round((g.booked / g.leads) * 100)}%` : '–');
-  const all = sorted.reduce((t, [, g]) => ({ leads: t.leads + g.leads, booked: t.booked + g.booked, revenue: t.revenue + g.revenue }), { leads: 0, booked: 0, revenue: 0 });
+  const all = sorted.reduce((t, [, g]) => ({ leads: t.leads + g.leads, booked: t.booked + g.booked, revenue: t.revenue + g.revenue, spend: t.spend + (g.spend || 0) }), { leads: 0, booked: 0, revenue: 0, spend: 0 });
+  const withSpend = spent && all.spend > 0;
+  table.parentElement.classList.toggle('full', Boolean(withSpend)); // the wider table takes the whole row
+  const spendHead = withSpend ? ['Ad spend', 'Cost per lead', 'Cost per booking', 'Return'].map((t) => h('th', { class: 'num' }, t)) : [];
   table.replaceChildren(
     h('thead', {}, h('tr', {}, h('th', {}, title), h('th', { class: 'num' }, 'Leads'), h('th', { class: 'num' }, 'Booked'),
-      h('th', { class: 'num' }, 'Booking rate'), h('th', { class: 'num' }, 'Revenue'), h('th', { class: 'num' }, 'Per lead'))),
+      h('th', { class: 'num' }, 'Booking rate'), h('th', { class: 'num' }, 'Revenue'), h('th', { class: 'num' }, 'Revenue per lead'), ...spendHead)),
     h('tbody', {}, ...(sorted.length ? sorted.map(([k, g]) => h('tr', {},
       h('td', {}, k), h('td', { class: 'num' }, g.leads), h('td', { class: 'num' }, g.booked), h('td', { class: 'num' }, pct(g)),
-      h('td', { class: 'num' }, money(g.revenue, { cents: false })), h('td', { class: 'num' }, money(Math.round(g.revenue / g.leads), { cents: false }))))
-      : [h('tr', {}, h('td', { colspan: 6, class: 'muted' }, 'No leads came in during this period.'))])),
+      h('td', { class: 'num' }, money(g.revenue, { cents: false })), h('td', { class: 'num' }, g.leads ? money(Math.round(g.revenue / g.leads), { cents: false }) : '–'),
+      ...(withSpend ? spendCells(g) : [])))
+      : [h('tr', {}, h('td', { colspan: withSpend ? 10 : 6, class: 'muted' }, 'No leads came in during this period.'))])),
     h('tfoot', {}, h('tr', {}, h('th', {}, 'Total'), h('th', { class: 'num' }, all.leads), h('th', { class: 'num' }, all.booked),
       h('th', { class: 'num' }, pct(all)), h('th', { class: 'num' }, money(all.revenue, { cents: false })),
-      h('th', { class: 'num' }, all.leads ? money(Math.round(all.revenue / all.leads), { cents: false }) : '–'))));
+      h('th', { class: 'num' }, all.leads ? money(Math.round(all.revenue / all.leads), { cents: false }) : '–'),
+      ...(withSpend ? spendCells(all).map((c) => h('th', { class: c.className }, c.textContent)) : []))));
+}
+
+// ---------- ad spend (admins) ----------
+async function openSpend() {
+  const f = $('#spendForm');
+  f.hidden = !f.hidden;
+  if (f.hidden) return;
+  const now = new Date();
+  const months = Array.from({ length: 12 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - i, 1));
+  f.month.replaceChildren(...months.map((m) => h('option', { value: monthKey(m) }, m.toLocaleDateString([], { month: 'long', year: 'numeric' }))));
+  await fillSpend();
+}
+
+async function fillSpend() {
+  const f = $('#spendForm');
+  try {
+    const { sources, rows } = await api(`/api/ad-spend?from=${f.month.value}&to=${f.month.value}`);
+    $('#spendInputs').replaceChildren(...sources.map((s) => {
+      const row = rows.find((r) => r.source === s);
+      return h('label', {}, SOURCE_NAMES[s] || s, h('input', { name: `spend_${s}`, 'data-source': s, inputmode: 'decimal', placeholder: '$0', value: row ? (row.cents / 100).toFixed(2) : '' }));
+    }));
+  } catch (err) { fail(err); }
+}
+
+async function saveSpend(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    for (const input of f.querySelectorAll('[data-source]')) {
+      await api('/api/ad-spend', { method: 'PUT', body: { month: f.month.value, source: input.dataset.source, amount: input.value } });
+    }
+    toast('Ad spend saved');
+    await loadSources();
+  } catch (err) { fail(err); }
 }
 
 // Balances left on finished jobs: who still owes, with a way to record the payment.
@@ -220,6 +284,9 @@ async function loadOwed() {
 }
 
 function initRevenue() {
+  $('#spendBtn').addEventListener('click', () => openSpend().catch(fail));
+  $('#spendForm').month.addEventListener('change', fillSpend);
+  $('#spendForm').addEventListener('submit', saveSpend);
   $('#srcPeriod').addEventListener('change', () => loadSources().catch(fail));
   $('#revBasis').addEventListener('click', (e) => {
     const b = e.target.closest('button');

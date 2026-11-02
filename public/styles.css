@@ -1063,3 +1063,10 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .partner-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .partner-form input { flex: 1 1 200px; margin: 0; }
 .matrix tr.inactive td { color: var(--muted); }
+.spend-form { margin-bottom: 10px; }
+.spend-inputs { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.spend-inputs label { margin: 0; font-size: 12px; }
+.spend-inputs input { width: 110px; margin: 0; }
+.matrix td.good { color: var(--ok); font-weight: 700; }
+.matrix td.bad { color: var(--danger); font-weight: 700; }
+.rev-grid > .full { grid-column: 1 / -1; }

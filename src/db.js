@@ -223,6 +223,16 @@ CREATE TABLE IF NOT EXISTS job_payments (
 );
 CREATE INDEX IF NOT EXISTS job_payments_job ON job_payments (job_id);
 
+-- Monthly ad spend by lead source (for cost per lead on the source report).
+CREATE TABLE IF NOT EXISTS ad_spend (
+  month      TEXT NOT NULL,                    -- YYYY-MM
+  source     TEXT NOT NULL,
+  cents      INTEGER NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (month, source)
+);
+
 -- Referral links: one per past customer who shares one, and one per partner (dealers, storage lots...).
 CREATE TABLE IF NOT EXISTS referrers (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
