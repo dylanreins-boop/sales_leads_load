@@ -69,7 +69,7 @@ const fail = (err) => toast(err.message, 'error');
 const stageLabel = (id) => state.meta.stages.find((s) => s.id === id)?.label ?? id;
 const dispoLabel = (id) => state.meta.dispositions.find((d) => d.id === id)?.label ?? id;
 const leadName = (l) => l.full_name || [l.first_name, l.last_name].filter(Boolean).join(' ') || l.email || l.phone || `Lead #${l.lead_id ?? l.id}`;
-const sourceLabel = { facebook: 'Facebook', website: 'Website', manual: 'Manual', text: 'Text message', import: 'Imported', online: 'Online booking' };
+const sourceLabel = { facebook: 'Facebook', website: 'Website', manual: 'Manual', text: 'Text message', import: 'Imported', online: 'Online booking', call: 'Missed call', referral: 'Referral', google: 'Google' };
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -689,6 +689,10 @@ function activityItem(a) {
     booking: 'Online booking',
     signoff: 'Customer sign-off',
     import: 'Imported',
+    call: 'Phone call',
+    payment: 'Payment',
+    campaign: 'Campaign',
+    referral: 'Referral',
   }[a.type] || a.type;
   return h('li', {},
     h('div', { class: 'what' }, what),

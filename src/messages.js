@@ -31,9 +31,12 @@ const DEFAULT_NOTICES = {
   ready_text: 'Hi {{first_name}}, your {{vehicle}} is ready for pickup at {{company}}! {{balance_due}} {{address}} See you soon.',
   ready_subject: 'Your {{vehicle}} is ready for pickup',
   ready_email: 'Hi {{first_name}},\n\nGood news: your {{vehicle}} is ready for pickup at {{company}}.\n\n{{balance_due}}\n{{address}}\n\nQuestions? Reply to this email or call {{company_phone}}.\n\n{{company}}',
+  // Texted to anyone whose call to the Twilio number wasn't answered.
+  missed_call_enabled: true,
+  missed_call_text: 'Hi, this is {{company}}. Sorry we missed your call! Text us back here with your vehicle (year, make and model) and what you would like done, and we will get right back to you.',
 };
-const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email'];
-const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'by_text', 'by_email'];
+const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'by_text', 'by_email'];
 // Each automatic message: the job column that marks it sent, and how it's logged.
 const KINDS = {
   confirm: { sentColumn: 'confirm_sent_at', trigger: 'confirmation', email: 'Booking confirmation', name: 'Booking confirmation' },
@@ -122,7 +125,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     return stmt('SELECT * FROM texts WHERE id = ?').get(Number(lastInsertRowid));
   }
 
-  const LABELS = { manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
+  const LABELS = { missed_call: 'Missed-call text', manual: 'Text', confirmation: 'Booking confirmation text', reminder: 'Reminder text', booking_link: 'Booking link text', ready: 'Ready-for-pickup text' };
 
   // Sends a text to a lead and logs it. Throws a 400 the rep can read when it can't go out.
   async function sendText(leadId, body, { user, trigger = 'manual' } = {}) {
@@ -172,6 +175,36 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     const fresh = leads.getLead(lead.id);
     if (!created) onReply(fresh, text);
     return fresh;
+  }
+
+  // ---- missed calls (Twilio voice) ----
+  // A call nobody answered: the caller becomes (or is matched to) a lead and gets a text right away,
+  // at most once every 12 hours.
+  async function missedCall({ from }) {
+    if (!toE164(from)) return null;
+    const { lead, created } = leads.ingest({ source: 'call', phone: from, message: 'Called and nobody answered' });
+    if (!created) leads.logActivity(lead.id, 'call', { note: 'Missed call from the customer' });
+    const settings = getNotices();
+    const recent = stmt(`SELECT 1 FROM texts WHERE lead_id = ? AND trigger = 'missed_call' AND created_at > ?`)
+      .get(lead.id, new Date(Date.now() - 12 * 3600000).toISOString());
+    let texted = false;
+    if (settings.missed_call_enabled && !recent && texter.configured && lead.sms_opt_in !== 0) {
+      try {
+        await sendText(lead.id, render(settings.missed_call_text, leads.getLead(lead.id)), { trigger: 'missed_call' });
+        texted = true;
+      } catch (err) { console.error('Missed-call text failed:', err.message); }
+    }
+    // A new lead already set off the new-lead alert; someone we know gets their rep pinged.
+    if (!created) onReply(leads.getLead(lead.id), 'Called and nobody answered');
+    return { lead: leads.getLead(lead.id), created, texted };
+  }
+
+  // An answered call from someone we know goes in their history.
+  function answeredCall({ from }) {
+    const digits = String(from ?? '').replace(/\D/g, '').slice(-10);
+    const lead = digits && stmt("SELECT id FROM leads WHERE phone_norm = ? ORDER BY (stage = 'waste'), id DESC LIMIT 1").get(digits);
+    if (lead) leads.logActivity(lead.id, 'call', { note: 'Called the shop (answered)' });
+    return lead || null;
   }
 
   // ---- booking confirmation and the day-before reminder ----
@@ -259,7 +292,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
 
   return {
     getTemplates, saveTemplates, getNotices, saveNotices, render, valuesFor,
-    sendText, receiveText, sendConfirmation, sendReady, sendDueReminders, jobMoved,
+    sendText, receiveText, missedCall, answeredCall, sendConfirmation, sendReady, sendDueReminders, jobMoved,
   };
 }
 

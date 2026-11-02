@@ -19,7 +19,7 @@ const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 const { createQuoteService } = require('./src/quotes');
 const { createReviewService } = require('./src/reviews');
 const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
-const { createTexter } = require('./src/sms');
+const { createTexter, toE164 } = require('./src/sms');
 const { createMessageService } = require('./src/messages');
 const { createPush } = require('./src/push');
 const { createAlertService } = require('./src/alerts');
@@ -670,6 +670,34 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     appearance.removeImage(null, params.kind);
     return appearance.view(actor.user);
   }, { roles: ADMIN });
+
+  // ---- Calls to the Twilio number (missed-call text-back) ----
+  // Twilio's "A call comes in" webhook: ring the shop; if nobody answers, text the caller.
+  const twiml = (res, body) => {
+    res.writeHead(200, { 'Content-Type': 'text/xml' });
+    res.end(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`);
+  };
+  const xmlEscape = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const sorry = () => `<Say>Thanks for calling ${xmlEscape(config.brand.name)}. Sorry we missed you. We just sent you a text, and we will get back to you shortly.</Say>`;
+  route('POST', '/webhooks/twilio/voice', async ({ req, res, body }) => {
+    if (!texter.verify(`${baseUrl(req)}${req.url}`, body, req.headers['x-twilio-signature'])) throw new HttpError(401, 'Bad signature');
+    const forward = toE164(config.sms.forwardCallsTo);
+    if (!forward) {
+      await messages.missedCall({ from: body.From });
+      return twiml(res, sorry());
+    }
+    // The shop sees the customer's number; the result comes back to /status.
+    return twiml(res, `<Dial timeout="20" action="/webhooks/twilio/voice/status" method="POST" callerId="${xmlEscape(body.From || '')}">${xmlEscape(forward)}</Dial>`);
+  }, { isPublic: true });
+  route('POST', '/webhooks/twilio/voice/status', async ({ req, res, body }) => {
+    if (!texter.verify(`${baseUrl(req)}${req.url}`, body, req.headers['x-twilio-signature'])) throw new HttpError(401, 'Bad signature');
+    if (body.DialCallStatus === 'completed') {
+      messages.answeredCall({ from: body.From });
+      return twiml(res, '<Hangup/>');
+    }
+    await messages.missedCall({ from: body.From });
+    return twiml(res, sorry());
+  }, { isPublic: true });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });

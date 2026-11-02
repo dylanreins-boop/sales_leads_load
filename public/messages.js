@@ -5,8 +5,8 @@
 const msg = { templates: [], notices: null };
 const TEXT_PLACEHOLDERS = ['first_name', 'last_name', 'vehicle', 'rep', 'company', 'company_phone', 'address', 'quote_total', 'drop_off', 'pick_up', 'services'];
 const NOTICE_PLACEHOLDERS = ['first_name', 'vehicle', 'company', 'company_phone', 'address', 'drop_off', 'pick_up', 'services', 'balance_due'];
-const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'by_text', 'by_email'];
-const NOTICE_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'by_text', 'by_email'];
+const NOTICE_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text'];
 
 // ---------- texts on a lead ----------
 function renderTexts(lead) {

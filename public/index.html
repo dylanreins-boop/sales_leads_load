@@ -50,6 +50,9 @@
         <option value="manual">Manual</option>
         <option value="text">Text message</option>
         <option value="import">Imported</option>
+        <option value="call">Missed call</option>
+        <option value="referral">Referral</option>
+        <option value="google">Google</option>
       </select>
     </div>
     <div class="actions">
@@ -703,6 +706,12 @@
           <label>Email subject <input name="ready_subject" maxlength="200"></label>
           <label>Email <textarea name="ready_email" rows="6"></textarea></label>
           <p class="hint">{{balance_due}} becomes "Balance due at pickup: $X." or "Your balance is paid in full."</p>
+        </section>
+        <section class="card-section">
+          <h3>Missed calls</h3>
+          <label class="check"><input type="checkbox" name="missed_call_enabled"> Text callers back when nobody answers</label>
+          <label>Text <textarea name="missed_call_text" rows="3"></textarea></label>
+          <p class="hint">Calls to the Twilio number ring the shop phone first (FORWARD_CALLS_TO on the server). Unanswered callers get this text and show up as a lead.</p>
         </section>
         <section class="card-section">
           <h3>Send by</h3>

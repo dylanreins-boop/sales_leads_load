@@ -13,6 +13,7 @@ process.env.EMAIL_API_KEY = 'key';
 process.env.EMAIL_FROM = 'shop@example.com';
 process.env.PUBLIC_URL = 'https://leads.example.com';
 process.env.BRAND_PHONE = '(702) 555-0000';
+process.env.FORWARD_CALLS_TO = '702-600-1128';
 
 const { createApp } = require('../server');
 const { openDatabase } = require('../src/db');
@@ -188,4 +189,32 @@ test('marking a job Ready for pickup texts the customer once, with the balance d
   await call('PATCH', `/api/jobs/${booked.job.id}`, { status: 'in_shop' }, SHOP);
   await call('PATCH', `/api/jobs/${booked.job.id}`, { status: 'ready' }, SHOP);
   assert.equal(outbox.length, 0, 'once per job');
+});
+
+test('a call nobody answers gets a text back and becomes a lead; answered calls are logged', async () => {
+  const post = async (path, fields) => {
+    const sig = twilioSignature('twilio-secret', `https://leads.example.com${path}`, fields);
+    const res = await fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': sig }, body: new URLSearchParams(fields).toString() });
+    return { status: res.status, xml: await res.text() };
+  };
+  const ring = await post('/webhooks/twilio/voice', { From: '+17025558800', To: '+17025550000', CallSid: 'CA1' });
+  assert.match(ring.xml, /<Dial timeout="20" action="\/webhooks\/twilio\/voice\/status" method="POST" callerId="\+17025558800">\+17026001128<\/Dial>/, 'rings the shop, showing the caller');
+
+  outbox.length = 0;
+  const missed = await post('/webhooks/twilio/voice/status', { From: '+17025558800', DialCallStatus: 'no-answer', CallSid: 'CA1' });
+  assert.match(missed.xml, /<Say>Thanks for calling Bob Moses Ceramic Coating\. Sorry we missed you\./);
+  assert.deepEqual(outbox.map((m) => [m.kind, m.to]), [['text', '+17025558800']]);
+  assert.match(outbox[0].body, /^Hi, this is Bob Moses Ceramic Coating\. Sorry we missed your call!/);
+  const lead = (await call('GET', '/api/leads?q=5558800')).data[0];
+  assert.equal(lead.source, 'call');
+
+  outbox.length = 0;
+  await post('/webhooks/twilio/voice/status', { From: '+17025558800', DialCallStatus: 'busy' });
+  assert.equal(outbox.length, 0, 'no second text within 12 hours');
+  await post('/webhooks/twilio/voice/status', { From: '+17025558800', DialCallStatus: 'completed' });
+  const fresh = (await call('GET', `/api/leads/${lead.id}`)).data;
+  assert.ok(fresh.activities.some((a) => a.type === 'call' && a.note === 'Called the shop (answered)'));
+  assert.ok(fresh.activities.some((a) => a.type === 'reinquiry'), 'the second missed call is logged on the same lead');
+  const forged = await fetch(`${base}/webhooks/twilio/voice`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': 'forged' }, body: 'From=%2B17025558800' });
+  assert.equal(forged.status, 401);
 });

@@ -4,7 +4,7 @@
 // is alerted when alert hours start. Customer text replies ping the rep working that lead.
 const { toE164 } = require('./sms');
 
-const ALERT_SOURCES = ['facebook', 'website', 'text', 'online'];
+const ALERT_SOURCES = ['facebook', 'website', 'text', 'online', 'call', 'referral', 'google'];
 const FRESH_MS = 2 * 3600000; // older leads (e.g. a Facebook sync catching up) don't ping anyone
 
 function createAlertService(db, { leads, users, push, texter, minutes = 15, hours = { start: 7, end: 20 } }) {
@@ -54,7 +54,7 @@ function createAlertService(db, { leads, users, push, texter, minutes = 15, hour
 
   const leadName = (l) => l.full_name || [l.first_name, l.last_name].filter(Boolean).join(' ') || l.phone || l.email || 'New lead';
   const vehicle = (l) => [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ') || l.vehicle_type || '';
-  const SOURCE = { facebook: 'Facebook', website: 'the website', text: 'a text message', online: 'online booking' };
+  const SOURCE = { facebook: 'Facebook', website: 'the website', text: 'a text message', online: 'online booking', call: 'a missed call', referral: 'a referral', google: 'Google Local Services' };
 
   // A brand-new lead: schedule its alert (now, or when alert hours start).
   function leadArrived(lead, at = new Date()) {

@@ -83,6 +83,8 @@ module.exports = {
     authToken: process.env.TWILIO_AUTH_TOKEN || '',
     from: process.env.TWILIO_FROM || '',
     messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID || '',
+    // Calls to the Twilio number ring this phone; unanswered calls get a text back.
+    forwardCallsTo: process.env.FORWARD_CALLS_TO || '',
   },
 
   // Card deposits on online bookings (Stripe Checkout). Without a key, customers book and pay the deposit later.
