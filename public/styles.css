@@ -1155,3 +1155,33 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
   .an-heat { grid-template-columns: 30px repeat(24, minmax(0, 1fr)); gap: 1px; }
 }
 .analytics { --viz-none: color-mix(in srgb, var(--muted) 45%, var(--panel)); }
+
+/* ---------- Work timer (job panel) ---------- */
+.work-timer #workTotal { color: var(--text); }
+.work-timer #workTotal.over { color: var(--warn); }
+.progress.over .progress-bar span { background: var(--warn); }
+.work-live { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--ok) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border)); font-size: 14px; }
+.work-clock { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; }
+.work-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex-shrink: 0; display: inline-block; box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: work-pulse 1.8s ease-out infinite; }
+@keyframes work-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .work-dot { animation: none; } }
+.work-done { margin: 0; color: var(--ok); font-weight: 600; font-size: 14px; }
+.work-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.work-actions button { min-height: 44px; padding: 0 18px; font-size: 15px; }
+.work-actions .work-start { flex: 1; }
+.work-log > summary { cursor: pointer; font-size: 13px; color: var(--link); }
+.work-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.work-row { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; display: grid; gap: 4px; font-size: 13px; }
+.work-row-main { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.work-dur { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.work-flag { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.work-flag.warn { color: var(--warn); }
+.work-fix > summary { cursor: pointer; font-size: 12px; color: var(--link); width: fit-content; }
+.work-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; margin-top: 8px; }
+.work-form.add { border-top: 1px solid var(--border); padding-top: 10px; }
+.work-form label { margin: 0; font-size: 12px; }
+.work-form input { margin: 0; }
+.work-form .span-all { grid-column: 1 / -1; font-size: 13px; }
+.work-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--ok); }
+.work-badge.done { color: var(--muted); }
+.job-chip .work-dot { width: 7px; height: 7px; margin-right: 3px; }

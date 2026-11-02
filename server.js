@@ -9,6 +9,7 @@ const { STAGES, DISPOSITIONS } = require('./src/pipeline');
 const facebook = require('./src/facebook');
 const { createGoogleLsaClient } = require('./src/google-lsa');
 const { createAnalyticsService } = require('./src/analytics');
+const { createWorkTimeService } = require('./src/worktime');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
@@ -198,6 +199,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const referrals = createReferralService(db, { leads, brand: config.brand });
   const adSpend = createAdSpendService(db);
   const googleLsa = createGoogleLsaClient(config.googleAds, { db, leads, fetchImpl });
+  const workTime = createWorkTimeService(db, { jobs, leads });
   const analytics = createAnalyticsService(db, { commissions, payments, jobs, users });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
@@ -308,10 +310,18 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     const confirmation = body.send_confirmation === false ? null : await confirmBooking(job.id, actor);
     return { ...job, shop_time: jobs.capacityFor(job), confirmation };
   });
-  route('GET', '/api/jobs/:id', ({ params }) => {
-    const job = payments.decorate(commissions.figures(jobs.getJob(Number(params.id))));
-    return { ...job, shop_time: jobs.capacityFor(job) };
-  }, { roles: ANY_LOGIN });
+  const jobView = (id) => {
+    const job = payments.decorate(commissions.figures(jobs.getJob(id)));
+    return { ...job, shop_time: jobs.capacityFor(job), work: workTime.summary(id) };
+  };
+  route('GET', '/api/jobs/:id', ({ params }) => jobView(Number(params.id)), { roles: ANY_LOGIN });
+  // The shop's work timer: Start work, Pause, Finished (shop and admins); admins correct the record.
+  route('POST', '/api/jobs/:id/work/start', ({ params, actor }) => { workTime.start(Number(params.id), actor); return jobView(Number(params.id)); }, { roles: CALENDAR });
+  route('POST', '/api/jobs/:id/work/pause', ({ params, actor }) => { workTime.pause(Number(params.id), actor); return jobView(Number(params.id)); }, { roles: CALENDAR });
+  route('POST', '/api/jobs/:id/work/finish', ({ params, actor }) => { workTime.finish(Number(params.id), actor); return jobView(Number(params.id)); }, { roles: CALENDAR });
+  route('POST', '/api/jobs/:id/work', ({ params, body, actor }) => { workTime.addSession(Number(params.id), body, actor); return jobView(Number(params.id)); }, { roles: ADMIN });
+  route('PATCH', '/api/work/:id', ({ params, body, actor }) => jobView(workTime.editSession(Number(params.id), body, actor).job_id), { roles: ADMIN });
+  route('DELETE', '/api/work/:id', ({ params, actor }) => jobView(workTime.removeSession(Number(params.id), actor).job_id), { roles: ADMIN });
   // Payments after the deposit (sales and admins; the shop never sees money).
   route('POST', '/api/jobs/:id/payments', ({ params, body, actor }) => payments.add(Number(params.id), body, actor));
   route('DELETE', '/api/payments/:id', ({ params, actor }) => payments.remove(Number(params.id), actor), { roles: ADMIN });
@@ -363,7 +373,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
       await messages.sendReady(job.id, { user: actor.user, balanceCents: figures.amount_due_cents })
         .catch((err) => console.error('Ready-for-pickup message failed:', err.message));
     }
-    return { ...figures, shop_time: jobs.capacityFor(job) };
+    return { ...figures, shop_time: jobs.capacityFor(job), work: workTime.summary(job.id) };
   }, { roles: CALENDAR });
   route('POST', '/api/jobs/:id/checklist', ({ params, body, actor }) => jobs.addItem(Number(params.id), body, actor), { roles: CALENDAR });
   route('PATCH', '/api/jobs/:id/checklist/:item', ({ params, body, actor }) =>
@@ -839,7 +849,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
 
   // Move two-week-old leads off the boards now and every hour.
   leads.archiveOldLeads();
-  const sweep = setInterval(() => leads.archiveOldLeads(), 3600000);
+  workTime.stopForgotten();
+  const sweep = setInterval(() => { leads.archiveOldLeads(); workTime.stopForgotten(); }, 3600000);
   sweep.unref();
   // Review-request emails go out every 15 minutes once they're due.
   const sendReviews = () => reviews.sendDue().catch((err) => console.error('Review requests failed:', err.message));

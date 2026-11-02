@@ -404,6 +404,19 @@ their commission) and sends the confirmation. With `STRIPE_SECRET_KEY` set, the 
 deposit on Stripe's payment page and it's recorded on the job; without it, they pay at drop-off. **Preview**
 shows the rep what the customer sees. Links work for 30 days and can be turned off.
 
+## Work timer
+
+Every job on the calendar has a **Work timer** for the shop. Tap **Start work** when you begin on the
+vehicle (it moves the job to In the shop), **Pause** when you step away, and **Finished** when the work is
+done. Each person's time is kept separately, and starting another job pauses your clock on the last one.
+The calendar shows a green dot on vehicles being worked on right now. A clock left running overnight stops
+at closing time and is flagged. Admins can fix or remove a time, or add time someone forgot to clock, from
+the job's **Time log**. Sales logins see the time but can't run the clock.
+
+The **Work time** section of Analytics shows hours worked by person, real time against booked time (by
+vehicle type and by service), jobs that ran long, revenue per work hour, how long vehicles wait for work
+to start, and how long finished vehicles wait for pick-up.
+
 ## Analytics
 
 Admins get an **Analytics** tab with every number the app keeps, for one date range (last 7 or 30 days,
@@ -649,6 +662,8 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/jobs/:id/invoice.pdf` | Invoice or receipt PDF |
 | GET / PUT | `/api/ad-spend` | Monthly ad spend by source |
 | GET | `/api/analytics?from=&to=&pipeline=` | Everything on the Analytics page |
+| POST | `/api/jobs/:id/work/start` · `/pause` · `/finish` | The shop's work timer |
+| POST / PATCH / DELETE | `/api/jobs/:id/work`, `/api/work/:id` | Admins add, fix or remove work time |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
 | GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
 | POST | `/webhooks/twilio/voice` | Incoming calls (forward, then text back if missed) |
@@ -681,6 +696,7 @@ src/campaigns.js     quote follow-ups and win-back campaigns
 src/referrals.js     customer referral and partner links; public/refer.html their form
 src/adspend.js       monthly ad spend by source
 src/analytics.js     the Analytics report; public/analytics.js its page and charts
+src/worktime.js      the shop's work timer
 src/google-lsa.js    Google Local Services leads (Google Ads API)
 public/growth.js     referral links and the Referrals panel
 src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV

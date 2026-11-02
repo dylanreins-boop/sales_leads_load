@@ -25,6 +25,14 @@ function anCompact(v, dollars) {
   return `${pre}${Math.round(v).toLocaleString('en-US')}`;
 }
 const anDate = (d, opts) => new Date(d).toLocaleDateString([], opts);
+const anHours = (x) => (x == null ? '–' : `${(Math.round(x * 10) / 10).toLocaleString('en-US')} h`);
+// Real hours against booked hours: "12% over", "8% under", "on target".
+const anVs = (r) => {
+  if (r == null) return '–';
+  const pct = Math.round((r - 1) * 100);
+  if (Math.abs(pct) < 3) return 'on target';
+  return `${Math.abs(pct)}% ${pct > 0 ? 'over' : 'under'}`;
+};
 
 // ---------- the period ----------
 function anRange() {
@@ -398,8 +406,33 @@ function renderAnalytics(d) {
     group('Where they came from', null, sourcesGroup),
     group('The team', null, repsCard),
     group('Follow-up and marketing', 'What was sent and made during the period.', followGroup),
-    group('The shop and the money', null, shopGroup));
+    group('The shop and the money', null, shopGroup),
+    group('Work time', 'From the shop\'s work timer (Start work, Pause, Finished on each job). Jobs count when their work was finished in the period; booked is the work time set when the job was booked.', laborGroup(d.labor)));
   drawCharts();
+}
+
+function laborGroup(l) {
+  if (!l.hours_logged && !l.jobs_finished && !l.working_now) {
+    return h('div', { class: 'an-card' }, h('p', { class: 'an-empty' }, 'No work time yet in this period. The shop starts the clock from a job on the calendar: Start work, Pause, Finished.'));
+  }
+  const vsRows = (rows, label) => table([{ label, num: false }, 'Jobs', 'Average real time', 'Average booked', 'Against booked', 'Revenue per work hour'],
+    rows.map((r) => [r.key, r.jobs, anHours(r.avg_actual_hours), anHours(r.avg_booked_hours), anVs(r.vs_booked), anMoney(r.per_hour_cents)]));
+  return h('div', { class: 'an-grid' },
+    h('div', { style: 'grid-column: 1 / -1' }, h('div', { class: 'an-stats' },
+      tile('Hours worked', anHours(l.hours_logged), { sub: l.working_now ? `${l.working_now} clock${l.working_now === 1 ? '' : 's'} running now` : null }),
+      tile('Jobs finished', anNum(l.jobs_finished)),
+      tile('Average real time', anHours(l.avg_actual_hours), { sub: l.avg_booked_hours == null ? null : `${anHours(l.avg_booked_hours)} booked on average` }),
+      tile('Against booked time', anVs(l.vs_booked), { sub: `${anNum(l.over_booked)} ran long · ${anNum(l.under_booked)} came in early` }),
+      tile('Revenue per work hour', anMoney(l.per_hour_cents)),
+      tile('Drop-off to first work', anHours(l.wait_to_start_hours), { sub: 'average wait' }),
+      tile('Work done to pick-up', anHours(l.done_to_pickup_hours), { sub: 'average' }))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('Hours by person', 'Clock time during the period.', hbars(l.people.map((p) => ({ label: `${p.name} (${p.jobs} job${p.jobs === 1 ? '' : 's'})`, value: p.hours })), { fmt: anHours }))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('By vehicle type', 'Finished jobs: real time against the time they were booked for.', vsRows(l.by_vehicle, 'Vehicle'))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('By service', 'Use these averages to set work time when booking.', vsRows(l.by_service, 'Services'))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('Finished jobs', 'Most recent first. Ran long by more than 15% is marked.',
+      table([{ label: 'Customer', num: false }, { label: 'Vehicle', num: false }, { label: 'Services', num: false }, { label: 'Who', num: false }, 'Booked', 'Real time', 'Against booked', 'Per work hour', { label: 'Finished', num: false }],
+        l.jobs.map((j) => [j.name, j.vehicle || j.vehicle_type, j.services, j.people.join(', '), anHours(j.booked_hours), anHours(j.actual_hours),
+          `${j.actual_hours > j.booked_hours * 1.15 ? '⚠ ' : ''}${anVs(j.booked_hours ? j.actual_hours / j.booked_hours : null)}`, anMoney(j.per_hour_cents), anDate(j.finished_at, { month: 'short', day: 'numeric' })])))));
 }
 
 function heatmap(grid) {
@@ -473,6 +506,19 @@ function exportAnalytics() {
   add();
   add('Campaign', 'Sent', 'Replied', 'Booked', 'Revenue');
   for (const c of d.campaigns) add(c.name, c.sent, c.replied, c.booked, dollars(c.revenue_cents));
+  add();
+  add('Work time', 'Value');
+  add('Hours worked', d.labor.hours_logged);
+  add('Jobs finished', d.labor.jobs_finished);
+  add('Average real hours', d.labor.avg_actual_hours ?? '');
+  add('Average booked hours', d.labor.avg_booked_hours ?? '');
+  add('Revenue per work hour', dollars(d.labor.per_hour_cents));
+  add();
+  add('Person', 'Hours worked', 'Jobs');
+  for (const p of d.labor.people) add(p.name, p.hours, p.jobs);
+  add();
+  add('Finished job', 'Vehicle', 'Services', 'Who', 'Booked hours', 'Real hours', 'Revenue per work hour', 'Finished');
+  for (const j of d.labor.jobs) add(j.name, j.vehicle || j.vehicle_type, j.services, j.people.join(' & '), j.booked_hours, j.actual_hours, dollars(j.per_hour_cents), j.finished_at.slice(0, 10));
   add();
   add('Day', ...Array.from({ length: 24 }, (_, i) => `${i}:00`));
   d.arrivals.forEach((row, i) => add(DAYS[i], ...row));

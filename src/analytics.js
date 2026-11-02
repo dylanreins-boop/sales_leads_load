@@ -10,6 +10,7 @@ const { HttpError, toIso } = require('./leads');
 const { pipelineFor, PIPELINES } = require('./vehicle');
 const { DISPOSITIONS } = require('./pipeline');
 const ShopTime = require('../public/shop-time');
+const { serviceLabels, parseServices } = require('./services');
 
 const DAY = 86400000;
 const WORK_TYPES = ['disposition', 'stage_change', 'text', 'note', 'email'];
@@ -158,6 +159,7 @@ function createAnalyticsService(db, { commissions, payments, jobs, users }) {
       campaigns: campaignStats({ start, end }),
       referrals: referralStats(cohort),
       shop: shopStats({ start, end, allJobs, liveJobs, settings, inRange, inPipe }),
+      labor: laborStats({ start, end, allJobs, settings, inRange, leadById }),
       money: { ...moneyIn(start, end), revenue_cents: sum(jobsStarting(start, end), (j) => j.amount_cents), ...owedNow(), ...commissionStats({ liveJobs, allJobs, inRange }), ad_spend_cents: pipeline ? null : spendTotal },
     };
 
@@ -436,6 +438,97 @@ function createAnalyticsService(db, { commissions, payments, jobs, users }) {
       confirmations: allJobs.filter((j) => inRange(j.confirm_sent_at)).length,
       reminders: allJobs.filter((j) => inRange(j.reminder_sent_at)).length,
       ready_notices: allJobs.filter((j) => inRange(j.ready_sent_at)).length,
+    };
+  }
+
+  // The shop's work timer: real hours against the hours each job was booked for.
+  function laborStats({ start, end, allJobs, settings, inRange, leadById }) {
+    const jobById = new Map(allJobs.map((j) => [j.id, j]));
+    const at = new Date();
+    const sessions = stmt('SELECT job_id, user_name, started_at, stopped_at FROM job_work').all().filter((s) => jobById.has(s.job_id));
+    const msOf = (s) => Math.max(0, new Date(s.stopped_at || at) - new Date(s.started_at));
+    const clipped = (s) => Math.max(0, Math.min(new Date(s.stopped_at || at), new Date(end)) - Math.max(new Date(s.started_at), new Date(start)));
+    const H = 3600000;
+    const round = (x) => (x == null ? null : Math.round(x * 100) / 100);
+
+    // Hours worked during the period, by person.
+    const people = new Map();
+    for (const s of sessions) {
+      const ms = clipped(s);
+      if (!ms) continue;
+      const p = people.get(s.user_name) || { name: s.user_name, ms: 0, jobs: new Set() };
+      p.ms += ms;
+      p.jobs.add(s.job_id);
+      people.set(s.user_name, p);
+    }
+    const loggedMs = [...people.values()].reduce((n, p) => n + p.ms, 0);
+
+    // Jobs whose work was finished during the period.
+    const names = new Map(stmt('SELECT id, full_name, first_name, last_name, vehicle_year, vehicle_make, vehicle_model FROM leads').all().map((l) => [l.id, l]));
+    const byJob = new Map();
+    for (const s of sessions) byJob.set(s.job_id, [...(byJob.get(s.job_id) || []), s]);
+    const finished = allJobs.filter((j) => j.status !== 'cancelled' && inRange(j.work_finished_at) && byJob.has(j.id)).map((j) => {
+      const l = names.get(j.lead_id) || {};
+      const actual = byJob.get(j.id).reduce((n, s) => n + msOf(s), 0) / H;
+      const booked = ShopTime.jobHours({ ...j, pipeline: leadById.get(j.lead_id)?.pipeline }, settings);
+      return {
+        job_id: j.id,
+        lead_id: j.lead_id,
+        name: l.full_name || [l.first_name, l.last_name].filter(Boolean).join(' ') || 'Customer',
+        vehicle: [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' '),
+        vehicle_type: leadById.get(j.lead_id)?.vehicle_type || 'Not given',
+        services: serviceLabels(parseServices(j.services)) || 'Not set',
+        people: [...new Set(byJob.get(j.id).map((s) => s.user_name))],
+        finished_at: j.work_finished_at,
+        booked_hours: round(booked),
+        actual_hours: round(actual),
+        amount_cents: j.amount_cents,
+        per_hour_cents: j.amount_cents != null && actual > 0 ? Math.round(j.amount_cents / actual) : null,
+      };
+    });
+    const group = (keyOf) => {
+      const m = new Map();
+      for (const f of finished) {
+        const k = keyOf(f);
+        const g = m.get(k) || { key: k, jobs: 0, actual: 0, booked: 0, cents: 0, paidHours: 0 };
+        g.jobs++;
+        g.actual += f.actual_hours;
+        g.booked += f.booked_hours;
+        if (f.amount_cents != null) { g.cents += f.amount_cents; g.paidHours += f.actual_hours; }
+        m.set(k, g);
+      }
+      return [...m.values()].map((g) => ({
+        key: g.key,
+        jobs: g.jobs,
+        avg_actual_hours: round(g.actual / g.jobs),
+        avg_booked_hours: round(g.booked / g.jobs),
+        vs_booked: g.booked ? g.actual / g.booked : null,
+        per_hour_cents: g.paidHours ? Math.round(g.cents / g.paidHours) : null,
+      })).sort((a, b) => b.jobs - a.jobs);
+    };
+    const sumOf = (xs, f) => xs.reduce((n, x) => n + (f(x) || 0), 0);
+    const actualAll = sumOf(finished, (f) => f.actual_hours);
+    const bookedAll = sumOf(finished, (f) => f.booked_hours);
+    const paid = finished.filter((f) => f.amount_cents != null && f.actual_hours > 0);
+    const waits = allJobs.filter((j) => j.work_started_at && inRange(j.work_started_at)).map((j) => (new Date(j.work_started_at) - new Date(j.start_at)) / H).filter((x) => x >= 0);
+    const pickups = allJobs.filter((j) => j.work_finished_at && j.picked_up_at && inRange(j.picked_up_at)).map((j) => (new Date(j.picked_up_at) - new Date(j.work_finished_at)) / H).filter((x) => x >= 0);
+    const avg = (xs) => (xs.length ? round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+    return {
+      hours_logged: round(loggedMs / H),
+      working_now: sessions.filter((s) => !s.stopped_at).length,
+      jobs_finished: finished.length,
+      avg_actual_hours: finished.length ? round(actualAll / finished.length) : null,
+      avg_booked_hours: finished.length ? round(bookedAll / finished.length) : null,
+      vs_booked: bookedAll ? actualAll / bookedAll : null,
+      over_booked: finished.filter((f) => f.actual_hours > f.booked_hours * 1.15).length,
+      under_booked: finished.filter((f) => f.actual_hours < f.booked_hours * 0.85).length,
+      per_hour_cents: paid.length ? Math.round(sumOf(paid, (f) => f.amount_cents) / sumOf(paid, (f) => f.actual_hours)) : null,
+      wait_to_start_hours: avg(waits),
+      done_to_pickup_hours: avg(pickups),
+      people: [...people.values()].map((p) => ({ name: p.name, hours: round(p.ms / H), jobs: p.jobs.size })).sort((a, b) => b.hours - a.hours),
+      by_vehicle: group((f) => f.vehicle_type),
+      by_service: group((f) => f.services),
+      jobs: finished.sort((a, b) => (a.finished_at < b.finished_at ? 1 : -1)).slice(0, 50),
     };
   }
 

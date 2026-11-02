@@ -212,6 +212,7 @@ function chip(entry) {
     onclick: (e) => { e.stopPropagation(); openJob(job.id); },
   },
   h('span', { class: 'chip-time' }, when),
+  job.working > 0 && h('span', { class: 'work-dot', title: 'Being worked on now' }),
   h('span', { class: 'chip-name' }, customer(job)),
   job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV'));
 }
@@ -267,6 +268,8 @@ function jobCard(entry, { showDay = false } = {}) {
   return h('button', { type: 'button', class: `job-card status-${job.status}`, onclick: () => openJob(job.id) },
     h('div', { class: 'job-card-top' },
       h('span', { class: `job-status status-${job.status}` }, jobStatusLabel(job.status)),
+      job.working > 0 && h('span', { class: 'work-badge' }, h('span', { class: 'work-dot', 'aria-hidden': 'true' }), 'Working'),
+      !job.working && job.work_finished_at && job.status === 'in_shop' && h('span', { class: 'work-badge done' }, 'Work done'),
       job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV')),
     h('div', { class: 'job-card-name' }, customer(job)),
     h('div', { class: 'job-card-vehicle' }, [job.vehicle_type, vehicleText(job) !== job.vehicle_type && vehicleText(job), job.vehicle_color].filter(Boolean).join(' · ')),
@@ -415,6 +418,8 @@ function syncJobOnCalendar(job) {
   const i = cal.jobs.findIndex((j) => j.id === job.id);
   const summary = {
     ...job,
+    working: job.work ? job.work.running.length : cal.jobs.find((j) => j.id === job.id)?.working,
+    work_finished_at: job.work ? job.work.finished_at : job.work_finished_at,
     checklist_total: job.checklist.length,
     checklist_done: job.checklist.filter((c) => c.done_at).length,
     photo_count: job.photos.length,
@@ -425,7 +430,8 @@ function syncJobOnCalendar(job) {
 
 async function patchJob(patch, message, { warn = false } = {}) {
   try {
-    cal.job = await api(`/api/jobs/${cal.job.id}`, { method: 'PATCH', body: patch });
+    const next = await api(`/api/jobs/${cal.job.id}`, { method: 'PATCH', body: patch });
+    cal.job = { ...next, work: next.work || cal.job.work };
     renderJob();
     syncJobOnCalendar(cal.job);
     if (message) toast(message);
@@ -465,6 +471,8 @@ function renderJob() {
           'aria-checked': String(job.status === s.id),
           onclick: () => job.status !== s.id && patchJob({ status: s.id }, `Marked ${s.label.toLowerCase()}`),
         }, s.label)))),
+
+    workSection(job, edit),
 
     signOffSection(job, edit),
 
@@ -543,6 +551,7 @@ function renderJob() {
       !job.photos.length && h('p', { class: 'muted' }, edit ? 'No photos yet. Take before photos at check-in.' : 'No photos yet.')),
   ].filter(Boolean));
 
+  tickWork();
   const pad = $('#jobBody .signature-pad');
   if (pad) {
     const details = pad.closest('details');
@@ -555,6 +564,117 @@ function renderJob() {
   } else {
     renderShopTime($('#jobShopTime'), job.shop_time);
   }
+}
+
+// ---------- work timer ----------
+// Start work / Pause / Finished: the shop's real hours on the job, kept per person.
+const durText = (ms) => {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
+};
+const clockText = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+const sessionMs = (s, at = Date.now()) => (s.stopped_at ? new Date(s.stopped_at) : new Date(at)) - new Date(s.started_at);
+const workTotalMs = (w) => w.sessions.reduce((n, s) => n + sessionMs(s), 0);
+
+// The running clocks tick while the job is open.
+function tickWork() {
+  clearInterval(cal.workTimer);
+  if (!cal.job?.work?.running.length) return;
+  cal.workTimer = setInterval(() => {
+    if ($('#jobPanel').hidden || !cal.job?.work) return clearInterval(cal.workTimer);
+    document.querySelectorAll('#jobBody [data-since]').forEach((el) => { el.textContent = clockText(Date.now() - new Date(el.dataset.since)); });
+    const total = $('#workTotal');
+    if (total) total.textContent = durText(workTotalMs(cal.job.work));
+    const bar = $('#workBar');
+    if (bar && cal.job.work.booked_hours) bar.style.width = `${Math.min(100, (workTotalMs(cal.job.work) / 3600000 / cal.job.work.booked_hours) * 100)}%`;
+  }, 1000);
+}
+
+async function workAction(path, body, message) {
+  try {
+    cal.job = await api(`/api/jobs/${cal.job.id}/${path}`, { method: 'POST', body: body || {} });
+    renderJob();
+    syncJobOnCalendar(cal.job);
+    if (message) toast(message);
+  } catch (err) { fail(err); }
+}
+
+async function workEdit(method, url, body, message) {
+  try {
+    cal.job = await api(url, { method, body });
+    renderJob();
+    syncJobOnCalendar(cal.job);
+    toast(message);
+  } catch (err) { fail(err); }
+}
+
+function workSection(job, edit) {
+  const w = job.work;
+  if (!w) return null;
+  const me = state.meta.currentUser;
+  const mine = w.running.find((r) => r.user_name === me);
+  const canRun = edit && !['cancelled', 'picked_up'].includes(job.status) && me;
+  const totalMs = workTotalMs(w);
+  const booked = w.booked_hours;
+  const over = booked && totalMs / 3600000 > booked;
+  const admin = isAdmin();
+  const names = [...new Set([me, ...w.sessions.map((s) => s.user_name)].filter(Boolean))];
+  const local = (iso) => (iso ? toLocalInput(new Date(iso)) : '');
+
+  const sessionRow = (s) => {
+    const day = new Date(s.started_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const span = `${clock(s.started_at)} – ${s.stopped_at ? clock(s.stopped_at) : 'now'}`;
+    const flags = [s.auto_stopped && 'left running; stopped at closing', s.edited_by && `fixed by ${s.edited_by}`].filter(Boolean).join(' · ');
+    return h('li', { class: 'work-row' },
+      h('div', { class: 'work-row-main' },
+        h('strong', {}, s.user_name), h('span', {}, `${day}, ${span}`),
+        h('span', { class: 'work-dur' }, s.stopped_at ? durText(sessionMs(s)) : 'running'),
+        flags && h('span', { class: `work-flag ${s.auto_stopped ? 'warn' : ''}` }, flags)),
+      admin && h('details', { class: 'work-fix' }, h('summary', {}, 'Fix'),
+        h('form', { class: 'work-form', onsubmit: (e) => {
+          e.preventDefault();
+          const f = e.target;
+          workEdit('PATCH', `/api/work/${s.id}`, { started_at: new Date(f.started_at.value).toISOString(), stopped_at: f.stopped_at.value ? new Date(f.stopped_at.value).toISOString() : null }, 'Work time fixed');
+        } },
+        h('label', {}, 'Started', h('input', { type: 'datetime-local', name: 'started_at', value: local(s.started_at), required: true })),
+        h('label', {}, 'Stopped', h('input', { type: 'datetime-local', name: 'stopped_at', value: local(s.stopped_at) })),
+        h('button', { type: 'submit' }, 'Save'),
+        h('button', { type: 'button', class: 'danger-btn', onclick: () => confirm(`Remove ${s.user_name}'s ${durText(sessionMs(s))}?`) && workEdit('DELETE', `/api/work/${s.id}`, undefined, 'Work time removed') }, 'Remove'))));
+  };
+
+  return h('section', { class: 'card-section work-timer' },
+    h('div', { class: 'section-head' }, h('h3', {}, 'Work timer'),
+      h('span', { class: 'muted' }, h('strong', { id: 'workTotal', class: over ? 'over' : null }, durText(totalMs)), booked ? ` of ${workLabel(job)} booked` : ' logged')),
+    booked && h('div', { class: `progress big ${over ? 'over' : ''}` }, h('div', { class: 'progress-bar' }, h('span', { id: 'workBar', style: `width:${Math.min(100, (totalMs / 3600000 / booked) * 100)}%` }))),
+    ...w.running.map((r) => h('div', { class: 'work-live' },
+      h('span', { class: 'work-dot', 'aria-hidden': 'true' }),
+      h('span', {}, `${r.user_name === me ? 'You are' : `${r.user_name} is`} working · since ${clock(r.started_at)}`),
+      h('span', { class: 'work-clock', 'data-since': r.started_at }, clockText(Date.now() - new Date(r.started_at))))),
+    w.finished_at && h('p', { class: 'work-done' }, `✓ Work finished ${fmtWhen(w.finished_at)}${w.finished_by ? ` by ${w.finished_by}` : ''}`),
+    !w.sessions.length && !canRun && h('p', { class: 'muted' }, 'No work time yet.'),
+    canRun && h('div', { class: 'work-actions' },
+      mine
+        ? [h('button', { type: 'button', onclick: () => workAction('work/pause', null, 'Paused') }, 'Pause'),
+          h('button', { type: 'button', class: 'primary', onclick: () => confirm('Is the work on this vehicle done? This stops every clock on the job.') && workAction('work/finish', null, 'Work finished') }, 'Finished')]
+        : [h('button', { type: 'button', class: 'primary work-start', onclick: () => workAction('work/start', null, w.finished_at ? 'Started again' : 'Clock started') }, w.finished_at ? 'Start again' : w.sessions.length ? 'Start working' : 'Start work'),
+          w.sessions.length > 0 && !w.finished_at && h('button', { type: 'button', onclick: () => confirm('Is the work on this vehicle done? This stops every clock on the job.') && workAction('work/finish', null, 'Work finished') }, 'Finished')]),
+    canRun && !w.sessions.length && h('p', { class: 'muted small' }, 'Tap Start work when you begin on this vehicle, Pause when you step away, and Finished when it\'s done.'),
+    (w.sessions.length > 0 || admin) && h('details', { class: 'work-log' },
+      h('summary', {}, `Time log${w.sessions.length ? ` (${w.sessions.length})` : ''}${w.by_person.length > 1 ? ` · ${w.by_person.map((p) => `${p.name} ${durText(p.hours * 3600000)}`).join(', ')}` : ''}`),
+      w.sessions.length > 0 && h('ul', { class: 'work-list' }, ...w.sessions.map(sessionRow)),
+      admin && h('form', { class: 'work-form add', onsubmit: (e) => {
+        e.preventDefault();
+        const f = e.target;
+        workEdit('POST', `/api/jobs/${job.id}/work`, { user_name: f.user_name.value, started_at: new Date(f.started_at.value).toISOString(), stopped_at: new Date(f.stopped_at.value).toISOString() }, 'Work time added');
+      } },
+      h('strong', { class: 'span-all' }, 'Add time someone forgot to clock'),
+      h('label', {}, 'Who', h('input', { name: 'user_name', list: 'workNames', required: true, value: me || '' }), h('datalist', { id: 'workNames' }, ...names.map((n) => h('option', { value: n })))),
+      h('label', {}, 'Started', h('input', { type: 'datetime-local', name: 'started_at', required: true })),
+      h('label', {}, 'Stopped', h('input', { type: 'datetime-local', name: 'stopped_at', required: true })),
+      h('button', { type: 'submit' }, 'Add time'))));
 }
 
 // ---------- customer sign-off ----------

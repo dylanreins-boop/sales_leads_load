@@ -252,7 +252,8 @@ function createJobService(db, { leads, photosDir }) {
     return stmt(`SELECT j.*, ${LEAD_FIELDS},
                    (SELECT COUNT(*) FROM job_checklist c WHERE c.job_id = j.id) AS checklist_total,
                    (SELECT COUNT(*) FROM job_checklist c WHERE c.job_id = j.id AND c.done_at IS NOT NULL) AS checklist_done,
-                   (SELECT COUNT(*) FROM job_photos p WHERE p.job_id = j.id) AS photo_count
+                   (SELECT COUNT(*) FROM job_photos p WHERE p.job_id = j.id) AS photo_count,
+                   (SELECT COUNT(*) FROM job_work w WHERE w.job_id = j.id AND w.stopped_at IS NULL) AS working
                  FROM jobs j JOIN leads l ON l.id = j.lead_id
                  WHERE j.start_at < ? AND j.end_at > ?
                  ORDER BY j.start_at`).all(end, start).map(shape);

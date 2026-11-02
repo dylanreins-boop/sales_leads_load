@@ -225,6 +225,22 @@ CREATE INDEX IF NOT EXISTS job_payments_job ON job_payments (job_id);
 
 -- Monthly ad spend by lead source (for cost per lead on the source report).
 -- Google Local Services leads already brought in (so a repeat caller isn't logged twice).
+-- Time the shop actually spends working on a job: one row per person per stretch of work
+-- (Start work → Pause or Finished). A job can have many stretches over several days.
+CREATE TABLE IF NOT EXISTS job_work (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id       INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  user_name    TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  stopped_at   TEXT,                             -- null while the clock is running
+  auto_stopped INTEGER NOT NULL DEFAULT 0,       -- left running overnight; stopped at closing time
+  edited_by    TEXT,
+  edited_at    TEXT,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_work_job ON job_work (job_id);
+CREATE INDEX IF NOT EXISTS job_work_running ON job_work (stopped_at);
+
 CREATE TABLE IF NOT EXISTS lsa_seen (
   lsa_id   TEXT PRIMARY KEY,
   lead_id  INTEGER,
@@ -364,6 +380,10 @@ function migrate(db) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   }
   if (!has('jobs', 'work_hours')) db.exec('ALTER TABLE jobs ADD COLUMN work_hours REAL');
+  // When the shop first started on the job, and when they said the work was done.
+  for (const column of ['work_started_at', 'work_finished_at', 'work_finished_by']) {
+    if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
+  }
   if (!has('jobs', 'picked_up_at')) {
     db.exec("ALTER TABLE jobs ADD COLUMN picked_up_at TEXT; UPDATE jobs SET picked_up_at = updated_at WHERE status = 'picked_up'");
   }
