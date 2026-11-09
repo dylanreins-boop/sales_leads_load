@@ -67,6 +67,10 @@ test('time off: people ask, admins approve or deny, and approved days show on th
   assert.equal(ok.decided_by, 'Dylan');
   const cal = (await call('GET', '/api/time-off/calendar?from=2026-11-01&to=2026-12-01', undefined, SAM)).data;
   assert.deepEqual(cal.map((r) => [r.user_name, r.start_date, r.kind_label]), [['Mike', '2026-11-09', 'Vacation']]);
+  assert.equal(cal[0].note, undefined, 'sales see who is off, not the request notes');
+  const adminCal = (await call('GET', '/api/time-off/calendar?from=2026-11-01&to=2026-12-01')).data;
+  assert.equal(adminCal[0].note, 'Family');
+  assert.equal(adminCal[0].decided_by, 'Dylan');
   assert.match((await call('DELETE', `/api/time-off/${ask.data.id}`, undefined, MIKE)).data.error, /already been decided/);
 
   const denied = (await call('POST', '/api/time-off', { start_date: '2026-11-20', kind: 'personal' }, SAM)).data;

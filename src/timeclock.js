@@ -194,8 +194,9 @@ function createTimeService(db, { users, getShopHours }) {
     if (!v || Number.isNaN(d.getTime())) throw new HttpError(400, 'Pick the days to show.');
     return keyOf(d);
   };
-  const calendarOff = ({ from, to }) => stmt("SELECT * FROM time_off WHERE status = 'approved' AND start_date < ? AND end_date >= ?")
-    .all(dayArg(to), dayArg(from)).map((r) => ({ id: r.id, user_name: r.user_name, start_date: r.start_date, end_date: r.end_date, kind: r.kind, kind_label: KINDS[r.kind], hours_per_day: r.hours_per_day }));
+  // Admins also get the note, who approved it and when (they click the bar to see it).
+  const calendarOff = ({ from, to, full = false }) => stmt("SELECT * FROM time_off WHERE status = 'approved' AND start_date < ? AND end_date >= ?")
+    .all(dayArg(to), dayArg(from)).map((r) => (full ? shapeOff(r) : { id: r.id, user_name: r.user_name, start_date: r.start_date, end_date: r.end_date, kind: r.kind, kind_label: KINDS[r.kind], hours_per_day: r.hours_per_day }));
 
   // ---- pay rates ----
   const rateOf = (name) => stmt('SELECT cents FROM pay_rates WHERE name_norm = ?').get(norm(name))?.cents ?? null;

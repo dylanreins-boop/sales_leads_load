@@ -55,17 +55,134 @@ function title() {
   return cal.anchor.toLocaleDateString([], { month: 'long', year: 'numeric' });
 }
 
-// Who's off on a given day (approved time off), as small tags: "Mike off · Vacation".
+// Who's off on a given day (approved time off).
 function offOn(day) {
   const key = ShopTime.dayKey(day);
   return (cal.off || []).filter((r) => r.start_date <= key && r.end_date >= key);
 }
+const offLabel = (r, long) => (long ? `${r.user_name} off · ${r.kind_label}` : `${r.user_name} off`);
+const offTitle = (r) => `${r.user_name} is off: ${r.kind_label}${r.hours_per_day ? ` (${r.hours_per_day} hrs a day)` : ''}${isAdmin() ? '. Click to see the request.' : ''}`;
+// A time-off tag or bar. Admins click it to see the request and its notes.
+function offEl(r, cls, text) {
+  const attrs = { class: `${cls} kind-${r.kind}`, title: offTitle(r) };
+  return isAdmin()
+    ? h('button', { ...attrs, type: 'button', onclick: (e) => { e.stopPropagation(); openOff(r); } }, text)
+    : h('span', attrs, text);
+}
 function offTags(day, { long = false } = {}) {
   const list = offOn(day);
   if (!list.length) return null;
-  return h('div', { class: 'off-tags' }, ...list.map((r) => h('span', {
-    class: `off-tag kind-${r.kind}`, title: `${r.user_name} is off: ${r.kind_label}${r.hours_per_day ? ` (${r.hours_per_day} hrs)` : ''}`,
-  }, long ? `${r.user_name} off · ${r.kind_label}` : `${r.user_name} off`)));
+  return h('div', { class: 'off-tags' }, ...list.map((r) => offEl(r, 'off-tag', offLabel(r, long))));
+}
+
+// The time-off request behind a bar on the calendar (admins): who, when, their note, who approved it.
+function openOff(r) {
+  const dlg = $('#offDialog');
+  const day = (k) => keyDay(k).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const when = r.start_date === r.end_date ? day(r.start_date) : `${day(r.start_date)} – ${day(r.end_date)}`;
+  const row = (label, value) => [h('dt', {}, label), h('dd', {}, value)];
+  fill($('#offBody'),
+    h('h2', {}, `${r.user_name} off`),
+    h('p', { class: 'muted' }, `${r.kind_label} · ${when}`),
+    h('dl', { class: 'off-detail' },
+      row('Hours', r.hours != null ? `${r.hours} h (${r.hours_per_day} h a day the shop is open)` : `${r.hours_per_day} h a day`),
+      row('Their note', r.note ? `“${r.note}”` : 'No note'),
+      row('Asked', r.created_at ? fmtDateTime(r.created_at) : '–'),
+      row('Approved', [r.decided_by, r.decided_at && fmtDateTime(r.decided_at)].filter(Boolean).join(', ') || '–'),
+      r.decision_note && row('Admin note', r.decision_note)),
+    h('div', { class: 'dialog-actions' },
+      h('button', { type: 'button', class: 'danger-btn', onclick: async () => {
+        if (!confirm(`Cancel ${r.user_name}'s time off (${when})? It comes off the calendar and out of their pay.`)) return;
+        try {
+          await api(`/api/time-off/${r.id}`, { method: 'DELETE' });
+          dlg.close();
+          toast('Time off cancelled.');
+          loadCalendar().catch(fail);
+        } catch (err) { fail(err); }
+      } }, 'Cancel this time off'),
+      h('button', { type: 'button', class: 'primary', onclick: () => dlg.close() }, 'Close')));
+  dlg.showModal();
+}
+
+// ---------- bars across days ----------
+// Time off and jobs that run over several days are drawn as one bar across those days in each week row.
+const keyDay = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
+const daysBetween = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / DAY_MS);
+// The last day a job is in the shop (a pick-up at midnight belongs to the day before).
+function lastDay(job) {
+  const first = startOfDay(job.start_at);
+  const last = startOfDay(new Date(new Date(job.end_at).getTime() - 1));
+  return last < first ? first : last;
+}
+function calItems() {
+  return [
+    ...(cal.off || []).map((r) => ({ type: 'off', start: keyDay(r.start_date), end: keyDay(r.end_date), r })),
+    ...cal.jobs.map((job) => ({ type: 'job', start: startOfDay(job.start_at), end: lastDay(job), job })),
+  ];
+}
+// The piece of each item inside `days` days from `from`, stacked in lanes so an item keeps the same row
+// on every day it covers (time off on top, then jobs by drop-off).
+function laneOut(items, from, days) {
+  const to = addDays(from, days - 1);
+  const segs = items.filter((it) => it.start <= to && it.end >= from).map((it) => {
+    const s = it.start < from ? from : it.start;
+    const e = it.end > to ? to : it.end;
+    return { ...it, col: daysBetween(from, s), span: daysBetween(s, e) + 1, before: it.start < from, after: it.end > to };
+  });
+  const when = (x) => (x.type === 'job' ? new Date(x.job.start_at).getTime() : 0);
+  const typeOrder = (x) => (x.type === 'off' ? 0 : 1);
+  segs.sort((a, b) => typeOrder(a) - typeOrder(b) || a.col - b.col || b.span - a.span || when(a) - when(b));
+  const lanes = [];
+  for (const seg of segs) {
+    let lane = lanes.findIndex((used) => used.every((u) => u.col + u.span <= seg.col || seg.col + seg.span <= u.col));
+    if (lane < 0) { lane = lanes.length; lanes.push([]); }
+    lanes[lane].push(seg);
+    seg.lane = lane;
+  }
+  return segs;
+}
+const barPos = (seg, firstRow) => `grid-column:${seg.col + 1} / span ${seg.span};grid-row:${seg.lane + firstRow}`;
+const barEdges = (seg) => `${seg.before ? 'from-before' : ''} ${seg.after ? 'goes-on' : ''}`;
+const jobTitle = (job) => `${customer(job)} · ${vehicleText(job)} · ${jobStatusLabel(job.status)} · ${workLabel(job)} of work · drop-off ${longDate(job.start_at)} ${clock(job.start_at)}, pick-up ${longDate(job.end_at)} ${clock(job.end_at)}`;
+
+function offBar(seg, firstRow, long) {
+  const el = offEl(seg.r, `off-bar bar ${barEdges(seg)}`, h('span', { class: 'chip-name' }, offLabel(seg.r, long || seg.span > 1)));
+  el.style.cssText = barPos(seg, firstRow);
+  return el;
+}
+
+// A job in the month view: drop-off time and name where it starts, pick-up time where it ends.
+function jobBar(seg, firstRow) {
+  const { job } = seg;
+  const multi = daysBetween(seg.start, seg.end) > 0;
+  let time = null;
+  if (!seg.before) time = multi ? shortClock(job.start_at) : `${shortClock(job.start_at)}–${shortClock(job.end_at)}`;
+  return h('button', {
+    type: 'button', class: `job-chip bar status-${job.status} ${barEdges(seg)}`, style: barPos(seg, firstRow), title: jobTitle(job),
+    onclick: (e) => { e.stopPropagation(); openJob(job.id); },
+  },
+  time && h('span', { class: 'chip-time' }, time),
+  job.working > 0 && h('span', { class: 'work-dot', title: 'Being worked on now' }),
+  h('span', { class: 'chip-name' }, customer(job)),
+  job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV'),
+  multi && !seg.after && h('span', { class: 'chip-time chip-out' }, `out ${shortClock(job.end_at)}`));
+}
+
+// A job over several days in the week view: status, name, vehicle, drop-off and pick-up, checklist.
+function weekJobBar(seg, firstRow) {
+  const { job } = seg;
+  const at = (d) => `${dayName(new Date(d))} ${shortClock(d)}`;
+  return h('button', {
+    type: 'button', class: `week-bar bar status-${job.status} ${barEdges(seg)}`, style: barPos(seg, firstRow), title: jobTitle(job),
+    onclick: () => openJob(job.id),
+  },
+  h('div', { class: 'week-bar-top' },
+    h('span', { class: `job-status status-${job.status}` }, jobStatusLabel(job.status)),
+    job.working > 0 && h('span', { class: 'work-badge' }, h('span', { class: 'work-dot', 'aria-hidden': 'true' }), 'Working'),
+    h('span', { class: 'week-bar-name' }, customer(job)),
+    job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV'),
+    seg.span > 1 && progress(job)),
+  h('div', { class: 'week-bar-when' }, [`Drop-off ${at(job.start_at)} → pick-up ${at(job.end_at)}`, `${workLabel(job)} of work`, seg.span > 2 && vehicleText(job)].filter(Boolean).join(' · ')));
 }
 
 // Jobs on a given day, and where that day falls in each job (drop-off, middle, pick-up).
@@ -250,46 +367,41 @@ function move(step) {
 }
 
 // ---------- rendering ----------
-function chip(entry) {
-  const { job, n, days, isFirst, isLast } = entry;
-  let when = isFirst ? shortClock(job.start_at) : isLast ? `out ${shortClock(job.end_at)}` : `day ${n}`;
-  if (isFirst && isLast) when = `${shortClock(job.start_at)}–${shortClock(job.end_at)}`;
-  return h('button', {
-    type: 'button',
-    class: `job-chip status-${job.status} ${isFirst ? '' : 'cont'}`,
-    title: `${customer(job)} · ${vehicleText(job)} · ${jobStatusLabel(job.status)} · ${workLabel(job)} of work${days > 1 ? ` · day ${n} of ${days}` : ''}`,
-    onclick: (e) => { e.stopPropagation(); openJob(job.id); },
-  },
-  h('span', { class: 'chip-time' }, when),
-  job.working > 0 && h('span', { class: 'work-dot', title: 'Being worked on now' }),
-  h('span', { class: 'chip-name' }, customer(job)),
-  job.pipeline === 'rv' && h('span', { class: 'chip-rv' }, 'RV'));
-}
-
+// Month: one row per week. Day backgrounds and dates sit behind; time off and jobs are bars on top,
+// one lane each, so a job or a week of vacation reads as one connected bar.
+const MONTH_LANES = 4;
 function renderMonth(body) {
   const { from } = range();
   const month = cal.anchor.getMonth();
   const today = new Date();
-  const head = Array.from({ length: 7 }, (_, i) => h('div', { class: 'cal-dow' }, dayName(addDays(from, i))));
-  const cells = Array.from({ length: 42 }, (_, i) => {
-    const day = addDays(from, i);
-    const entries = jobsOn(day);
-    const shown = entries.slice(0, 4);
-    return h('div', {
-      class: `cal-cell ${day.getMonth() !== month ? 'other-month' : ''} ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}`,
-      role: 'gridcell',
-      'aria-label': `${longDate(day)}, ${entries.length} job${entries.length === 1 ? '' : 's'}`,
-    },
-    h('div', { class: 'cal-cell-top' },
-      h('button', { type: 'button', class: 'cal-date', title: 'Show this week', onclick: () => { cal.anchor = day; setView('week'); } }, day.getDate()),
-      loadTag(day, entries)),
-    offTags(day),
-    h('div', { class: 'cal-chips' }, ...shown.map(chip),
-      entries.length > shown.length && h('button', {
-        type: 'button', class: 'cal-more', onclick: () => { cal.anchor = day; setView('week'); },
-      }, `+${entries.length - shown.length} more`)));
+  const items = calItems();
+  const head = h('div', { class: 'cal-mhead' }, ...Array.from({ length: 7 }, (_, i) => h('div', { class: 'cal-dow' }, dayName(addDays(from, i)))));
+  const weeks = Array.from({ length: 6 }, (_, w) => {
+    const start = addDays(from, w * 7);
+    const segs = laneOut(items, start, 7);
+    const used = segs.reduce((n, s) => Math.max(n, s.lane + 1), 0);
+    const lanes = used > MONTH_LANES ? MONTH_LANES - 1 : used; // the last lane says "+2 more" instead
+    const hidden = segs.filter((s) => s.lane >= lanes);
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const day = addDays(start, i);
+      const entries = jobsOn(day);
+      const extra = hidden.filter((s) => s.col <= i && i < s.col + s.span).length;
+      const cls = `${day.getMonth() !== month ? 'other-month' : ''} ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}`;
+      return [
+        h('div', { class: `cal-cell ${cls}`, style: `grid-column:${i + 1};grid-row:1 / -1`, 'aria-hidden': 'true' }),
+        h('div', { class: `cal-cell-top ${cls}`, style: `grid-column:${i + 1};grid-row:1` },
+          h('button', { type: 'button', class: 'cal-date', title: 'Show this week', 'aria-label': `${longDate(day)}, ${entries.length} job${entries.length === 1 ? '' : 's'}. Show this week`, onclick: () => { cal.anchor = day; setView('week'); } }, day.getDate()),
+          loadTag(day, entries)),
+        extra > 0 && h('button', {
+          type: 'button', class: 'cal-more', style: `grid-column:${i + 1};grid-row:${lanes + 2}`, onclick: () => { cal.anchor = day; setView('week'); },
+        }, `+${extra} more`),
+      ];
+    });
+    const rows = ['auto', ...Array(lanes).fill('auto'), 'auto', '1fr'].join(' ');
+    return h('div', { class: 'cal-mweek', style: `grid-template-rows:${rows}` },
+      ...days.flat(), ...segs.filter((s) => s.lane < lanes).map((s) => (s.type === 'off' ? offBar(s, 2) : jobBar(s, 2))));
   });
-  body.replaceChildren(h('div', { class: 'cal-month', role: 'grid' }, ...head, ...cells));
+  body.replaceChildren(h('div', { class: 'cal-month' }, head, ...weeks));
 }
 
 function progress(job) {
@@ -329,20 +441,31 @@ function jobCard(entry, { showDay = false } = {}) {
       h('span', { class: 'photo-count' }, `${job.photo_count || 0} photo${job.photo_count === 1 ? '' : 's'}`)));
 }
 
+// Week: a column per day. Time off and jobs over more than one day are bars across the columns (one
+// lane each); one-day jobs are cards in their day.
 function renderWeek(body) {
   const { from } = range();
   const today = new Date();
-  body.replaceChildren(h('div', { class: 'cal-week' }, ...Array.from({ length: 7 }, (_, i) => {
+  const segs = laneOut(calItems().filter((it) => it.type === 'off' || daysBetween(it.start, it.end) > 0), from, 7);
+  const lanes = segs.reduce((n, s) => Math.max(n, s.lane + 1), 0);
+  const rows = ['auto', 'auto', ...Array(lanes).fill('auto'), '1fr'].join(' ');
+  const cols = Array.from({ length: 7 }, (_, i) => {
     const day = addDays(from, i);
     const entries = jobsOn(day);
+    const singles = entries.filter((e) => daysBetween(e.job.start_at, lastDay(e.job)) === 0);
+    const covered = segs.some((s) => s.type === 'job' && s.col <= i && i < s.col + s.span);
     const booked = cal.load.get(ShopTime.dayKey(day))?.hours || 0;
-    return h('section', { class: `week-col ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}` },
-      h('header', { class: 'week-head' }, h('span', { class: 'week-dow' }, dayName(day)), h('span', { class: 'week-date' }, day.getDate()), loadTag(day, entries)),
-      isOpen(day) && h('div', { class: 'week-load' }, loadBar(booked)),
-      offTags(day, { long: true }),
-      h('div', { class: 'week-jobs' }, entries.length ? entries.map((e) => jobCard(e))
-        : h('div', { class: 'week-empty' }, isOpen(day) ? 'No jobs' : 'Closed')));
-  })));
+    const at = (row) => `grid-column:${i + 1};grid-row:${row}`;
+    return [
+      h('section', { class: `week-col ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}`, style: `grid-column:${i + 1};grid-row:1 / -1`, 'aria-label': longDate(day) }),
+      h('header', { class: `week-head ${sameDay(day, today) ? 'today' : ''}`, style: at(1) }, h('span', { class: 'week-dow' }, dayName(day)), h('span', { class: 'week-date' }, day.getDate()), loadTag(day, entries)),
+      h('div', { class: 'week-load', style: at(2) }, isOpen(day) && loadBar(booked)),
+      h('div', { class: 'week-jobs', style: at(lanes + 3) }, singles.length ? singles.map((e) => jobCard(e))
+        : !covered && h('div', { class: 'week-empty' }, isOpen(day) ? 'No jobs' : 'Closed')),
+    ];
+  });
+  body.replaceChildren(h('div', { class: 'cal-week', style: `grid-template-rows:${rows}` },
+    ...cols.flat(), ...segs.map((s) => (s.type === 'off' ? offBar(s, 3, true) : weekJobBar(s, 3)))));
 }
 
 function renderList(body) {

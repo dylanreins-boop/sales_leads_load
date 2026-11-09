@@ -54,6 +54,9 @@ tab with `#rv` or `#other` at the end of the address. To change which types coun
 
 **Calendar** (next to **Leads** in the header) shows every booked job.
 
+On **Month** and **Week**, anything that runs over several days (a two-day RV job, a week of vacation) is
+one connected bar across those days, so it reads at a glance. Approved time off is on top, then jobs.
+
 - **Booking puts the job on the calendar.** "Appointment Booked" also asks for the **work time** (about 4
   hours for cars, 1 to 5 days for RVs and trailers), **drop-off** (8 AM the next work day) and **pick-up**
   (filled in for when the work is done). Booking the same lead again moves its job instead of adding a
@@ -490,7 +493,8 @@ vacation, sick, personal or unpaid, hours a day, a note), and their requests wit
 - Someone who forgets to clock out is clocked out at the end of the shop day (or a normal day's hours after
   they clocked in, if that was later), never past midnight, and the time is flagged **to check**.
 - Time off waits for an admin. Approved time off shows on the shop calendar ("Mike off") so nobody books
-  around a missing tech by surprise. Only days the shop is open count toward the hours.
+  around a missing tech by surprise. Only days the shop is open count toward the hours. Admins click the
+  bar to see the request: their note, when they asked, who approved it, and a button to cancel it.
 
 **Time & Pay (admins)** is its own page in the main menu, with a badge for time off waiting on approval:
 

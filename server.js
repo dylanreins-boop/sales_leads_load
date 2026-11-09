@@ -837,7 +837,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('POST', '/api/clock/out', ({ actor }) => timeClock.clockOut(actor.user), { roles: ANY_LOGIN });
   route('POST', '/api/time-off', ({ body, actor }) => timeClock.requestOff(actor.user, body), { roles: ANY_LOGIN });
   route('DELETE', '/api/time-off/:id', ({ params, actor }) => timeClock.cancelOff(Number(params.id), actor), { roles: ANY_LOGIN });
-  route('GET', '/api/time-off/calendar', ({ query }) => timeClock.calendarOff({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
+  route('GET', '/api/time-off/calendar', ({ query, actor }) => timeClock.calendarOff({ from: query.get('from'), to: query.get('to'), full: actor.role === 'admin' }), { roles: ANY_LOGIN });
   route('GET', '/api/time-off', ({ query }) => timeClock.listOff({ status: query.get('status') }), { roles: ADMIN });
   route('PATCH', '/api/time-off/:id', ({ params, body, actor }) => timeClock.decideOff(Number(params.id), body, actor), { roles: ADMIN });
   route('GET', '/api/payroll', ({ query }) => timeClock.payroll({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
