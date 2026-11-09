@@ -274,6 +274,12 @@ by hand there's a box on the Add lead form. It's skipped when a rep already reac
 both texts or turn them off under **Texts & reminders → Welcome text for new leads**. Analytics shows how
 many answered and which times they picked.
 
+## Full screen
+
+Click a lead to open it at the side; **double-click** it to open it full screen, with its sections in
+columns side by side. **⤢ Full screen** in the lead's header switches either way, and Esc goes back to
+the side panel (Esc again closes it).
+
 ## Opened and contacted, on every card
 
 Each lead card shows the exact time the lead was **last opened** and by whom, and when it was **last

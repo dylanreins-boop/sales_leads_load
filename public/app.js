@@ -314,7 +314,14 @@ function leadCard(lead) {
     draggable: 'true',
     tabindex: '0',
     ondragstart: (e) => e.dataTransfer.setData('text/plain', String(lead.id)),
+    title: 'Click to open. Double-click to open full screen.',
     onclick: () => openLead(lead.id),
+    // Double-click: the same lead, full screen.
+    ondblclick: () => {
+      window.getSelection()?.removeAllRanges();
+      setLeadFull(true);
+      if (state.openLeadId !== lead.id || $('#drawer').hidden) openLead(lead.id);
+    },
     onkeydown: (e) => { if (e.key === 'Enter') openLead(lead.id); },
   },
   h('div', { class: 'row' },
@@ -522,7 +529,17 @@ async function restoreLead(id) {
 }
 
 // ---------- lead drawer ----------
+// The lead's panel at the side, or full screen (double-click a lead, or the Full screen button).
+function setLeadFull(on) {
+  $('#drawer').classList.toggle('full', on);
+  const btn = $('#leadFullBtn');
+  btn.setAttribute('aria-pressed', String(on));
+  btn.textContent = on ? '⤡ Side panel' : '⤢ Full screen';
+  btn.title = on ? 'Back to the side panel (Esc)' : 'Open full screen (or double-click a lead)';
+}
+
 function showPanel(panel) {
+  if (panel !== $('#drawer')) setLeadFull(false);
   for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
@@ -1355,7 +1372,13 @@ async function init() {
   $('#scrim').addEventListener('click', () => showPanel(null));
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => showPanel(null)));
   // Escape closes the side panel, unless a dialog (like the photo viewer) is open on top of it.
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) showPanel(null); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+    // Full screen steps back to the side panel first; Escape again closes it.
+    if ($('#drawer').classList.contains('full') && !$('#drawer').hidden) return setLeadFull(false);
+    showPanel(null);
+  });
+  $('#leadFullBtn').addEventListener('click', () => setLeadFull(!$('#drawer').classList.contains('full')));
   $('#dispoForm').addEventListener('submit', saveDisposition);
   state.fillBookingTime = wireShopTime($('#dispoForm'), { pipeline: () => pipelineOf(state.openLead?.vehicle_type) });
   $('#dispoForm').disposition.addEventListener('change', () => syncDispoForm(true));

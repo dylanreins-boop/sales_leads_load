@@ -1303,3 +1303,14 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .call-review label { margin: 0; }
 .call-stars { display: flex; gap: 2px; margin-top: 4px; }
 .call-stars button { border: none; background: none; font-size: 24px; line-height: 1; padding: 2px 4px; color: var(--highlight); cursor: pointer; }
+
+/* A lead full screen (double-click its card): the sections flow into columns to use the width. */
+.drawer-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.full-btn { font-size: 13px; white-space: nowrap; }
+.drawer.full { width: 100vw; left: 0; border-left: none; box-shadow: none; z-index: 12; }
+.drawer.full .drawer-head { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+.drawer.full #leadName { font-size: 24px; }
+.drawer.full .drawer-body { columns: 3 400px; column-gap: 28px; column-rule: 1px solid var(--border); padding: 8px max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left)); }
+.drawer.full .drawer-body > * { break-inside: avoid; }
+.drawer.full .drawer-body > :first-child { margin-top: 12px; }
+@media (max-width: 640px) { .full-btn { display: none; } }
