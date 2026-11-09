@@ -4,7 +4,7 @@
 // rates, regular / overtime / paid time off hours and gross pay for a pay period, fix punches, CSV).
 // Uses the helpers from app.js ($, h, fill, api, toast, fail, money, toLocalInput, showPanel...).
 
-const tc = { status: null, tick: null, pay: null, open: new Set(), editing: null, adding: false, settings: false };
+const tc = { status: null, tick: null, done: false, card: null, cardPeriod: 'two', fixing: null, pay: null, open: new Set(), editing: null, adding: false, settings: false };
 const TC_KINDS = () => state.meta.timeOffKinds || { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid: 'Unpaid' };
 
 // ---------- formatting ----------
@@ -22,79 +22,207 @@ function tcElapsed(fromIso) {
 const STATUS_LABEL = { pending: 'Waiting for approval', approved: 'Approved', denied: 'Denied', cancelled: 'Cancelled' };
 
 // ---------- the Clock in button ----------
+// Time worked today so far (lunch doesn't count), and since a time, as "3 h 05 m".
+const tcWorkedMs = (s) => (s.today || []).reduce((n, p) => n + Math.max(0, new Date(p.clock_out || Date.now()) - new Date(p.clock_in)), 0);
+const tcHM = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return m < 60 ? `${m} m` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} m`; };
+const tcSince = (iso) => Date.now() - new Date(iso);
+const tcNow = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+const tcState = (s) => (s.on_clock ? 'on' : s.on_lunch ? 'lunch' : 'off');
+
 function renderClockPill() {
   const s = tc.status;
   const btn = $('#clockBtn');
   btn.hidden = !s;
   if (!s) return;
-  btn.classList.toggle('on', s.on_clock);
-  $('#clockLabel').textContent = s.on_clock ? `On the clock · ${tcElapsed(s.clock_in)}` : 'Clock in';
-  btn.title = s.on_clock ? `Clocked in at ${tcClock(s.clock_in)}. Open My time to clock out.` : 'Open My time to clock in or ask for time off.';
+  const st = tcState(s);
+  btn.classList.toggle('on', st === 'on');
+  btn.classList.toggle('lunch', st === 'lunch');
+  $('#clockLabel').textContent = { on: `On the clock · ${tcHM(tcWorkedMs(s))}`, lunch: `On lunch · ${tcHM(tcSince(s.lunch_started_at))}`, off: 'Clock in' }[st];
+  btn.title = { on: `Clocked in at ${tcClock(s.clock_in)}. Open My time for lunch or to clock out.`, lunch: `On lunch since ${tcClock(s.lunch_started_at)}. Open My time to end lunch.`, off: 'Open My time to clock in or ask for time off.' }[st];
 }
 
 async function loadClock() {
   if (!state.meta.currentUser) return;
   tc.status = await api('/api/clock');
   renderClockPill();
-  if (!$('#timePanel').hidden) renderMyTime();
+  // Don't wipe a correction someone is typing.
+  if (!$('#timePanel').hidden && !tc.fixing) renderMyTime();
 }
 
-async function punch(dir) {
+// ---------- clocking in and out: confirm, then a confirmation that goes on to the calendar ----------
+const TC_ACTIONS = {
+  in: {
+    label: 'Clock in', ask: 'Clock in now?', yes: 'Yes, clock me in', tone: 'go', path: '/api/clock/in', done: 'You\'re clocked in',
+    askNote: () => 'Your shift starts when you tap Yes.',
+    doneNote: (s) => `Clocked in at ${tcClock(s.clock_in)}. Have a good shift!`,
+  },
+  lunch: {
+    label: 'Start lunch', ask: 'Start your lunch break?', yes: 'Yes, start lunch', tone: 'lunch', path: '/api/clock/lunch', done: 'Enjoy your lunch',
+    askNote: () => 'You\'re off the clock (unpaid) until you tap End lunch.',
+    doneNote: (s) => `Lunch started at ${tcClock(s.lunch_started_at)}. Tap End lunch when you're back.`,
+  },
+  back: {
+    label: 'End lunch', ask: 'End your lunch break?', yes: 'Yes, I\'m back', tone: 'go', path: '/api/clock/in', done: 'Welcome back',
+    askNote: (s) => `You've been on lunch for ${tcHM(tcSince(s.lunch_started_at))}.`,
+    doneNote: (s, before) => `Back on the clock at ${tcClock(s.clock_in)} after a ${tcHM(new Date(s.clock_in) - new Date(before.lunch_started_at))} lunch.`,
+  },
+  out: {
+    label: 'Clock out', ask: 'Clock out now?', yes: 'Yes, clock me out', tone: 'stop', path: '/api/clock/out', done: 'You\'re clocked out',
+    askNote: (s) => (s.on_lunch
+      ? `Your day ends when your lunch started, at ${tcClock(s.lunch_started_at)}. You worked ${tcHM(tcWorkedMs(s))} today.`
+      : `You've worked ${tcHM(tcWorkedMs(s))} today.`),
+    doneNote: (s) => `You worked ${tcHM(tcWorkedMs(s))} today and ${tcHM(s.week_hours * 3600000)} this week. See you next time!`,
+  },
+};
+// Which buttons show, by state: [action, style, label].
+const TC_BUTTONS = {
+  off: [['in', 'go']],
+  on: [['lunch', 'lunch'], ['out', 'stop']],
+  lunch: [['back', 'go'], ['out', 'ghost', 'Clock out for the day']],
+};
+
+function confirmAction(key) {
+  const a = TC_ACTIONS[key];
+  tc.done = false;
+  fill($('#clockDialogBody'),
+    h('h2', {}, a.ask),
+    h('div', { class: 'tc-dlg-time', 'data-now': '' }, tcNow()),
+    h('p', { class: 'tc-dlg-note' }, a.askNote(tc.status)),
+    h('div', { class: 'tc-dlg-actions' },
+      h('button', { type: 'button', class: `tc-action ${a.tone}`, onclick: (e) => doAction(key, e.currentTarget) }, a.yes),
+      h('button', { type: 'button', class: 'tc-action ghost', onclick: () => $('#clockDialog').close() }, 'Cancel')));
+  $('#clockDialog').showModal();
+  $('#clockDialogBody .tc-action').focus();
+}
+
+async function doAction(key, btn) {
+  const a = TC_ACTIONS[key];
+  const before = tc.status;
+  btn.disabled = true;
   try {
-    tc.status = await api(`/api/clock/${dir}`, { method: 'POST' });
-    renderClockPill();
-    renderMyTime();
-    toast(dir === 'in' ? `Clocked in at ${tcClock(tc.status.clock_in)}.` : `Clocked out. ${tcHrs(tc.status.today_hours)} today.`);
-    if (state.section === 'time') loadTimePay().catch(() => {});
-  } catch (err) { fail(err); }
+    tc.status = await api(a.path, { method: 'POST' });
+  } catch (err) {
+    $('#clockDialog').close();
+    fail(err);
+    return loadClock().catch(() => {});
+  }
+  renderClockPill();
+  renderMyTime();
+  loadTimecard().catch(() => {});
+  if (state.section === 'time') loadTimePay().catch(() => {});
+  tc.done = true;
+  fill($('#clockDialogBody'),
+    h('div', { class: `tc-dlg-check ${a.tone}`, 'aria-hidden': 'true' }, '✓'),
+    h('h2', {}, a.done),
+    h('p', { class: 'tc-dlg-note' }, a.doneNote(tc.status, before)),
+    h('div', { class: 'tc-dlg-actions' },
+      h('button', { type: 'button', class: 'tc-action go', onclick: () => $('#clockDialog').close() }, 'Done')),
+    h('p', { class: 'muted tc-dlg-hint' }, 'Takes you to the calendar.'));
+  $('#clockDialogBody .tc-action').focus();
 }
 
-// ---------- My time (everyone) ----------
+// Leaving the confirmation (Done, Escape or tapping outside) goes to the shop calendar.
+function afterConfirmation() {
+  if (!tc.done) return;
+  tc.done = false;
+  showPanel(null);
+  showSection('calendar');
+}
+
+// ---------- My time (everyone): full screen ----------
+function tcEvents(s) {
+  const out = [];
+  (s.today || []).forEach((p, i, all) => {
+    const fromLunch = i > 0 && all[i - 1].out_reason === 'lunch';
+    if (!fromLunch) out.push({ t: p.clock_in, kind: 'in', label: 'Clocked in' });
+    if (!p.clock_out) return;
+    if (p.out_reason === 'lunch') {
+      const next = all[i + 1];
+      out.push({ t: p.clock_out, kind: 'lunch', label: next ? `Lunch until ${tcClock(next.clock_in)} (${tcHM(new Date(next.clock_in) - new Date(p.clock_out))})` : 'On lunch' });
+    } else out.push({ t: p.clock_out, kind: 'out', label: p.auto_closed ? 'Clocked out (forgot, closed at end of day)' : 'Clocked out' });
+  });
+  return out;
+}
+
 function renderMyTime() {
   const s = tc.status;
   if (!s) return;
   $('#timeWho').textContent = state.meta.currentUser;
+  const st = tcState(s);
   const kinds = TC_KINDS();
-  const today = ShopTime.dayKey(new Date());
-  const form = h('form', { class: 'tc-off-form', onsubmit: askOff },
-    h('div', { class: 'tc-off-grid' },
-      h('label', {}, 'First day off', h('input', { type: 'date', name: 'start_date', required: true, min: today, value: today })),
-      h('label', {}, 'Last day off', h('input', { type: 'date', name: 'end_date', min: today })),
-      h('label', {}, 'Kind', h('select', { name: 'kind' }, ...Object.entries(kinds).map(([k, v]) => h('option', { value: k }, v)))),
-      h('label', {}, 'Hours a day', h('input', { type: 'number', name: 'hours_per_day', min: '1', max: '24', step: '0.5', value: state.meta.shopHours?.hours_per_day || 8 }))),
-    h('label', {}, 'Note for the admin (optional)', h('input', { name: 'note', maxlength: '300', placeholder: 'e.g. Family trip' })),
-    h('button', { type: 'submit', class: 'primary' }, 'Ask for time off'));
+  const todayKey = ShopTime.dayKey(new Date());
+  const stateText = {
+    on: `On the clock since ${tcClock(s.clock_in)}`,
+    lunch: `On lunch since ${tcClock(s.lunch_started_at)}`,
+    off: s.today?.length ? 'Clocked out for the day' : 'Off the clock',
+  }[st];
+  const events = tcEvents(s);
+  const max = Math.max(8, ...s.week_days.map((d) => d.hours));
   const reqs = s.time_off || [];
-  fill($('#timeBody'),
-    h('section', { class: `card-section tc-status ${s.on_clock ? 'on' : ''}` },
-      h('div', { class: 'tc-state' },
-        h('span', { class: 'clock-dot', 'aria-hidden': 'true' }),
-        s.on_clock ? `On the clock since ${tcClock(s.clock_in)}` : 'Off the clock'),
-      s.on_clock && h('div', { class: 'tc-running' }, tcElapsed(s.clock_in)),
-      h('button', { type: 'button', class: `tc-punch ${s.on_clock ? 'danger-btn' : 'primary'}`, onclick: () => punch(s.on_clock ? 'out' : 'in') }, s.on_clock ? 'Clock out' : 'Clock in'),
-      h('div', { class: 'tc-totals' },
-        h('div', {}, h('span', { class: 'muted' }, 'Today'), h('strong', {}, tcHrs(s.today_hours))),
-        h('div', {}, h('span', { class: 'muted' }, 'This week'), h('strong', {}, tcHrs(s.week_hours))))),
-    h('section', { class: 'card-section' },
-      h('h3', {}, 'Ask for time off'),
-      h('p', { class: 'hint' }, 'An admin approves it, then it shows on the shop calendar.'),
-      form),
-    h('section', { class: 'card-section' },
-      h('h3', {}, 'My time off'),
-      reqs.length ? h('ul', { class: 'tc-reqs' }, ...reqs.map((r) => h('li', { class: `tc-req status-${r.status}` },
-        h('div', { class: 'tc-req-top' },
-          h('strong', {}, tcDays(r)),
-          h('span', { class: `tc-badge ${r.status}` }, STATUS_LABEL[r.status] || r.status)),
-        h('div', { class: 'muted' }, `${r.kind_label} · ${tcHrs(r.hours)}${r.note ? ` · ${r.note}` : ''}`),
-        r.decision_note && h('div', { class: 'tc-decision' }, `${r.decided_by || 'Admin'}: ${r.decision_note}`),
-        r.status === 'pending' && h('button', { type: 'button', class: 'link-btn', onclick: () => cancelOff(r.id) }, 'Cancel request'))))
-        : h('p', { class: 'muted' }, 'No time off asked for yet.')));
+
+  fill($('#timeBody'), h('div', { class: 'tc-page' },
+    h('section', { class: `tc-hero ${st}` },
+      h('div', { class: 'tc-now', 'data-now': '' }, tcNow()),
+      h('div', { class: 'tc-date' }, new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })),
+      h('div', { class: 'tc-state' }, h('span', { class: 'clock-dot', 'aria-hidden': 'true' }), stateText),
+      h('div', { class: 'tc-big', 'data-big': '' }, st === 'lunch' ? tcHM(tcSince(s.lunch_started_at)) : tcHM(tcWorkedMs(s))),
+      h('div', { class: 'tc-big-label' }, st === 'lunch' ? 'on lunch' : 'worked today'),
+      h('div', { class: 'tc-actions' }, ...TC_BUTTONS[st].map(([key, tone, label]) => h('button', {
+        type: 'button', class: `tc-action ${tone}`, onclick: () => confirmAction(key),
+      }, label || TC_ACTIONS[key].label)))),
+
+    h('div', { class: 'tc-grid' },
+      h('section', { class: 'tc-card' },
+        h('h3', {}, 'Today'),
+        events.length ? h('ol', { class: 'tc-timeline' }, ...events.map((e) => h('li', { class: `tc-ev ${e.kind}` },
+          h('span', { class: 'tc-ev-time' }, tcClock(e.t)), h('span', { class: 'tc-ev-label' }, e.label))))
+          : h('p', { class: 'muted' }, 'Nothing yet today. Tap Clock in to start your shift.')),
+      h('section', { class: 'tc-card' },
+        h('div', { class: 'tc-card-head' }, h('h3', {}, 'This week'), h('strong', {}, tcHM(s.week_hours * 3600000))),
+        h('div', { class: 'tc-week' }, ...s.week_days.map((d) => h('div', { class: `tc-wd ${d.date === todayKey ? 'today' : ''}`, title: `${tcDay(tcKeyDate(d.date))}: ${tcHrs(d.hours)}` },
+          h('div', { class: 'tc-wd-h' }, d.hours ? String(Math.round(d.hours * 10) / 10) : ''),
+          h('div', { class: 'tc-wd-bar' }, h('span', { style: `height:${Math.round((d.hours / max) * 100)}%` })),
+          h('div', { class: 'tc-wd-d' }, tcKeyDate(d.date).toLocaleDateString([], { weekday: 'short' }))))))),
+
+    h('section', { class: 'tc-card tc-timecard', id: 'tcCard' }),
+
+    h('div', { class: 'tc-grid' },
+      h('section', { class: 'tc-card' },
+        h('h3', {}, 'Ask for time off'),
+        h('p', { class: 'hint' }, 'An admin approves it, then it shows on the shop calendar.'),
+        h('form', { class: 'tc-off-form', onsubmit: askOff },
+          h('div', { class: 'tc-off-grid' },
+            h('label', {}, 'First day off', h('input', { type: 'date', name: 'start_date', required: true, min: todayKey, value: todayKey })),
+            h('label', {}, 'Last day off', h('input', { type: 'date', name: 'end_date', min: todayKey })),
+            h('label', {}, 'Kind', h('select', { name: 'kind' }, ...Object.entries(kinds).map(([k, v]) => h('option', { value: k }, v)))),
+            h('label', {}, 'Hours a day', h('input', { type: 'number', name: 'hours_per_day', min: '1', max: '24', step: '0.5', value: state.meta.shopHours?.hours_per_day || 8 }))),
+          h('label', {}, 'Note for the admin (optional)', h('input', { name: 'note', maxlength: '300', placeholder: 'e.g. Family trip' })),
+          h('button', { type: 'submit', class: 'primary' }, 'Ask for time off'))),
+      h('section', { class: 'tc-card' },
+        h('h3', {}, 'My time off'),
+        reqs.length ? h('ul', { class: 'tc-reqs' }, ...reqs.map((r) => h('li', { class: `tc-req status-${r.status}` },
+          h('div', { class: 'tc-req-top' },
+            h('strong', {}, tcDays(r)),
+            h('span', { class: `tc-badge ${r.status}` }, STATUS_LABEL[r.status] || r.status)),
+          h('div', { class: 'muted' }, `${r.kind_label} · ${tcHrs(r.hours)}${r.note ? ` · ${r.note}` : ''}`),
+          r.decision_note && h('div', { class: 'tc-decision' }, `${r.decided_by || 'Admin'}: ${r.decision_note}`),
+          r.status === 'pending' && h('button', { type: 'button', class: 'link-btn', onclick: () => cancelOff(r.id) }, 'Cancel request'))))
+          : h('p', { class: 'muted' }, 'No time off asked for yet.')))));
+  renderTimecard();
+}
+
+// The clock on the page and in the confirmation ticks every second while they're open.
+function tickMyTime() {
+  const s = tc.status;
+  if (!s || ($('#timePanel').hidden && !$('#clockDialog').open)) return;
+  document.querySelectorAll('[data-now]').forEach((el) => { el.textContent = tcNow(); });
+  const big = document.querySelector('[data-big]');
+  if (big) big.textContent = tcState(s) === 'lunch' ? tcHM(tcSince(s.lunch_started_at)) : tcHM(tcWorkedMs(s));
 }
 
 async function askOff(e) {
   e.preventDefault();
-  const f = new FormData(e.target);
-  const body = Object.fromEntries(f);
+  const body = Object.fromEntries(new FormData(e.target));
   if (!body.end_date) body.end_date = body.start_date;
   try {
     await api('/api/time-off', { method: 'POST', body });
@@ -113,8 +241,116 @@ async function cancelOff(id) {
 
 function openMyTime() {
   showPanel($('#timePanel'));
+  tc.fixing = null;
   renderMyTime();
+  $('#timePanel').scrollTop = 0;
   loadClock().catch(fail);
+  loadTimecard().catch(fail);
+}
+
+// ---------- Timecard (everyone): their punches, and corrections they ask an admin for ----------
+// Sunday-to-Saturday periods, as [first day, last day].
+function tcPeriod(v) {
+  const key = ShopTime.dayKey;
+  const sunday = startOfDay(new Date()); sunday.setDate(sunday.getDate() - sunday.getDay());
+  const plus = (n) => { const d = new Date(sunday); d.setDate(d.getDate() + n); return d; };
+  return { week: [plus(0), plus(6)], lastweek: [plus(-7), plus(-1)], two: [plus(-7), plus(6)], lasttwo: [plus(-14), plus(-1)] }[v].map(key);
+}
+const TC_PERIODS = { two: 'This 2 weeks', week: 'This week', lastweek: 'Last week', lasttwo: 'Last 2 weeks' };
+const CORR_LABEL = { pending: 'Waiting for approval', approved: 'Approved', denied: 'Denied', cancelled: 'Cancelled' };
+
+// "Tue, Nov 10: 8:40 AM – 5:00 PM → 8:00 AM – 5:00 PM"
+function corrText(c) {
+  const span = (a, b) => `${tcClock(a)} – ${b ? tcClock(b) : 'still on'}`;
+  if (c.action === 'add') return `Add ${tcDay(c.clock_in)}, ${span(c.clock_in, c.clock_out)}`;
+  if (c.action === 'remove') return `Remove ${tcDay(c.old_clock_in)}, ${span(c.old_clock_in, c.old_clock_out)}`;
+  const moved = ShopTime.dayKey(c.old_clock_in) !== ShopTime.dayKey(c.clock_in);
+  return `${tcDay(c.old_clock_in)}: ${span(c.old_clock_in, c.old_clock_out)} → ${moved ? `${tcDay(c.clock_in)}, ` : ''}${span(c.clock_in, c.clock_out || c.old_clock_out)}`;
+}
+
+async function loadTimecard() {
+  const [from, to] = tcPeriod(tc.cardPeriod);
+  tc.card = await api(`/api/timecard?from=${from}&to=${to}`);
+  renderTimecard();
+}
+
+function fixForm(p) {
+  const adding = !p;
+  const start = p ? new Date(p.clock_in) : (() => { const d = new Date(); d.setHours(8, 0, 0, 0); return d; })();
+  const end = p ? (p.clock_out ? new Date(p.clock_out) : null) : (() => { const d = new Date(start); d.setHours(16, 0, 0, 0); return d; })();
+  const inp = h('input', { type: 'datetime-local', name: 'clock_in', required: true, value: toLocalInput(start) });
+  const out = h('input', { type: 'datetime-local', name: 'clock_out', required: adding, value: end ? toLocalInput(end) : '' });
+  const remove = !adding && h('input', { type: 'checkbox', name: 'remove', onchange: (e) => { inp.disabled = e.target.checked; out.disabled = e.target.checked; } });
+  return h('form', { class: 'tc-fix', onsubmit: async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const body = remove?.checked
+      ? { action: 'remove', punch_id: p.id, reason: f.get('reason') }
+      : { action: adding ? 'add' : 'change', punch_id: p?.id, clock_in: new Date(inp.value).toISOString(), clock_out: out.value ? new Date(out.value).toISOString() : undefined, reason: f.get('reason') };
+    try {
+      await api('/api/timecard/corrections', { method: 'POST', body });
+      tc.fixing = null;
+      toast('Sent. An admin will approve it.');
+      await loadTimecard();
+      if (isAdmin()) loadTimeOffBadge();
+    } catch (err) { fail(err); }
+  } },
+  h('div', { class: 'tc-fix-title' }, adding ? 'Add time you forgot to clock' : 'Ask to fix this time'),
+  h('div', { class: 'tc-off-grid' },
+    h('label', {}, 'Clock in', inp),
+    h('label', {}, 'Clock out', out)),
+  remove && h('label', { class: 'check' }, remove, ' This time shouldn\'t be on my timecard'),
+  h('label', {}, 'What happened? (the admin sees this)', h('input', { name: 'reason', required: true, maxlength: '300', placeholder: adding ? 'e.g. Worked Saturday morning, forgot to clock in' : 'e.g. Got here at 8, my phone was dead' })),
+  h('div', { class: 'tp-form-actions' },
+    h('button', { type: 'submit', class: 'primary' }, 'Send to admin'),
+    h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.fixing = null; renderTimecard(); } }, 'Cancel')));
+}
+
+function renderTimecard() {
+  const box = $('#tcCard');
+  if (!box) return;
+  const d = tc.card;
+  const days = new Map();
+  for (const p of d?.punches || []) {
+    const k = ShopTime.dayKey(p.clock_in);
+    if (!days.has(k)) days.set(k, []);
+    days.get(k).push(p);
+  }
+  const punchRow = (p) => [
+    h('div', { class: `tc-tc-row ${p.correction_pending ? 'pending' : ''}` },
+      h('span', { class: 'tc-tc-span' }, `${tcClock(p.clock_in)} – ${p.clock_out ? tcClock(p.clock_out) : 'now'}`),
+      h('span', { class: 'tc-tc-hrs' }, tcHM(p.hours * 3600000)),
+      h('span', { class: 'tc-tc-tags' },
+        p.out_reason === 'lunch' && h('span', { class: 'tc-badge' }, 'Then lunch'),
+        p.auto_closed && h('span', { class: 'tc-badge pending' }, 'Forgot to clock out'),
+        p.edited_by && h('span', { class: 'tc-badge' }, `Fixed by ${p.edited_by}`),
+        p.correction_pending && h('span', { class: 'tc-badge pending' }, 'Fix asked for')),
+      !p.correction_pending && p.clock_out && h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.fixing = p.id; renderTimecard(); } }, 'Fix')),
+    tc.fixing === p.id && fixForm(p),
+  ];
+  const reqs = d?.corrections || [];
+  fill(box,
+    h('div', { class: 'tc-card-head' },
+      h('h3', {}, 'Timecard'),
+      h('select', { 'aria-label': 'Timecard period', onchange: (e) => { tc.cardPeriod = e.target.value; tc.fixing = null; loadTimecard().catch(fail); } },
+        ...Object.entries(TC_PERIODS).map(([k, v]) => h('option', { value: k, selected: k === tc.cardPeriod }, v))),
+      d && h('strong', { class: 'tc-tc-total' }, `${tcHM(d.total_hours * 3600000)} total`)),
+    !d ? h('p', { class: 'muted' }, 'Loading…')
+      : days.size ? h('div', { class: 'tc-tc-days' }, ...[...days].map(([k, list]) => h('div', { class: 'tc-tc-day' },
+        h('div', { class: 'tc-tc-date' }, tcDay(tcKeyDate(k)), h('span', { class: 'muted' }, tcHM(list.reduce((n, p) => n + p.hours, 0) * 3600000))),
+        h('div', { class: 'tc-tc-punches' }, ...list.flatMap(punchRow)))))
+        : h('p', { class: 'muted' }, 'No time clocked in these days.'),
+    tc.fixing === 'add' ? fixForm(null)
+      : h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.fixing = 'add'; renderTimecard(); } }, '+ Add time you forgot to clock'),
+    reqs.length ? h('div', { class: 'tc-corrs' },
+      h('div', { class: 'tc-fix-title' }, 'My correction requests'),
+      h('ul', { class: 'tc-reqs' }, ...reqs.map((c) => h('li', { class: `tc-req status-${c.status}` },
+        h('div', { class: 'tc-req-top' }, h('strong', {}, corrText(c)), h('span', { class: `tc-badge ${c.status}` }, CORR_LABEL[c.status] || c.status)),
+        h('div', { class: 'muted' }, `“${c.reason}”`),
+        c.decision_note && h('div', { class: 'tc-decision' }, `${c.decided_by || 'Admin'}: ${c.decision_note}`),
+        c.status === 'pending' && h('button', { type: 'button', class: 'link-btn', onclick: async () => {
+          try { await api(`/api/timecard/corrections/${c.id}`, { method: 'DELETE' }); await loadTimecard(); } catch (err) { fail(err); }
+        } }, 'Cancel request'))))) : null);
 }
 
 // ---------- Time & Pay (admins) ----------
@@ -141,7 +377,7 @@ async function loadTimePay() {
   tc.pay = await api(`/api/payroll?from=${r[0]}&to=${r[1]}`);
   $('#tpRange').textContent = `${tcDay(tcKeyDate(r[0]))} to ${tcDay(tcKeyDate(r[1]))}. Overtime after ${tc.pay.settings.ot_weekly_hours} hours a week${tc.pay.settings.ot_daily_hours ? ` or ${tc.pay.settings.ot_daily_hours} a day` : ''} (Sunday to Saturday), at ${tc.pay.settings.ot_multiplier}× the rate.`;
   renderTimePay();
-  setTimeOffBadge(tc.pay.pending_time_off.length);
+  setTimeOffBadge(tc.pay.pending_time_off.length + tc.pay.pending_corrections.length);
 }
 
 function tpTile(label, value, sub) {
@@ -154,6 +390,9 @@ function renderTimePay() {
   fill($('#tpBody'),
     tc.settings && tpSettings(d.settings),
     tc.adding && tpAddForm(d.rows),
+    d.pending_corrections.length ? h('section', { class: 'rev-block tp-pending' },
+      h('h3', {}, `Timecard corrections waiting for you (${d.pending_corrections.length})`),
+      h('ul', { class: 'tp-off-list' }, ...d.pending_corrections.map(correctionRow))) : null,
     d.pending_time_off.length ? h('section', { class: 'rev-block tp-pending' },
       h('h3', {}, `Time off waiting for you (${d.pending_time_off.length})`),
       h('ul', { class: 'tp-off-list' }, ...d.pending_time_off.map(pendingRow))) : null,
@@ -185,6 +424,30 @@ function pendingRow(r) {
     h('div', { class: 'tp-off-actions' },
       h('button', { type: 'button', class: 'primary', onclick: () => decide(r, 'approved') }, 'Approve'),
       h('button', { type: 'button', onclick: () => decide(r, 'denied') }, 'Deny')));
+}
+
+function correctionRow(c) {
+  return h('li', { class: 'tp-off' },
+    h('div', {},
+      h('strong', {}, c.user_name), ` · ${corrText(c)}`,
+      h('div', { class: 'muted' }, `“${c.reason}” · asked ${fmtDateTime(c.created_at)}`)),
+    h('div', { class: 'tp-off-actions' },
+      h('button', { type: 'button', class: 'primary', onclick: () => decideCorrection(c, 'approved') }, 'Approve'),
+      h('button', { type: 'button', onclick: () => decideCorrection(c, 'denied') }, 'Deny')));
+}
+
+async function decideCorrection(c, status) {
+  let note = '';
+  if (status === 'denied') {
+    note = prompt(`Deny ${c.user_name}'s correction? Add a note for them (optional):`, '');
+    if (note === null) return;
+  }
+  try {
+    await api(`/api/timecard/corrections/${c.id}`, { method: 'PATCH', body: { status, note } });
+    toast(status === 'approved' ? 'Approved. Their timecard is fixed.' : 'Denied.');
+    tc.open.add(c.user_name.toLowerCase());
+    await loadTimePay();
+  } catch (err) { fail(err); }
 }
 
 async function decide(r, status) {
@@ -244,7 +507,7 @@ function personDetail(p) {
       h('td', {}, tcClock(x.clock_in)),
       h('td', {}, x.clock_out ? tcClock(x.clock_out) : h('span', { class: 'tp-flag on' }, 'Still on')),
       h('td', { class: 'num' }, tcHrs(x.hours)),
-      h('td', { class: 'muted' }, [x.auto_closed && 'Forgot to clock out: closed at end of day', x.note, x.edited_by && `edited by ${x.edited_by}`].filter(Boolean).join(' · ')),
+      h('td', { class: 'muted' }, [x.out_reason === 'lunch' && `Then lunch${x.lunch_minutes != null ? ` (${x.lunch_minutes} min)` : ''}`, x.auto_closed && 'Forgot to clock out: closed at end of day', x.note, x.edited_by && `edited by ${x.edited_by}`].filter(Boolean).join(' · ')),
       h('td', { class: 'tp-punch-actions' },
         h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.editing = x.id; renderTimePay(); } }, 'Edit'),
         h('button', { type: 'button', class: 'link-btn danger', onclick: () => removePunch(x) }, 'Delete')));
@@ -369,11 +632,18 @@ function setTimeOffBadge(n) {
 }
 async function loadTimeOffBadge() {
   if (!isAdmin()) return;
-  try { setTimeOffBadge((await api('/api/time-off?status=pending')).length); } catch { /* try again later */ }
+  try {
+    const [off, fixes] = await Promise.all([api('/api/time-off?status=pending'), api('/api/timecard/corrections?status=pending')]);
+    setTimeOffBadge(off.length + fixes.length);
+  } catch { /* try again later */ }
 }
 
 function initTimeClock() {
   $('#clockBtn').addEventListener('click', openMyTime);
+  $('#clockDialog').addEventListener('close', afterConfirmation);
+  // Tapping outside the confirmation closes it like Cancel (or Done).
+  $('#clockDialog').addEventListener('click', (e) => { if (e.target === $('#clockDialog')) $('#clockDialog').close(); });
+  setInterval(tickMyTime, 1000);
   $('#tpPeriod').addEventListener('change', () => {
     $('#tpCustom').hidden = $('#tpPeriod').value !== 'custom';
     if ($('#tpPeriod').value === 'custom' && !$('#tpFrom').value && tc.range) [$('#tpFrom').value, $('#tpTo').value] = tc.range;

@@ -53,23 +53,48 @@ function createTimeService(db, { users, getShopHours }) {
   const openPunch = (name) => stmt('SELECT * FROM time_punches WHERE name_norm = ? AND clock_out IS NULL ORDER BY id DESC LIMIT 1').get(norm(name));
   const hoursOf = (p, at = new Date()) => Math.max(0, (new Date(p.clock_out || at) - new Date(p.clock_in)) / HOUR);
 
+  // Today's punches for someone, in order.
+  const todayPunches = (name, at) => {
+    const today = new Date(at); today.setHours(0, 0, 0, 0);
+    return stmt('SELECT * FROM time_punches WHERE name_norm = ? AND clock_in >= ? ORDER BY clock_in').all(norm(name), today.toISOString());
+  };
+  // On lunch: their last punch today ended for lunch and they haven't come back yet.
+  const lunchPunch = (name, at) => {
+    if (openPunch(name)) return null;
+    const last = todayPunches(name, at).at(-1);
+    return last?.out_reason === 'lunch' ? last : null;
+  };
+
   function status(name, at = new Date()) {
     if (!name) throw new HttpError(400, 'Sign in to use the time clock.');
     closeForgotten(at);
     const today = new Date(at); today.setHours(0, 0, 0, 0);
     const week = new Date(today); week.setDate(week.getDate() - week.getDay());
-    const since = (from) => stmt('SELECT * FROM time_punches WHERE name_norm = ? AND (clock_out IS NULL OR clock_out > ?)').all(norm(name), from.toISOString())
-      .reduce((n, p) => n + Math.max(0, (Math.min(new Date(p.clock_out || at), at) - Math.max(new Date(p.clock_in), from)) / HOUR), 0);
+    const punches = stmt('SELECT * FROM time_punches WHERE name_norm = ? AND (clock_out IS NULL OR clock_out > ?)').all(norm(name), week.toISOString());
+    const between = (from, to) => punches.reduce((n, p) => n + Math.max(0, (Math.min(new Date(p.clock_out || at), at, to) - Math.max(new Date(p.clock_in), from)) / HOUR), 0);
     const on = openPunch(name);
+    const lunch = lunchPunch(name, at);
+    const shift = todayPunches(name, at);
     return {
       on_clock: Boolean(on),
+      on_lunch: Boolean(lunch),
       clock_in: on?.clock_in || null,
-      today_hours: round2(since(today)),
-      week_hours: round2(since(week)),
+      lunch_started_at: lunch?.clock_out || null,
+      shift_started_at: shift[0]?.clock_in || null,
+      today: shift.map((p) => ({ clock_in: p.clock_in, clock_out: p.clock_out, out_reason: p.out_reason, auto_closed: Boolean(p.auto_closed) })),
+      today_hours: round2(between(today, new Date(today.getTime() + DAY))),
+      week_hours: round2(between(week, new Date(week.getTime() + 7 * DAY))),
+      // Sunday to Saturday, for the little week chart.
+      week_days: Array.from({ length: 7 }, (_, i) => {
+        const from = new Date(week); from.setDate(week.getDate() + i);
+        const to = new Date(from); to.setDate(from.getDate() + 1);
+        return { date: keyOf(from), hours: round2(between(from, to)) };
+      }),
       time_off: mine(name),
     };
   }
 
+  // Clocking in again after lunch is coming back from lunch.
   function clockIn(name, { at = new Date() } = {}) {
     if (!name) throw new HttpError(400, 'Sign in to use the time clock.');
     closeForgotten(at); // yesterday's forgotten punch doesn't count as on the clock today
@@ -78,13 +103,24 @@ function createTimeService(db, { users, getShopHours }) {
     return status(name, at);
   }
 
-  function clockOut(name, { at = new Date() } = {}) {
+  // Clocking out on lunch ends the day where lunch started (lunch isn't paid).
+  function clockOut(name, { at = new Date(), reason = null } = {}) {
     closeForgotten(at);
     const p = openPunch(name);
-    if (!p) throw new HttpError(400, 'You\'re not on the clock.');
-    stmt('UPDATE time_punches SET clock_out = ? WHERE id = ?').run(new Date(Math.max(at, new Date(p.clock_in))).toISOString(), p.id);
+    if (!p) {
+      const lunch = lunchPunch(name, at);
+      if (lunch && !reason) {
+        stmt('UPDATE time_punches SET out_reason = NULL WHERE id = ?').run(lunch.id);
+        return status(name, at);
+      }
+      throw new HttpError(400, lunch ? 'You\'re already on lunch.' : 'You\'re not on the clock.');
+    }
+    stmt('UPDATE time_punches SET clock_out = ?, out_reason = ? WHERE id = ?').run(new Date(Math.max(at, new Date(p.clock_in))).toISOString(), reason, p.id);
     return status(name, at);
   }
+
+  // Lunch: off the clock (unpaid) until they come back with Clock in / End lunch.
+  const startLunch = (name, opts = {}) => clockOut(name, { ...opts, reason: 'lunch' });
 
   // Someone who forgot to clock out: closed at the end of the shop's day (or a normal day's hours
   // after they clocked in, if that was after closing), never past midnight, and flagged for an admin.
@@ -198,6 +234,81 @@ function createTimeService(db, { users, getShopHours }) {
   const calendarOff = ({ from, to, full = false }) => stmt("SELECT * FROM time_off WHERE status = 'approved' AND start_date < ? AND end_date >= ?")
     .all(dayArg(to), dayArg(from)).map((r) => (full ? shapeOff(r) : { id: r.id, user_name: r.user_name, start_date: r.start_date, end_date: r.end_date, kind: r.kind, kind_label: KINDS[r.kind], hours_per_day: r.hours_per_day }));
 
+  // ---- timecards and corrections ----
+  // Someone's own punches for a period (days "2026-11-01" to "2026-11-14"), with the corrections they asked for.
+  function timecard(name, { from, to } = {}) {
+    if (!name) throw new HttpError(400, 'Sign in to see your timecard.');
+    if (!isDate(from) || !isDate(to) || to < from) throw new HttpError(400, 'Pick the days to show.');
+    closeForgotten();
+    const start = dateOf(from);
+    const end = dateOf(to); end.setDate(end.getDate() + 1);
+    const pending = new Set(stmt("SELECT punch_id FROM time_corrections WHERE name_norm = ? AND status = 'pending' AND punch_id IS NOT NULL").all(norm(name)).map((r) => r.punch_id));
+    const punches = stmt('SELECT * FROM time_punches WHERE name_norm = ? AND clock_in >= ? AND clock_in < ? ORDER BY clock_in').all(norm(name), start.toISOString(), end.toISOString())
+      .map((p) => ({ id: p.id, clock_in: p.clock_in, clock_out: p.clock_out, out_reason: p.out_reason, auto_closed: Boolean(p.auto_closed), edited_by: p.edited_by, note: p.note, hours: round2(hoursOf(p)), correction_pending: pending.has(p.id) }));
+    const corrections = stmt('SELECT * FROM time_corrections WHERE name_norm = ? AND (status = \'pending\' OR created_at > ?) ORDER BY created_at DESC LIMIT 50')
+      .all(norm(name), new Date(Date.now() - 60 * DAY).toISOString());
+    return { from, to, punches, total_hours: round2(punches.reduce((n, p) => n + p.hours, 0)), corrections };
+  }
+
+  // Ask for a correction: change a punch's times, add time that was never clocked, or remove a punch.
+  function requestCorrection(name, { punch_id: punchId, action = 'change', clock_in: a, clock_out: b, reason } = {}) {
+    if (!name) throw new HttpError(400, 'Sign in to ask for a correction.');
+    if (!['change', 'add', 'remove'].includes(action)) throw new HttpError(400, 'Change, add or remove time.');
+    const why = String(reason || '').trim().slice(0, 300);
+    if (!why) throw new HttpError(400, 'Say what happened so the admin knows why.');
+    let punch = null;
+    if (action !== 'add') {
+      punch = stmt('SELECT * FROM time_punches WHERE id = ?').get(Number(punchId));
+      if (!punch || punch.name_norm !== norm(name)) throw new HttpError(404, 'That time isn\'t on your timecard.');
+      if (stmt("SELECT 1 FROM time_corrections WHERE punch_id = ? AND status = 'pending'").get(punch.id)) throw new HttpError(400, 'You already asked to fix that time. Wait for an admin, or cancel that request first.');
+    }
+    let start = null;
+    let end = null;
+    if (action !== 'remove') {
+      start = parse(a, 'clock-in');
+      end = b ? parse(b, 'clock-out') : null;
+      if (!end && action === 'add') throw new HttpError(400, 'Pick the clock-out time.');
+      if (end && end <= start) throw new HttpError(400, 'Clock-out has to be after clock-in.');
+      if (end && new Date(end) - new Date(start) > 24 * HOUR) throw new HttpError(400, 'Ask for one day at a time.');
+      if (new Date(start) > new Date(Date.now() + 5 * 60000)) throw new HttpError(400, 'That time hasn\'t happened yet.');
+      if (punch && start === punch.clock_in && end === punch.clock_out) throw new HttpError(400, 'Those are the times already on your timecard.');
+    }
+    const { lastInsertRowid } = stmt(`INSERT INTO time_corrections (name_norm, user_name, punch_id, action, clock_in, clock_out, old_clock_in, old_clock_out, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(norm(name), name, punch?.id ?? null, action, start, end, punch?.clock_in ?? null, punch?.clock_out ?? null, why, now());
+    return stmt('SELECT * FROM time_corrections WHERE id = ?').get(Number(lastInsertRowid));
+  }
+
+  function cancelCorrection(id, { user, role } = {}) {
+    const c = stmt('SELECT * FROM time_corrections WHERE id = ?').get(id);
+    if (!c) throw new HttpError(404, 'That request is gone.');
+    if (role !== 'admin' && c.name_norm !== norm(user)) throw new HttpError(403, 'That isn\'t your request.');
+    if (c.status !== 'pending') throw new HttpError(400, 'It\'s already been decided.');
+    stmt("UPDATE time_corrections SET status = 'cancelled', decided_by = ?, decided_at = ? WHERE id = ?").run(user ?? null, now(), id);
+    return stmt('SELECT * FROM time_corrections WHERE id = ?').get(id);
+  }
+
+  // Approving makes the change on the timecard (and so in Time & Pay); denying leaves it as it was.
+  function decideCorrection(id, { status: s, note } = {}, { user } = {}) {
+    if (!['approved', 'denied'].includes(s)) throw new HttpError(400, 'Approve or deny it.');
+    const c = stmt('SELECT * FROM time_corrections WHERE id = ?').get(id);
+    if (!c || c.status === 'cancelled') throw new HttpError(404, 'That request is gone.');
+    if (c.status !== 'pending') throw new HttpError(400, 'It\'s already been decided.');
+    if (s === 'approved') {
+      const why = `Correction they asked for: ${c.reason}`.slice(0, 200);
+      if (c.action === 'add') addPunch({ user_name: c.user_name, clock_in: c.clock_in, clock_out: c.clock_out, note: why }, { user });
+      else if (!stmt('SELECT 1 FROM time_punches WHERE id = ?').get(c.punch_id)) throw new HttpError(400, 'That time was already removed. Deny this one.');
+      else if (c.action === 'remove') removePunch(c.punch_id);
+      else editPunch(c.punch_id, { clock_in: c.clock_in, clock_out: c.clock_out || undefined, note: why }, { user });
+    }
+    stmt('UPDATE time_corrections SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?')
+      .run(s, user ?? null, now(), String(note || '').trim().slice(0, 300) || null, id);
+    return stmt('SELECT * FROM time_corrections WHERE id = ?').get(id);
+  }
+
+  const listCorrections = ({ status: s } = {}) => (s === 'pending'
+    ? stmt("SELECT * FROM time_corrections WHERE status = 'pending' ORDER BY created_at").all()
+    : stmt("SELECT * FROM time_corrections WHERE status != 'cancelled' ORDER BY created_at DESC LIMIT 300").all());
+
   // ---- pay rates ----
   const rateOf = (name) => stmt('SELECT cents FROM pay_rates WHERE name_norm = ?').get(norm(name))?.cents ?? null;
   function setRate(name, amount, { user } = {}) {
@@ -228,7 +339,7 @@ function createTimeService(db, { users, getShopHours }) {
       const k = norm(name);
       if (!people.has(k)) {
         const u = users.list().find((x) => norm(x.name) === k);
-        people.set(k, { name: u?.name || name, role: u?.role || null, active: u ? u.active !== false : false, rate_cents: rateOf(name), punches: [], days: new Map(), time_off: [], pto_hours: 0, unpaid_off_hours: 0 });
+        people.set(k, { name: u?.name || name, role: u?.role || null, active: u ? u.active !== false : false, rate_cents: rateOf(name), punches: [], days: new Map(), time_off: [], pto_hours: 0, unpaid_off_hours: 0, lunch_minutes: 0 });
       }
       return people.get(k);
     };
@@ -242,6 +353,11 @@ function createTimeService(db, { users, getShopHours }) {
       const a = new Date(Math.max(new Date(p.clock_in), start));
       const b = new Date(Math.min(new Date(p.clock_out || at), end));
       const hours = Math.max(0, (b - a) / HOUR);
+      const prev = who.punches.at(-1);
+      if (prev?.out_reason === 'lunch' && prev.clock_out && keyOf(new Date(prev.clock_out)) === keyOf(new Date(p.clock_in))) {
+        prev.lunch_minutes = Math.round((new Date(p.clock_in) - new Date(prev.clock_out)) / 60000);
+        who.lunch_minutes += prev.lunch_minutes;
+      }
       who.punches.push({ ...p, auto_closed: Boolean(p.auto_closed), hours: round2(hoursOf(p, at)), open: !p.clock_out });
       const day = keyOf(a);
       who.days.set(day, (who.days.get(day) || 0) + hours);
@@ -280,7 +396,7 @@ function createTimeService(db, { users, getShopHours }) {
         name: p.name, role: p.role, active: p.active, rate_cents: rate,
         regular_hours: round2(regular), overtime_hours: round2(overtime), pto_hours: round2(p.pto_hours), unpaid_off_hours: round2(p.unpaid_off_hours),
         total_hours: round2(regular + overtime + p.pto_hours), gross_cents: pay,
-        on_clock: p.punches.some((x) => x.open), flagged: p.punches.filter((x) => x.auto_closed).length,
+        on_clock: p.punches.some((x) => x.open), lunch_minutes: p.lunch_minutes, flagged: p.punches.filter((x) => x.auto_closed).length,
         punches: p.punches, time_off: p.time_off,
       };
     }).filter((r) => r.active || r.punches.length || r.time_off.length)
@@ -291,10 +407,11 @@ function createTimeService(db, { users, getShopHours }) {
       rows,
       totals: { regular_hours: sum('regular_hours'), overtime_hours: sum('overtime_hours'), pto_hours: sum('pto_hours'), total_hours: sum('total_hours'), gross_cents: rows.reduce((n, r) => n + (r.gross_cents || 0), 0), missing_rates: rows.filter((r) => r.rate_cents == null && r.total_hours > 0).length },
       pending_time_off: listOff({ status: 'pending' }),
+      pending_corrections: listCorrections({ status: 'pending' }),
     };
   }
 
-  return { status, clockIn, clockOut, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
+  return { status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
 }
 
 module.exports = { createTimeService, TIME_OFF_KINDS: KINDS };

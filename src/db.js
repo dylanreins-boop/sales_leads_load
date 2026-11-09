@@ -311,6 +311,25 @@ CREATE TABLE IF NOT EXISTS time_off (
 CREATE INDEX IF NOT EXISTS time_off_dates ON time_off (start_date, end_date);
 
 -- Hourly pay rates, set by admins.
+-- Timecard corrections someone asks for (change, add or remove a punch); an admin approves or denies.
+CREATE TABLE IF NOT EXISTS time_corrections (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_norm     TEXT NOT NULL,
+  user_name     TEXT NOT NULL,
+  punch_id      INTEGER,
+  action        TEXT NOT NULL,
+  clock_in      TEXT,
+  clock_out     TEXT,
+  old_clock_in  TEXT,
+  old_clock_out TEXT,
+  reason        TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending',
+  decided_by    TEXT,
+  decided_at    TEXT,
+  decision_note TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS time_corrections_status ON time_corrections (status, created_at);
 CREATE TABLE IF NOT EXISTS pay_rates (
   name_norm  TEXT PRIMARY KEY,
   user_name  TEXT NOT NULL,
@@ -446,6 +465,8 @@ function migrate(db) {
   }
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
   if (!has('user_prefs', 'call_phone')) db.exec('ALTER TABLE user_prefs ADD COLUMN call_phone TEXT');
+  // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
+  if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
   // Who last opened the lead and when, and who last reached out (a call logged or a text) and how.
   // The welcome text ("what time of day is best to reach you?") and the customer's answer.

@@ -149,3 +149,76 @@ test('a punch left open overnight closes at the end of that shop day and is flag
   assert.equal(pay.rows[0].flagged, 1);
   assert.equal(pay.rows[0].regular_hours, 7.92);
 });
+
+test('lunch: off the clock until they come back, and not paid', () => {
+  const mem = openDatabase(':memory:');
+  const users = createUserService(mem, { serverUsers: [{ name: 'Luis', role: 'shop' }] });
+  const time = createTimeService(mem, { users, getShopHours: () => ShopTime.settingsOf({}) });
+  const t = (h, m = 0) => new Date(2026, 10, 10, h, m);
+  time.clockIn('Luis', { at: t(8) });
+  const lunch = time.startLunch('Luis', { at: t(12) });
+  assert.equal(lunch.on_clock, false);
+  assert.equal(lunch.on_lunch, true);
+  assert.equal(new Date(lunch.lunch_started_at).getTime(), t(12).getTime());
+  assert.throws(() => time.startLunch('Luis', { at: t(12, 5) }), /already on lunch/);
+  const back = time.clockIn('Luis', { at: t(12, 30) });
+  assert.equal(back.on_lunch, false);
+  assert.equal(back.on_clock, true);
+  assert.equal(back.today.length, 2);
+  const out = time.clockOut('Luis', { at: t(16, 30) });
+  assert.equal(out.today_hours, 8, '4 hours, lunch, 4 hours');
+  assert.equal(out.week_days.find((d) => d.date === '2026-11-10').hours, 8);
+  const pay = time.payroll({ from: '2026-11-10', to: '2026-11-10', at: t(17) });
+  assert.equal(pay.rows[0].regular_hours, 8);
+  assert.equal(pay.rows[0].lunch_minutes, 30);
+  assert.equal(pay.rows[0].punches[0].lunch_minutes, 30);
+
+  // Going home from lunch: Clock out ends the day where lunch started.
+  time.clockIn('Luis', { at: new Date(2026, 10, 11, 8) });
+  time.startLunch('Luis', { at: new Date(2026, 10, 11, 12) });
+  const home = time.clockOut('Luis', { at: new Date(2026, 10, 11, 13) });
+  assert.equal(home.on_lunch, false);
+  assert.equal(home.today_hours, 4);
+});
+
+
+test('timecard corrections: people ask to fix, add or remove time; admins approve or deny', async () => {
+  const SAM_P = (await call('POST', '/api/time/punches', { user_name: 'Sam', clock_in: '2026-10-20T08:40', clock_out: '2026-10-20T17:00' })).data;
+  const card = (await call('GET', '/api/timecard?from=2026-10-18&to=2026-10-24', undefined, SAM)).data;
+  assert.deepEqual(card.punches.map((p) => p.id), [SAM_P.id]);
+  assert.equal(card.total_hours, 8.33);
+
+  // Sam forgot to clock in on time.
+  assert.match((await call('POST', '/api/timecard/corrections', { punch_id: SAM_P.id, clock_in: '2026-10-20T08:00', clock_out: '2026-10-20T17:00' }, SAM)).data.error, /what happened/);
+  const fix = await call('POST', '/api/timecard/corrections', { punch_id: SAM_P.id, clock_in: '2026-10-20T08:00', clock_out: '2026-10-20T17:00', reason: 'Got here at 8, phone was dead.' }, SAM);
+  assert.equal(fix.status, 201);
+  assert.equal(fix.data.status, 'pending');
+  assert.match((await call('POST', '/api/timecard/corrections', { punch_id: SAM_P.id, clock_in: '2026-10-20T07:00', reason: 'again' }, SAM)).data.error, /already asked/);
+  assert.equal((await call('POST', '/api/timecard/corrections', { punch_id: SAM_P.id, clock_in: '2026-10-20T07:00', reason: 'not mine' }, MIKE)).status, 404, 'only your own time');
+  assert.equal((await call('GET', '/api/timecard?from=2026-10-18&to=2026-10-24', undefined, SAM)).data.punches[0].correction_pending, true);
+
+  // A missing day, and a punch that shouldn't be there.
+  const add = (await call('POST', '/api/timecard/corrections', { action: 'add', clock_in: '2026-10-21T08:00', clock_out: '2026-10-21T12:00', reason: 'Worked the morning, forgot the app.' }, SAM)).data;
+  const extra = (await call('POST', '/api/time/punches', { user_name: 'Sam', clock_in: '2026-10-22T13:00', clock_out: '2026-10-22T13:05' })).data;
+  const remove = (await call('POST', '/api/timecard/corrections', { action: 'remove', punch_id: extra.id, reason: 'Tapped by mistake.' }, SAM)).data;
+
+  assert.equal((await call('PATCH', `/api/timecard/corrections/${fix.data.id}`, { status: 'approved' }, SAM)).status, 403, 'admins decide');
+  const pending = (await call('GET', '/api/payroll?from=2026-10-18&to=2026-10-24')).data.pending_corrections;
+  assert.deepEqual(pending.map((c) => c.action), ['change', 'add', 'remove']);
+
+  assert.equal((await call('PATCH', `/api/timecard/corrections/${fix.data.id}`, { status: 'approved' })).data.status, 'approved');
+  assert.equal((await call('PATCH', `/api/timecard/corrections/${add.id}`, { status: 'approved' })).data.status, 'approved');
+  assert.equal((await call('PATCH', `/api/timecard/corrections/${remove.id}`, { status: 'denied', note: 'Keep it, I checked the camera.' })).data.decision_note, 'Keep it, I checked the camera.');
+  assert.match((await call('PATCH', `/api/timecard/corrections/${fix.data.id}`, { status: 'denied' })).data.error, /already been decided/);
+
+  const after = (await call('GET', '/api/timecard?from=2026-10-18&to=2026-10-24', undefined, SAM)).data;
+  assert.deepEqual(after.punches.map((p) => p.hours), [9, 4, 0.08]);
+  assert.match(after.punches[0].note, /phone was dead/);
+  assert.equal(after.punches[0].edited_by, 'Dylan');
+  assert.deepEqual(after.corrections.map((c) => c.status).sort(), ['approved', 'approved', 'denied']);
+
+  // Cancel your own pending request.
+  const oops = (await call('POST', '/api/timecard/corrections', { action: 'add', clock_in: '2026-10-23T08:00', clock_out: '2026-10-23T09:00', reason: 'test' }, SAM)).data;
+  assert.equal((await call('DELETE', `/api/timecard/corrections/${oops.id}`, undefined, MIKE)).status, 403);
+  assert.equal((await call('DELETE', `/api/timecard/corrections/${oops.id}`, undefined, SAM)).data.status, 'cancelled');
+});

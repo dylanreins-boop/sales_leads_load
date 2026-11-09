@@ -835,6 +835,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/clock', ({ actor }) => timeClock.status(actor.user), { roles: ANY_LOGIN });
   route('POST', '/api/clock/in', ({ actor }) => timeClock.clockIn(actor.user), { roles: ANY_LOGIN });
   route('POST', '/api/clock/out', ({ actor }) => timeClock.clockOut(actor.user), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/lunch', ({ actor }) => timeClock.startLunch(actor.user), { roles: ANY_LOGIN });
+  route('GET', '/api/timecard', ({ query, actor }) => timeClock.timecard(actor.user, { from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
+  route('POST', '/api/timecard/corrections', ({ body, actor }) => timeClock.requestCorrection(actor.user, body), { roles: ANY_LOGIN });
+  route('DELETE', '/api/timecard/corrections/:id', ({ params, actor }) => timeClock.cancelCorrection(Number(params.id), actor), { roles: ANY_LOGIN });
+  route('GET', '/api/timecard/corrections', ({ query }) => timeClock.listCorrections({ status: query.get('status') }), { roles: ADMIN });
+  route('PATCH', '/api/timecard/corrections/:id', ({ params, body, actor }) => timeClock.decideCorrection(Number(params.id), body, actor), { roles: ADMIN });
   route('POST', '/api/time-off', ({ body, actor }) => timeClock.requestOff(actor.user, body), { roles: ANY_LOGIN });
   route('DELETE', '/api/time-off/:id', ({ params, actor }) => timeClock.cancelOff(Number(params.id), actor), { roles: ANY_LOGIN });
   route('GET', '/api/time-off/calendar', ({ query, actor }) => timeClock.calendarOff({ from: query.get('from'), to: query.get('to'), full: actor.role === 'admin' }), { roles: ANY_LOGIN });

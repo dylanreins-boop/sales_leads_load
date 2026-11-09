@@ -486,9 +486,21 @@ results by paint color and **What booking suggestions use now**.
 ## Time clock, time off and pay
 
 Everyone with a login (sales, shop, and admins if they like) clocks in and out with the **Clock in** button
-at the top of the app. While they're on, it shows a green dot and how long they've been on. Tapping it opens
-**My time**: clock in or out, hours today and this week, **Ask for time off** (first and last day, kind:
-vacation, sick, personal or unpaid, hours a day, a note), and their requests with the answer.
+at the top of the app. While they're on, it shows a green dot and their hours today (orange while on lunch).
+Tapping it opens **My time**, full screen on every device:
+
+- A live clock, where they stand (off, on the clock, on lunch), and hours worked today.
+- Big buttons for what comes next: **Clock in**; **Start lunch** or **Clock out**; **End lunch** or **Clock
+  out for the day**. Each one asks to confirm ("Clock in now? 8:02:14 AM"), then shows a confirmation ("You're
+  clocked in. Have a good shift!"). Closing the confirmation takes them to the shop calendar.
+- **Lunch** is off the clock and unpaid. Clocking out from lunch ends the day when lunch started.
+- **Today**: when they clocked in, went to lunch and came back, and clocked out. **This week**: hours each day.
+- **Timecard**: every punch for this or last week (or two), with the hours per day. **Fix** asks an admin to
+  change a punch's times or remove it; **Add time you forgot to clock** asks for a punch that's missing. They
+  say what happened, see the answer (and the admin's note) under **My correction requests**, and can cancel a
+  request while it waits.
+- **Ask for time off** (first and last day, kind: vacation, sick, personal or unpaid, hours a day, a note), and
+  their requests with the answer.
 
 - Someone who forgets to clock out is clocked out at the end of the shop day (or a normal day's hours after
   they clocked in, if that was later), never past midnight, and the time is flagged **to check**.
@@ -499,7 +511,8 @@ vacation, sick, personal or unpaid, hours a day, a note), and their requests wit
 **Time & Pay (admins)** is its own page in the main menu, with a badge for time off waiting on approval:
 
 - Pick the period (this week, last week, this 2 weeks, last 2 weeks, this or last month, or any dates).
-- **Approve** or **Deny** time off (a denial can carry a note the person sees).
+- **Approve** or **Deny** timecard corrections and time off (a denial can carry a note the person sees). An
+  approved correction changes the timecard right away, noted with the reason they gave.
 - Totals: hours, regular, overtime, paid time off, and gross pay for everyone.
 - One row per person: the **hourly rate** (type it in and press Enter), regular, overtime and paid-off hours,
   total, and gross pay. Open a row to see every punch, **Edit** or **Delete** one, or **Add time** someone
@@ -819,7 +832,10 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/estimate?lead_id=&services=` or `?job_id=` | Suggested work time and why |
 | POST | `/api/leads/:id/calls` | Dialer: start a call (CALLS_ENABLED) |
 | GET / PUT | `/api/pipelines` | The pipelines (admins) |
-| GET / POST | `/api/clock`, `/api/clock/in`, `/api/clock/out` | The time clock for whoever is signed in |
+| GET / POST | `/api/clock`, `/api/clock/in`, `/api/clock/out`, `/api/clock/lunch` | The time clock for whoever is signed in (clock in again to end lunch) |
+| GET | `/api/timecard?from=&to=` | Your own punches and correction requests |
+| POST / DELETE | `/api/timecard/corrections[/:id]` | Ask for a correction `{ action: change\|add\|remove, punch_id, clock_in, clock_out, reason }` / cancel it |
+| GET / PATCH | `/api/timecard/corrections?status=pending`, `/api/timecard/corrections/:id` | Admins: corrections, `{ status: approved\|denied, note }` |
 | POST / DELETE | `/api/time-off[/:id]` | Ask for time off `{ start_date, end_date, kind, hours_per_day, note }` / cancel it |
 | GET / PATCH | `/api/time-off?status=pending`, `/api/time-off/:id` | Admins: requests, `{ status: approved\|denied, note }` |
 | GET | `/api/time-off/calendar?from=&to=` | Approved time off for the calendar |
