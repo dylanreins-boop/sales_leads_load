@@ -17,6 +17,7 @@ const { createCallSummarizer } = require('./src/callsummary');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
+const { createPipelineService } = require('./src/pipelines');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 const { leadsWorkbook } = require('./src/export');
@@ -176,6 +177,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const jobs = createJobService(db, { leads, photosDir: filesDir });
   const appearance = createAppearanceService(db, { photosDir: filesDir });
   const users = createUserService(db, { serverUsers: config.users });
+  // The admins' pipelines, loaded before anything sorts leads onto them.
+  const pipelines = createPipelineService(db);
+  pipelines.load();
   const quotes = createQuoteService(db, { leads, brand: config.brand });
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
   const commissions = createCommissionService(db, { leads, jobs });
@@ -286,7 +290,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     emailPlaceholders: PLACEHOLDERS,
     vehicleFields: VEHICLE_FIELDS,
     vehicleTypes: VEHICLE_TYPES,
-    pipelines: PIPELINES,
+    pipelines: pipelines.visibleTo(actor),
+    // Every pipeline's vehicle types, so a lead's pipeline reads the same for everyone.
+    allPipelines: PIPELINES.map(({ id, label, types }) => ({ id, label, types })),
     bookingServices: BOOKING_SERVICES,
     heardAboutOptions: HEARD_ABOUT_OPTIONS,
   }), { roles: ANY_LOGIN });
@@ -811,6 +817,14 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     route('POST', '/webhooks/twilio/calls/:id/transcript', ({ req, body, params }) => { signed(req, body); calls.transcript(Number(params.id), body); return { ok: true }; }, { isPublic: true });
     route('POST', '/webhooks/twilio/calls/:id/status', ({ req, body, params }) => { signed(req, body); calls.ended(Number(params.id), body); return { ok: true }; }, { isPublic: true });
   }
+
+  // ---- Pipelines (admins set them up) ----
+  route('GET', '/api/pipelines', () => ({
+    pipelines: pipelines.list(),
+    vehicle_types: VEHICLE_TYPES,
+    people: users.list().filter((u) => u.active !== false && u.role !== 'shop').map((u) => ({ name: u.name, role: u.role })),
+  }), { roles: ADMIN });
+  route('PUT', '/api/pipelines', ({ body, actor }) => pipelines.save(body.pipelines, actor), { roles: ADMIN });
 
   // ---- Analytics (admin): every number the app tracks, for a date range ----
   route('GET', '/api/analytics', ({ query }) => {

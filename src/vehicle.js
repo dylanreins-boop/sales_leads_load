@@ -14,15 +14,25 @@ const VEHICLE_TYPES = [
   'Plane', 'Other',
 ];
 
-// Two boards: RVs (motorhomes, coaches, trailers, toy haulers) and everything else.
-// A lead's pipeline follows its vehicle type; leads with no type yet go to "all other".
-const PIPELINES = [
-  { id: 'rv', label: 'RV Pipeline', types: ['Coach / RV', 'Trailer / Toy Hauler'] },
-  { id: 'other', label: 'All Other Vehicles' },
+// The boards (pipelines). A lead's pipeline follows its vehicle type; a type no pipeline claims, or a
+// lead with no type yet, goes to "other" (All Other Vehicles), which is always last. Admins add their
+// own (e.g. Boats) and choose the types and who sees them (see pipelines.js); RV and Other always exist.
+const DEFAULT_PIPELINES = [
+  { id: 'rv', label: 'RV Pipeline', types: ['Coach / RV', 'Trailer / Toy Hauler'], visible_to: [] },
+  { id: 'other', label: 'All Other Vehicles', types: [], visible_to: [] },
 ];
-const RV_TYPES = PIPELINES[0].types;
-const pipelineFor = (vehicleType) => (RV_TYPES.includes(vehicleType) ? 'rv' : 'other');
+// Changed in place (setPipelines) so every module holding this array sees the current list.
+const PIPELINES = DEFAULT_PIPELINES.map((p) => ({ ...p, types: [...p.types], visible_to: [] }));
+function setPipelines(list) {
+  PIPELINES.splice(0, PIPELINES.length, ...list.map((p) => ({ ...p, types: [...(p.types || [])], visible_to: [...(p.visible_to || [])] })));
+}
+const pipelineFor = (vehicleType) => PIPELINES.find((p) => p.id !== 'other' && p.types.includes(vehicleType))?.id || 'other';
 const pipelineLabel = (id) => PIPELINES.find((p) => p.id === id)?.label ?? id;
+// The vehicle types that put a lead on a pipeline ("other": the types no other pipeline claims).
+const typesFor = (id) => PIPELINES.find((p) => p.id === id)?.types || [];
+const claimedTypes = () => PIPELINES.filter((p) => p.id !== 'other').flatMap((p) => p.types);
+// Kept for older callers: the RV pipeline's types right now.
+const RV_TYPES = { includes: (t) => typesFor('rv').includes(t) };
 
 // Words in a form answer that point to one of the types above (checked in order).
 const TYPE_WORDS = [
@@ -104,5 +114,5 @@ function isValidYear(value) {
 }
 
 module.exports = {
-  VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES, RV_TYPES, pipelineFor, pipelineLabel, extractVehicle, normalizeVehicleType, isValidYear,
+  VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES, DEFAULT_PIPELINES, setPipelines, typesFor, claimedTypes, RV_TYPES, pipelineFor, pipelineLabel, extractVehicle, normalizeVehicleType, isValidYear,
 };

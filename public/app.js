@@ -210,6 +210,8 @@ function setPipeline(id) {
 function renderTabs() {
   // Phones show the short names so all tabs and the export button fit.
   const SHORT = { rv: 'RVs', other: 'Other', customers: 'Customers', old: 'Old & Dead' };
+  // The short names only fit the built-in names; a renamed pipeline shows its own name.
+  const DEFAULT_NAMES = { rv: 'RV Pipeline', other: 'All Other Vehicles' };
   const tab = (id, label, count, extra = '') => h('button', {
     type: 'button',
     role: 'tab',
@@ -217,7 +219,7 @@ function renderTabs() {
     'aria-selected': String(id === state.pipeline),
     'aria-label': label,
     onclick: () => setPipeline(id),
-  }, h('span', { class: 'long-label' }, label), h('span', { class: 'short-label' }, SHORT[id] || label), h('span', { class: 'count' }, count));
+  }, h('span', { class: 'long-label' }, label), h('span', { class: 'short-label' }, (DEFAULT_NAMES[id] === undefined || DEFAULT_NAMES[id] === label) && SHORT[id] || label), h('span', { class: 'count' }, count));
   $('#pipelineTabs').replaceChildren(
     ...state.meta.pipelines.map((p) => tab(p.id, p.label, state.leads.filter((l) => l.pipeline === p.id).length)),
     tab('customers', 'Past Customers', state.customers.length, 'old-tab'),
@@ -315,14 +317,11 @@ function leadCard(lead) {
     tabindex: '0',
     ondragstart: (e) => e.dataTransfer.setData('text/plain', String(lead.id)),
     title: 'Click to open. Double-click to open full screen.',
-    onclick: () => openLead(lead.id),
-    // Double-click: the same lead, full screen.
-    ondblclick: () => {
-      window.getSelection()?.removeAllRanges();
-      setLeadFull(true);
-      if (state.openLeadId !== lead.id || $('#drawer').hidden) openLead(lead.id);
+    onclick: (e) => cardClick(lead.id, e),
+    onkeydown: (e) => {
+      if (e.key !== 'Enter') return;
+      if (e.shiftKey) openFull(lead.id); else openLead(lead.id);
     },
-    onkeydown: (e) => { if (e.key === 'Enter') openLead(lead.id); },
   },
   h('div', { class: 'row' },
     h('span', { class: 'name' }, leadName(lead)),
@@ -529,6 +528,38 @@ async function restoreLead(id) {
 }
 
 // ---------- lead drawer ----------
+// Click a card: the lead opens at the side. Click it again right away: full screen. The panel can
+// slide in under the pointer before the second click, so the second click counts wherever it lands
+// (and doesn't go on to close or click in the panel).
+const DOUBLE_MS = 450;
+const dbl = { id: null, t: 0, x: 0, y: 0, swallow: false };
+function cardClick(id, e) {
+  const now = Date.now();
+  if (dbl.id === id && now - dbl.t < DOUBLE_MS) return openFull(id);
+  Object.assign(dbl, { id, t: now, x: e.clientX, y: e.clientY });
+  openLead(id);
+}
+function openFull(id) {
+  dbl.id = null;
+  window.getSelection()?.removeAllRanges();
+  setLeadFull(true);
+  if (state.openLeadId !== id || $('#drawer').hidden) openLead(id);
+}
+document.addEventListener('pointerdown', (e) => {
+  if (!dbl.id || e.button !== 0 || Date.now() - dbl.t > DOUBLE_MS) return;
+  if (Math.hypot(e.clientX - dbl.x, e.clientY - dbl.y) > 16 || e.target.closest?.('.lead-card')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  dbl.swallow = true;
+  openFull(dbl.id);
+}, true);
+document.addEventListener('click', (e) => {
+  if (!dbl.swallow) return;
+  dbl.swallow = false;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
 // The lead's panel at the side, or full screen (double-click a lead, or the Full screen button).
 function setLeadFull(on) {
   $('#drawer').classList.toggle('full', on);
@@ -540,7 +571,7 @@ function setLeadFull(on) {
 
 function showPanel(panel) {
   if (panel !== $('#drawer')) setLeadFull(false);
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -1342,7 +1373,8 @@ async function init() {
   fillVehicleTypes($('#addLeadForm').vehicle_type);
   fillHeardAbout($('#addLeadForm').heard_about);
   $('#addLeadBtn').addEventListener('click', () => {
-    $('#addLeadForm').vehicle_type.value = state.pipeline === 'rv' ? 'Coach / RV' : '';
+    // Adding from a pipeline's tab: start with that pipeline's first vehicle type.
+    $('#addLeadForm').vehicle_type.value = (state.meta.allPipelines.find((p) => p.id === state.pipeline)?.types || [])[0] || '';
     $('#addLeadDialog').showModal();
   });
   $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
@@ -1418,6 +1450,7 @@ async function init() {
   initGrowth();
   initAnalytics();
   initCalls();
+  initPipelines();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');

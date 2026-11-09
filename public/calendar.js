@@ -947,8 +947,8 @@ function stepPhoto(step) {
 }
 
 // ---------- scheduling a booked lead ----------
-const RV_TYPES = ['Coach / RV', 'Trailer / Toy Hauler'];
-const pipelineOf = (vehicleType) => (RV_TYPES.includes(vehicleType) ? 'rv' : 'other');
+// A vehicle type's pipeline, from the admins' pipelines (All Other Vehicles takes the rest).
+const pipelineOf = (vehicleType) => (state.meta?.allPipelines || []).find((p) => p.id !== 'other' && p.types.includes(vehicleType))?.id || 'other';
 
 // Default slot: drop-off at opening time on the next day the shop works, with the usual work time
 // for the vehicle (about 4 hours for cars, 2 days for RVs) and pick-up when that work is done.

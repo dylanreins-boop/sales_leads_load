@@ -70,6 +70,7 @@
       <button id="winbackBtn" type="button" class="lead-only admin-only">Win-back</button>
       <button id="referralsBtn" type="button" class="lead-only admin-only">Referrals</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
+      <button id="pipelinesBtn" type="button" class="lead-only admin-only">Pipelines</button>
       <button id="dialerBtn" type="button" class="lead-only dialer-only" hidden>Start calling</button>
       <button id="callsBtn" type="button" class="admin-only dialer-only" hidden>Calls</button>
       <button id="remindersBtn" type="button" class="primary">
@@ -200,10 +201,8 @@
           <span class="muted">to</span>
           <input type="date" id="anTo" aria-label="To">
         </span>
-        <select id="anPipeline" aria-label="Pipeline">
+        <select id="anPipeline" aria-label="Pipeline" data-pipelines>
           <option value="">All vehicles</option>
-          <option value="rv">RV Pipeline</option>
-          <option value="other">All Other Vehicles</option>
         </select>
         <button type="button" id="anExport">Download CSV</button>
       </div>
@@ -222,10 +221,8 @@
           <button type="button" data-basis="booked" aria-pressed="false">By booking date</button>
         </div>
         <button type="button" id="cardImportBtn">Import card payments</button>
-        <select id="revPipeline" aria-label="Pipeline">
+        <select id="revPipeline" aria-label="Pipeline" data-pipelines>
           <option value="">All vehicles</option>
-          <option value="rv">RV Pipeline</option>
-          <option value="other">All Other Vehicles</option>
         </select>
       </div>
     </div>
@@ -704,7 +701,7 @@
           <label class="check"><input type="checkbox" name="old" checked> Old leads (never booked)</label>
           <label class="check"><input type="checkbox" name="dead"> Dead leads (marked Waste; never Do Not Call or wrong numbers)</label>
           <div class="info-grid">
-            <label>Vehicles <select name="pipeline"><option value="">All</option><option value="rv">RV Pipeline</option><option value="other">All Other Vehicles</option></select></label>
+            <label>Vehicles <select name="pipeline" data-pipelines><option value="">All</option></select></label>
             <label>Came in within <select name="months"><option value="3">3 months</option><option value="6">6 months</option><option value="12" selected>12 months</option><option value="24">2 years</option></select></label>
           </div>
           <label>Send by <select name="channel"><option value="both">Text, or email if no mobile number</option><option value="text">Text only</option><option value="email">Email only</option></select></label>
@@ -754,6 +751,17 @@
   </aside>
 
   <!-- Import leads (admins): bring in leads from a spreadsheet -->
+  <aside id="pipelinesPanel" class="drawer wide" aria-label="Pipelines" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Pipelines</h2>
+        <div class="muted">The boards on the Leads page. Pick the vehicle types that go on each one and who sees it.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body" id="pipelinesBody"></div>
+  </aside>
+
   <aside id="callsPanel" class="drawer wide" aria-label="Calls" hidden>
     <div class="drawer-head">
       <div>
@@ -1093,5 +1101,6 @@
   <script src="growth.js"></script>
   <script src="analytics.js"></script>
   <script src="calls.js"></script>
+  <script src="pipelines.js"></script>
 </body>
 </html>

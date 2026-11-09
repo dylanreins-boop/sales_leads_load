@@ -1307,10 +1307,31 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 /* A lead full screen (double-click its card): the sections flow into columns to use the width. */
 .drawer-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .full-btn { font-size: 13px; white-space: nowrap; }
-.drawer.full { width: 100vw; left: 0; border-left: none; box-shadow: none; z-index: 12; }
+.lead-card { -webkit-user-select: none; user-select: none; }
+#drawer { transition: width 0.18s ease; }
+@media (prefers-reduced-motion: reduce) { #drawer { transition: none; } }
+.drawer.full { width: 100vw; border-left: none; box-shadow: none; z-index: 12; }
 .drawer.full .drawer-head { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
 .drawer.full #leadName { font-size: 24px; }
 .drawer.full .drawer-body { columns: 3 400px; column-gap: 28px; column-rule: 1px solid var(--border); padding: 8px max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left)); }
 .drawer.full .drawer-body > * { break-inside: avoid; }
 .drawer.full .drawer-body > :first-child { margin-top: 12px; }
 @media (max-width: 640px) { .full-btn { display: none; } }
+
+/* Pipelines (admins) */
+.pipe-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
+.pipe-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.pipe-name { flex: 1 1 220px; margin: 0; font-weight: 700; font-size: 15px; }
+.pipe-count { font-size: 12px; }
+.pipe-order { display: flex; gap: 4px; }
+.pipe-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.pipe-types { display: flex; flex-wrap: wrap; gap: 6px; }
+.pipe-type { border-radius: 16px; padding: 5px 11px; font-size: 13px; background: var(--panel); color: var(--text); }
+.pipe-type.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.pipe-type small { opacity: 0.75; }
+.pipe-type .pipe-elsewhere { color: var(--muted); }
+.pipe-who { display: grid; gap: 4px; }
+.pipe-who label.check { margin: 0; font-size: 13px; }
+.pipe-people { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-left: 22px; }
+.pipe-remove { justify-self: start; font-size: 13px; }
+.pipe-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; }

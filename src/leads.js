@@ -1,7 +1,7 @@
 const { transaction } = require('./db');
 const { STAGE_IDS, STAGES, DISPOSITIONS_BY_ID, stageAfterDisposition, tomorrowAt } = require('./pipeline');
 const { renderTemplate } = require('./email');
-const { VEHICLE_FIELDS, RV_TYPES, pipelineFor, pipelineLabel, isValidYear } = require('./vehicle');
+const { VEHICLE_FIELDS, PIPELINES, typesFor, claimedTypes, pipelineFor, pipelineLabel, isValidYear } = require('./vehicle');
 const { cleanServices, serviceLabels, parseServices } = require('./services');
 
 const VEHICLE_KEYS = VEHICLE_FIELDS.map((f) => f.key);
@@ -176,10 +176,12 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       where.push('l.vehicle_type = ?');
       params.push(vehicleType);
     }
-    if (pipeline === 'rv' || pipeline === 'other') {
-      const marks = RV_TYPES.map(() => '?').join(', ');
-      where.push(pipeline === 'rv' ? `l.vehicle_type IN (${marks})` : `(l.vehicle_type IS NULL OR l.vehicle_type NOT IN (${marks}))`);
-      params.push(...RV_TYPES);
+    if (pipeline && PIPELINES.some((p) => p.id === pipeline)) {
+      // A pipeline is its vehicle types; "other" is every type no other pipeline claims.
+      const types = pipeline === 'other' ? claimedTypes() : typesFor(pipeline);
+      const marks = types.map(() => '?').join(', ') || "''";
+      where.push(pipeline === 'other' ? `(l.vehicle_type IS NULL OR l.vehicle_type NOT IN (${marks}))` : `l.vehicle_type IN (${marks})`);
+      params.push(...types);
     }
     if (source) {
       where.push('l.source = ?');

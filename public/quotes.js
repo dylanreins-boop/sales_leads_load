@@ -20,7 +20,7 @@ async function renderQuoteSection(lead) {
   const prices = await loadPrices().catch(() => null);
   if (!prices || quoting.lead !== lead) return;
 
-  const rv = state.meta.pipelines[0].types.includes(lead.vehicle_type);
+  const rv = pipelineOf(lead.vehicle_type) === 'rv';
   const base = $('#quoteBase');
   const sameLead = base.dataset.lead === String(lead.id);
   const keep = sameLead ? base.value : '';

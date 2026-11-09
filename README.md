@@ -274,9 +274,25 @@ by hand there's a box on the Add lead form. It's skipped when a rep already reac
 both texts or turn them off under **Texts & reminders → Welcome text for new leads**. Analytics shows how
 many answered and which times they picked.
 
+## Pipelines (admins set them up)
+
+The tabs on the Leads page are pipelines. Admins open **Pipelines** to:
+
+- **Add one** (for example **Boats**) and pick the vehicle types that go on it (Boat, Jet Ski). Leads
+  go on the pipeline that has their vehicle type, so every boat lead moves there as soon as you save,
+  and new boat leads land there from then on. A type goes on one pipeline; clicking a type that's on
+  another pipeline moves it.
+- **Choose who sees it:** everyone, or only the people you pick (sales reps, other admins). Admins
+  always see every pipeline. This keeps each person's menu to the boards they work.
+- **Rename, reorder or remove** pipelines. Removing one sends its leads to **All Other Vehicles**,
+  which is always last and takes every type no other pipeline has (and leads with no type yet). The RV
+  pipeline can be renamed and its types changed, but not removed (RV quotes and work times use it).
+
+The pipeline menus on Revenue, Analytics and the Excel export list the pipelines too.
+
 ## Full screen
 
-Click a lead to open it at the side; **double-click** it to open it full screen, with its sections in
+Click a lead to open it at the side; **double-click** it (or Shift+Enter) to open it full screen, with its sections in
 columns side by side. **⤢ Full screen** in the lead's header switches either way, and Esc goes back to
 the side panel (Esc again closes it).
 
@@ -771,6 +787,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST / PATCH / DELETE | `/api/jobs/:id/work`, `/api/work/:id` | Admins add, fix or remove work time |
 | GET | `/api/estimate?lead_id=&services=` or `?job_id=` | Suggested work time and why |
 | POST | `/api/leads/:id/calls` | Dialer: start a call (CALLS_ENABLED) |
+| GET / PUT | `/api/pipelines` | The pipelines (admins) |
 | GET / PATCH | `/api/calls`, `/api/calls/:id`, `/api/calls/:id/review` | Dialer: calls, notes, admin review |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
 | GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
@@ -808,6 +825,7 @@ src/worktime.js      the shop's work timer
 src/estimates.js     work time learned from finished jobs (vehicle type, paint color, services)
 src/cardimport.js    card payments from a Talech / Elavon export, matched to jobs
 src/calls.js         the dialer (CALLS_ENABLED): calls, live transcription, review
+src/pipelines.js     the pipelines admins set up; public/pipelines.js its screen
 src/callsummary.js   call notes with Claude (or basic notes without a key)
 public/calls.js      the dialer's screens
 src/google-lsa.js    Google Local Services leads (Google Ads API)
