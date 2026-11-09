@@ -19,9 +19,11 @@ const { createApp } = require('../server');
 const { openDatabase } = require('../src/db');
 const { stageAfterDisposition, DISPOSITIONS_BY_ID } = require('../src/pipeline');
 
+// Facebook's leads arrive "now" (two hours ago), so they stay on the board (leads go to Old & Dead after 14 days).
+const FB_TIME = new Date(Math.floor((Date.now() - 2 * 3600000) / 1000) * 1000);
 const fbLead = (id, name, phone) => ({
   id,
-  created_time: '2026-10-22T14:03:11+0000',
+  created_time: FB_TIME.toISOString().replace(/\.\d{3}Z$/, '+0000'),
   form_id: 'form-1',
   field_data: [
     { name: 'full_name', values: [name] },
@@ -132,7 +134,7 @@ test('facebook webhook checks the signature and pulls the lead from the Graph AP
   assert.equal(lead.source, 'facebook');
   assert.equal(lead.full_name, 'Jordan Facebook');
   assert.match(lead.message, /Roof repair/);
-  assert.equal(lead.received_at, '2026-10-22T14:03:11.000Z');
+  assert.equal(lead.received_at, FB_TIME.toISOString());
 
   // Meta retries deliveries; the same lead must not be added twice.
   const again = await call('POST', '/webhooks/facebook', payload, { 'X-Hub-Signature-256': sig });

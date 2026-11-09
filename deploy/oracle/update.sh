@@ -5,6 +5,8 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$APP_DIR"
 git pull --ff-only origin main
+# Packages for the dialer's AI call notes (the app runs without them; only the notes need them).
+npm ci --omit=dev --no-audit --no-fund || echo "npm install failed; the app still runs, without AI call notes." >&2
 # The nightly backup runs the script that ships with the app (so backup changes arrive with updates).
 printf '#!/bin/sh\nexec /usr/bin/env bash %s/deploy/oracle/backup.sh\n' "$APP_DIR" | sudo tee /etc/cron.daily/bob-moses-leads-backup >/dev/null
 sudo chmod 755 /etc/cron.daily/bob-moses-leads-backup

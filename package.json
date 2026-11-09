@@ -11,5 +11,9 @@
     "start": "node --disable-warning=ExperimentalWarning server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
     "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.7.0",
+    "zod": "^4.6.7"
   }
 }

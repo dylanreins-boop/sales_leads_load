@@ -87,6 +87,15 @@ module.exports = {
     forwardCallsTo: process.env.FORWARD_CALLS_TO || '',
   },
 
+  // The dialer (the "with dialer" build): calls through Twilio with live call notes and summaries.
+  calls: {
+    enabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.CALLS_ENABLED || '').toLowerCase()),
+    // What the customer hears when they answer, before the rep is connected.
+    notice: process.env.CALL_NOTICE || 'Hi, this call may be transcribed for quality. Connecting you now.',
+    // Calls only go out between these hours (shop time).
+    hours: process.env.CALL_HOURS || '8-21',
+  },
+
   // Card deposits on online bookings (Stripe Checkout). Without a key, customers book and pay the deposit later.
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || '',

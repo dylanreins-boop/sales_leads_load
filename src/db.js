@@ -241,6 +241,42 @@ CREATE TABLE IF NOT EXISTS job_work (
 CREATE INDEX IF NOT EXISTS job_work_job ON job_work (job_id);
 CREATE INDEX IF NOT EXISTS job_work_running ON job_work (stopped_at);
 
+-- The dialer: one row per call a rep makes from the app. There is never a recording: only what was
+-- said, written out as it happened, and the summary made from it.
+CREATE TABLE IF NOT EXISTS calls (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id         INTEGER NOT NULL REFERENCES leads (id) ON DELETE CASCADE,
+  user_name       TEXT NOT NULL,                 -- the rep
+  rep_phone       TEXT NOT NULL,
+  customer_phone  TEXT NOT NULL,
+  status          TEXT NOT NULL,                 -- calling_rep | calling_customer | connected | ended | rep_missed | failed
+  customer_status TEXT,                          -- completed | no-answer | busy | failed | canceled
+  provider_id     TEXT,
+  started_at      TEXT NOT NULL,
+  connected_at    TEXT,
+  ended_at        TEXT,
+  talk_seconds    INTEGER,
+  summary         TEXT,                          -- JSON: summary, wants, price, objections, next step, flags...
+  summary_source  TEXT,                          -- ai | basic
+  summary_error   TEXT,
+  flags           TEXT,                          -- JSON list, for filtering
+  review_score    INTEGER,                       -- 1-5, from an admin
+  review_comment  TEXT,
+  reviewed_by     TEXT,
+  reviewed_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS calls_lead ON calls (lead_id);
+CREATE INDEX IF NOT EXISTS calls_user ON calls (user_name, started_at);
+
+CREATE TABLE IF NOT EXISTS call_lines (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  call_id  INTEGER NOT NULL REFERENCES calls (id) ON DELETE CASCADE,
+  speaker  TEXT NOT NULL,                        -- rep | customer
+  text     TEXT NOT NULL,
+  at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS call_lines_call ON call_lines (call_id);
+
 CREATE TABLE IF NOT EXISTS lsa_seen (
   lsa_id   TEXT PRIMARY KEY,
   lead_id  INTEGER,
@@ -367,6 +403,7 @@ function migrate(db) {
     if (!has('quotes', column)) db.exec(`ALTER TABLE quotes ADD COLUMN ${column} TEXT`);
   }
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
+  if (!has('user_prefs', 'call_phone')) db.exec('ALTER TABLE user_prefs ADD COLUMN call_phone TEXT');
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
   // Who last opened the lead and when, and who last reached out (a call logged or a text) and how.
   // The welcome text ("what time of day is best to reach you?") and the customer's answer.

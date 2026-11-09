@@ -120,6 +120,9 @@ else
 fi
 
 echo "==> Setting up the app service"
+echo "==> Installing the app's packages (used by the dialer's AI call notes)"
+(cd "$APP_DIR" && npm ci --omit=dev --no-audit --no-fund) || echo "npm install failed; the app still runs, without AI call notes."
+
 cat > /etc/systemd/system/$SERVICE.service <<UNIT
 [Unit]
 Description=Bob Moses lead pipeline

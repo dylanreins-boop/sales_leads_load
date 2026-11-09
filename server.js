@@ -12,6 +12,8 @@ const { createAnalyticsService } = require('./src/analytics');
 const { createWorkTimeService } = require('./src/worktime');
 const { createEstimateService } = require('./src/estimates');
 const { createCardImportService } = require('./src/cardimport');
+const { createCallService } = require('./src/calls');
+const { createCallSummarizer } = require('./src/callsummary');
 const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
@@ -161,7 +163,7 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = {}) {
+function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer } = {}) {
   const leads = createLeadService(db, {
     reminderHour: config.reminderHour,
     skipWeekends: config.reminderSkipWeekends,
@@ -205,6 +207,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
   const googleLsa = createGoogleLsaClient(config.googleAds, { db, leads, fetchImpl });
   const workTime = createWorkTimeService(db, { jobs, leads });
   const cardImport = createCardImportService(db, { payments, leads });
+  // The dialer exists only in the build with CALLS_ENABLED; without it the app is exactly as before.
+  const calls = config.calls.enabled ? createCallService(db, {
+    leads, sms: config.sms, summarizer: summarizer || createCallSummarizer(), publicUrl: config.publicUrl,
+    notice: config.calls.notice, hours: config.calls.hours, brand: config.brand, fetchImpl: fetchImpl || ((...a) => fetch(...a)),
+  }) : null;
   const estimates = createEstimateService(db, { getShopHours: jobs.getShopHours });
   jobs.setEstimator((lead, services) => estimates.suggest({ ...lead, services }).hours);
   const analytics = createAnalyticsService(db, { commissions, payments, jobs, users, estimates });
@@ -274,6 +281,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     facebookFormIds: config.facebook.formIds,
     googleLsaConfigured: googleLsa.configured,
     emailConfigured: mailer.configured,
+    callsEnabled: Boolean(calls),
+    callsReady: calls ? { phone: calls.configured, publicUrl: Boolean(config.publicUrl), ai: Boolean((summarizer || createCallSummarizer()).configured) } : null,
     emailPlaceholders: PLACEHOLDERS,
     vehicleFields: VEHICLE_FIELDS,
     vehicleTypes: VEHICLE_TYPES,
@@ -778,8 +787,36 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir } = 
     return twiml(res, sorry());
   }, { isPublic: true });
 
+  // ---- The dialer (build with CALLS_ENABLED) ----
+  if (calls) {
+    route('GET', '/api/calls/me', ({ actor }) => ({ call_phone: calls.repPhone(actor.user), active: calls.active(actor.user) }));
+    route('PUT', '/api/calls/me', ({ body, actor }) => calls.setRepPhone(actor.user, body.call_phone));
+    route('GET', '/api/calls/queue', () => calls.queue());
+    route('GET', '/api/calls', ({ query }) => calls.list({ rep: query.get('rep'), flagged: query.get('flagged'), reviewed: query.get('reviewed'), from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
+    route('GET', '/api/calls/:id', ({ params }) => calls.get(Number(params.id)));
+    route('PATCH', '/api/calls/:id/review', ({ params, body, actor }) => calls.review(Number(params.id), body, actor), { roles: ADMIN });
+    route('GET', '/api/leads/:id/calls', ({ params }) => calls.forLead(Number(params.id)));
+    route('POST', '/api/leads/:id/calls', ({ params, actor }) => calls.start(Number(params.id), actor));
+    // Twilio's side of a call. Each is signed by Twilio.
+    const signed = (req, body) => {
+      if (!texter.verify(`${baseUrl(req)}${req.url}`, body, req.headers['x-twilio-signature'])) throw new HttpError(401, 'Bad signature');
+    };
+    const callTwiml = (res, body) => {
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      res.end(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`);
+    };
+    route('POST', '/webhooks/twilio/calls/:id/answer', ({ req, res, body, params }) => { signed(req, body); callTwiml(res, calls.answerTwiml(Number(params.id))); }, { isPublic: true });
+    route('POST', '/webhooks/twilio/calls/:id/notice', ({ req, res, body, params }) => { signed(req, body); callTwiml(res, calls.noticeTwiml(Number(params.id))); }, { isPublic: true });
+    route('POST', '/webhooks/twilio/calls/:id/dialed', ({ req, res, body, params }) => { signed(req, body); callTwiml(res, calls.dialed(Number(params.id), body)); }, { isPublic: true });
+    route('POST', '/webhooks/twilio/calls/:id/transcript', ({ req, body, params }) => { signed(req, body); calls.transcript(Number(params.id), body); return { ok: true }; }, { isPublic: true });
+    route('POST', '/webhooks/twilio/calls/:id/status', ({ req, body, params }) => { signed(req, body); calls.ended(Number(params.id), body); return { ok: true }; }, { isPublic: true });
+  }
+
   // ---- Analytics (admin): every number the app tracks, for a date range ----
-  route('GET', '/api/analytics', ({ query }) => analytics.report({ from: query.get('from'), to: query.get('to'), pipeline: query.get('pipeline') }), { roles: ADMIN });
+  route('GET', '/api/analytics', ({ query }) => {
+    const report = analytics.report({ from: query.get('from'), to: query.get('to'), pipeline: query.get('pipeline') });
+    return calls ? { ...report, calls: calls.stats({ start: report.range.from, end: report.range.to }) } : report;
+  }, { roles: ADMIN });
 
   // ---- Lead source report (admin) ----
   route('GET', '/api/reports/sources', ({ query }) => leads.sourceReport({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
