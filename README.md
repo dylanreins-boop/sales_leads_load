@@ -511,6 +511,13 @@ Tapping it opens **My time**, full screen on every device:
 **Time & Pay (admins)** is its own page in the main menu, with a badge for time off waiting on approval:
 
 - Pick the period (this week, last week, this 2 weeks, last 2 weeks, this or last month, or any dates).
+- **Attendance**: set each person's **Work schedule** (the days they work and their start and end times) and
+  Time & Pay flags what went wrong in the period: **late arrivals**, **left early**, **long lunches**, **no-shows**
+  (scheduled, didn't clock in, no approved time off) and **forgot to clock out**. You see totals for each, a list
+  of every one (newest first, tap a name to open their days), and an issue count per person. Late or early counts
+  after a grace period (5 minutes by default) and lunch is 30 minutes by default; both are set with the schedules.
+- Open a person to see one row per day: scheduled hours, in, lunch, out, hours and any attendance flags.
+  **Edit** opens that day's punches to fix the times or delete one.
 - **Approve** or **Deny** timecard corrections and time off (a denial can carry a note the person sees). An
   approved correction changes the timecard right away, noted with the reason they gave.
 - Totals: hours, regular, overtime, paid time off, and gross pay for everyone.

@@ -4,7 +4,7 @@
 // rates, regular / overtime / paid time off hours and gross pay for a pay period, fix punches, CSV).
 // Uses the helpers from app.js ($, h, fill, api, toast, fail, money, toLocalInput, showPanel...).
 
-const tc = { status: null, tick: null, done: false, card: null, cardPeriod: 'two', fixing: null, pay: null, open: new Set(), editing: null, adding: false, settings: false };
+const tc = { editDay: null, addDay: null, allOcc: false, schedules: null, status: null, tick: null, done: false, card: null, cardPeriod: 'two', fixing: null, pay: null, open: new Set(), editing: null, adding: false, settings: false };
 const TC_KINDS = () => state.meta.timeOffKinds || { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid: 'Unpaid' };
 
 // ---------- formatting ----------
@@ -384,11 +384,99 @@ function tpTile(label, value, sub) {
   return h('div', { class: 'an-tile' }, h('div', { class: 'lbl' }, label), h('div', { class: 'val' }, value), sub && h('div', { class: 'sub' }, sub));
 }
 
+// ---------- attendance against work schedules (admins) ----------
+const tcMin = (m) => (m < 60 ? `${m} min` : tcHM(m * 60000));
+const t12 = (t) => { const [hh, mm] = t.split(':').map(Number); return new Date(2000, 0, 1, hh, mm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
+const ISSUE_INFO = {
+  late: { label: 'Late arrivals', chip: (i) => `Late ${tcMin(i.minutes)}`, detail: (o) => `In at ${tcClock(o.first_in)}, scheduled ${t12(o.schedule.start)}` },
+  early: { label: 'Left early', chip: (i) => `Left ${tcMin(i.minutes)} early`, detail: (o) => `Out at ${tcClock(o.last_out)}, scheduled ${t12(o.schedule.end)}` },
+  long_lunch: { label: 'Long lunches', chip: (i) => `Long lunch +${tcMin(i.minutes)}`, detail: (o) => `${tcMin(o.lunch_minutes)} lunch` },
+  no_show: { label: 'No-shows', chip: () => 'No-show', detail: (o) => `Scheduled ${t12(o.schedule.start)} – ${t12(o.schedule.end)}, never clocked in` },
+  missed_out: { label: 'Forgot to clock out', chip: () => 'Forgot to clock out', detail: () => 'Closed at the end of the day. Check the time.' },
+};
+const issueChip = (i) => h('span', { class: `tp-issue ${i.type}` }, ISSUE_INFO[i.type].chip(i));
+
+function openPerson(name) {
+  tc.open.add(name.toLowerCase());
+  renderTimePay();
+  document.querySelector(`[data-person-row="${CSS.escape(name.toLowerCase())}"]`)?.scrollIntoView({ block: 'center' });
+}
+
+function attendanceCard(d) {
+  const any = d.rows.some((r) => r.has_schedule);
+  const occ = d.occurrences;
+  const shown = tc.allOcc ? occ : occ.slice(0, 6);
+  return h('section', { class: 'tp-att' },
+    h('div', { class: 'tp-att-head' },
+      h('div', {},
+        h('h3', {}, 'Attendance'),
+        h('p', { class: 'muted' }, any
+          ? `Against each person's work schedule. Late or early counts after ${d.settings.grace_minutes} min; lunch is ${d.settings.lunch_minutes} min.`
+          : 'Set work schedules to track late arrivals, early leaves, long lunches and no-shows.')),
+      h('button', { type: 'button', onclick: toggleSchedules }, tc.schedules ? 'Close schedules' : 'Work schedules')),
+    h('div', { class: 'tp-att-tiles' }, ...Object.entries(ISSUE_INFO).map(([type, info]) => h('div', { class: `tp-att-tile ${d.issues[type] ? `has ${type}` : ''}` },
+      h('div', { class: 'tp-att-n' }, d.issues[type]),
+      h('div', { class: 'tp-att-l' }, info.label)))),
+    occ.length ? h('ul', { class: 'tp-occ' }, ...shown.map((o) => h('li', {},
+      h('span', { class: 'tp-occ-date' }, tcDay(tcKeyDate(o.date))),
+      h('button', { type: 'button', class: 'tp-occ-name', onclick: () => openPerson(o.user_name) }, o.user_name),
+      issueChip(o),
+      h('span', { class: 'muted tp-occ-detail' }, ISSUE_INFO[o.type].detail(o)))))
+      : any && h('p', { class: 'tp-ok-line' }, '✓ Everyone was on schedule this period.'),
+    occ.length > 6 && h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.allOcc = !tc.allOcc; renderTimePay(); } }, tc.allOcc ? 'Show fewer' : `Show all ${occ.length}`));
+}
+
+// Work schedules: the days each person works and their hours (one shift time per person).
+async function toggleSchedules() {
+  if (tc.schedules) { tc.schedules = null; return renderTimePay(); }
+  try {
+    tc.schedules = (await api('/api/schedules')).map((s) => {
+      const first = s.days.find(Boolean);
+      return { user_name: s.user_name, role: s.role, on: s.days.map(Boolean), start: first?.start || '08:00', end: first?.end || '16:30' };
+    });
+    renderTimePay();
+  } catch (err) { fail(err); }
+}
+
+function schedulesCard(d) {
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const grace = h('input', { type: 'number', min: '0', max: '60', value: d.settings.grace_minutes, 'aria-label': 'Grace minutes' });
+  const lunch = h('input', { type: 'number', min: '0', max: '180', value: d.settings.lunch_minutes, 'aria-label': 'Lunch minutes' });
+  return h('section', { class: 'rev-block tp-settings tp-sched' },
+    h('h3', {}, 'Work schedules'),
+    h('p', { class: 'hint' }, 'Pick the days each person works and their hours. Attendance compares their clock-ins to this. Approved time off is never a no-show.'),
+    h('div', { class: 'tp-table-wrap' }, h('table', { class: 'tp-sched-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Works'), h('th', {}, 'Starts'), h('th', {}, 'Ends'))),
+      h('tbody', {}, ...tc.schedules.map((s) => h('tr', {},
+        h('th', { scope: 'row' }, s.user_name, h('span', { class: 'muted tp-role' }, ` ${s.role}`)),
+        h('td', {}, h('div', { class: 'tp-dow' }, ...DOW.map((label, i) => h('button', {
+          type: 'button', class: `tp-dow-btn ${s.on[i] ? 'on' : ''}`, 'aria-pressed': String(s.on[i]), 'aria-label': `${s.user_name} works ${label}`,
+          onclick: (e) => { s.on[i] = !s.on[i]; e.currentTarget.classList.toggle('on', s.on[i]); e.currentTarget.setAttribute('aria-pressed', String(s.on[i])); },
+        }, label[0])))),
+        h('td', {}, h('input', { type: 'time', value: s.start, 'aria-label': `${s.user_name} starts`, onchange: (e) => { s.start = e.target.value; } })),
+        h('td', {}, h('input', { type: 'time', value: s.end, 'aria-label': `${s.user_name} ends`, onchange: (e) => { s.end = e.target.value; } }))))))),
+    h('div', { class: 'tp-add-grid' },
+      h('label', {}, 'Late or early counts after (minutes)', grace),
+      h('label', {}, 'Lunch break (minutes)', lunch)),
+    h('div', { class: 'tp-form-actions' },
+      h('button', { type: 'button', class: 'primary', onclick: async () => {
+        try {
+          await api('/api/schedules', { method: 'PUT', body: { schedules: tc.schedules.map((s) => ({ user_name: s.user_name, days: s.on.map((on) => (on ? { start: s.start, end: s.end } : null)) })) } });
+          await api('/api/payroll/settings', { method: 'PUT', body: { grace_minutes: grace.value, lunch_minutes: lunch.value } });
+          tc.schedules = null;
+          toast('Schedules saved. Attendance is updated.');
+          await loadTimePay();
+        } catch (err) { fail(err); }
+      } }, 'Save schedules'),
+      h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.schedules = null; renderTimePay(); } }, 'Cancel')));
+}
+
 function renderTimePay() {
   const d = tc.pay;
   const t = d.totals;
   fill($('#tpBody'),
     tc.settings && tpSettings(d.settings),
+    tc.schedules && schedulesCard(d),
     tc.adding && tpAddForm(d.rows),
     d.pending_corrections.length ? h('section', { class: 'rev-block tp-pending' },
       h('h3', {}, `Timecard corrections waiting for you (${d.pending_corrections.length})`),
@@ -402,16 +490,18 @@ function renderTimePay() {
       tpTile('Overtime', tcHrs(t.overtime_hours), `at ${d.settings.ot_multiplier}×`),
       tpTile('Paid time off', tcHrs(t.pto_hours)),
       tpTile('Gross pay', money(t.gross_cents), t.missing_rates ? `${t.missing_rates} without a rate` : 'before taxes')),
+    attendanceCard(d),
     t.missing_rates ? h('p', { class: 'tp-warn' }, `${t.missing_rates === 1 ? 'Someone' : `${t.missing_rates} people`} worked without an hourly rate, so their pay isn't added in. Add a rate below.`) : null,
     h('div', { class: 'tp-table-wrap' },
       h('table', { class: 'tp-table' },
         h('thead', {}, h('tr', {},
           h('th', {}, 'Person'), h('th', {}, 'Hourly rate'), h('th', { class: 'num' }, 'Regular'), h('th', { class: 'num' }, 'Overtime'),
-          h('th', { class: 'num' }, 'Paid off'), h('th', { class: 'num' }, 'Total'), h('th', { class: 'num' }, 'Gross pay'), h('th', {}, ''))),
+          h('th', { class: 'num' }, 'Paid off'), h('th', { class: 'num' }, 'Total'), h('th', { class: 'num' }, 'Gross pay'), h('th', {}, 'Attendance'))),
         h('tbody', {}, ...d.rows.flatMap(personRows)),
         h('tfoot', {}, h('tr', {},
           h('th', {}, 'Everyone'), h('td', {}), h('td', { class: 'num' }, tcHrs(t.regular_hours)), h('td', { class: 'num' }, tcHrs(t.overtime_hours)),
-          h('td', { class: 'num' }, tcHrs(t.pto_hours)), h('td', { class: 'num' }, tcHrs(t.total_hours)), h('td', { class: 'num' }, h('strong', {}, money(t.gross_cents))), h('td', {}))))),
+          h('td', { class: 'num' }, tcHrs(t.pto_hours)), h('td', { class: 'num' }, tcHrs(t.total_hours)), h('td', { class: 'num' }, h('strong', {}, money(t.gross_cents))),
+          h('td', {}, d.occurrences.length ? `${d.occurrences.length} issue${d.occurrences.length === 1 ? '' : 's'}` : ''))))),
     !d.rows.length && h('p', { class: 'muted' }, 'Nobody has clocked in yet. Sales and shop logins clock in with the Clock in button at the top.'),
     h('p', { class: 'hint' }, 'Gross pay is before taxes and deductions. Hand the CSV to whoever runs payroll.'));
 }
@@ -472,54 +562,78 @@ function personRows(p) {
     onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); },
     onchange: (e) => saveRate(p.name, e.target.value),
   });
-  const row = h('tr', { class: `tp-person ${open ? 'open' : ''}` },
+  const row = h('tr', { class: `tp-person ${open ? 'open' : ''}`, 'data-person-row': key },
     h('th', { scope: 'row' },
       h('button', { type: 'button', class: 'tp-name', 'aria-expanded': String(open), onclick: () => { if (open) tc.open.delete(key); else tc.open.add(key); renderTimePay(); } },
         h('span', { class: 'tp-caret', 'aria-hidden': 'true' }, open ? '▾' : '▸'), p.name),
       p.role && h('span', { class: 'muted tp-role' }, ` ${p.role}`),
-      p.on_clock && h('span', { class: 'tp-flag on' }, 'On the clock'),
-      p.flagged ? h('span', { class: 'tp-flag', title: 'Forgot to clock out: closed at the end of the day. Check the time.' }, `${p.flagged} to check`) : null),
+      p.on_clock && h('span', { class: 'tp-flag on' }, 'On the clock')),
     h('td', {}, h('span', { class: 'tp-rate-box' }, '$', rate, h('span', { class: 'muted' }, '/hr'))),
     h('td', { class: 'num' }, tcHrs(p.regular_hours)),
     h('td', { class: 'num' }, p.overtime_hours ? tcHrs(p.overtime_hours) : '–'),
     h('td', { class: 'num' }, p.pto_hours ? tcHrs(p.pto_hours) : '–'),
     h('td', { class: 'num' }, tcHrs(p.total_hours)),
     h('td', { class: 'num' }, p.gross_cents == null ? h('span', { class: 'muted' }, p.total_hours ? 'No rate' : '–') : money(p.gross_cents)),
-    h('td', {}));
+    h('td', {}, p.issue_count
+      ? h('button', { type: 'button', class: 'tp-issue-count', title: Object.entries(p.issues).filter(([, n]) => n).map(([t, n]) => `${n} ${ISSUE_INFO[t].label.toLowerCase()}`).join(', '), onclick: () => { tc.open.add(key); renderTimePay(); } }, `${p.issue_count} issue${p.issue_count === 1 ? '' : 's'}`)
+      : p.has_schedule ? h('span', { class: 'tp-ok' }, '✓ On schedule') : h('span', { class: 'muted' }, 'No schedule')));
   if (!open) return [row];
   return [row, h('tr', { class: 'tp-detail' }, h('td', { colspan: '8' }, personDetail(p)))];
 }
 
+// One row per day: schedule, in, lunch, out, hours and anything that went wrong. Edit opens that day's punches.
 function personDetail(p) {
-  const punchRow = (x) => {
-    if (tc.editing === x.id) {
-      const inp = h('input', { type: 'datetime-local', value: toLocalInput(new Date(x.clock_in)), 'aria-label': 'Clock in' });
-      const out = h('input', { type: 'datetime-local', value: x.clock_out ? toLocalInput(new Date(x.clock_out)) : '', 'aria-label': 'Clock out' });
-      const note = h('input', { value: x.note || '', placeholder: 'Why it changed (optional)', maxlength: '200', 'aria-label': 'Note' });
-      return h('tr', { class: 'editing' },
-        h('td', { colspan: '2' }, inp), h('td', {}, out), h('td', { colspan: '2' }, note),
-        h('td', {},
-          h('button', { type: 'button', class: 'primary', onclick: () => savePunch(x.id, { clock_in: new Date(inp.value).toISOString(), clock_out: out.value ? new Date(out.value).toISOString() : undefined, note: note.value }) }, 'Save'),
-          h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.editing = null; renderTimePay(); } }, 'Cancel')));
-    }
-    return h('tr', { class: x.auto_closed ? 'flagged' : '' },
-      h('td', {}, tcDay(x.clock_in)),
-      h('td', {}, tcClock(x.clock_in)),
-      h('td', {}, x.clock_out ? tcClock(x.clock_out) : h('span', { class: 'tp-flag on' }, 'Still on')),
-      h('td', { class: 'num' }, tcHrs(x.hours)),
-      h('td', { class: 'muted' }, [x.out_reason === 'lunch' && `Then lunch${x.lunch_minutes != null ? ` (${x.lunch_minutes} min)` : ''}`, x.auto_closed && 'Forgot to clock out: closed at end of day', x.note, x.edited_by && `edited by ${x.edited_by}`].filter(Boolean).join(' · ')),
-      h('td', { class: 'tp-punch-actions' },
-        h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.editing = x.id; renderTimePay(); } }, 'Edit'),
-        h('button', { type: 'button', class: 'link-btn danger', onclick: () => removePunch(x) }, 'Delete')));
+  const lunchCell = (d) => (d.lunches.length
+    ? d.lunches.map((l) => h('div', {}, `${tcClock(l.from)} – ${l.to ? tcClock(l.to) : 'now'}`, h('span', { class: 'muted' }, ` · ${tcMin(l.minutes)}`)))
+    : h('span', { class: 'muted' }, '–'));
+  const outCell = (d) => {
+    if (d.open) return h('span', { class: 'tp-flag on' }, 'Still on');
+    if (d.on_lunch) return h('span', { class: 'tp-flag' }, 'On lunch');
+    return d.last_out ? tcClock(d.last_out) : h('span', { class: 'muted' }, '–');
+  };
+  const dayRows = (d) => {
+    const key = `${p.name}|${d.date}`;
+    const editing = tc.editDay === key;
+    const offOnly = d.off && !d.punches.length;
+    const row = h('tr', { class: `tp-day ${d.issues.length ? 'has-issues' : ''} ${offOnly ? 'off' : ''} ${editing ? 'editing' : ''}` },
+      h('td', { class: 'tp-day-date' }, tcDay(tcKeyDate(d.date))),
+      h('td', { class: 'muted' }, d.schedule ? `${t12(d.schedule.start)} – ${t12(d.schedule.end)}` : 'Not scheduled'),
+      offOnly
+        ? h('td', { colspan: '4', class: 'tp-day-off' }, `Off · ${d.off.kind_label}`)
+        : [h('td', {}, d.first_in ? tcClock(d.first_in) : h('span', { class: 'muted' }, '–')),
+          h('td', { class: 'tp-lunch' }, lunchCell(d)),
+          h('td', {}, outCell(d)),
+          h('td', { class: 'num' }, d.punches.length ? tcHM(d.hours * 3600000) : '–')],
+      h('td', {}, h('div', { class: 'tp-issues' }, ...d.issues.map(issueChip), d.off && d.punches.length ? h('span', { class: 'tp-issue info' }, `Off · ${d.off.kind_label}`) : null)),
+      h('td', { class: 'tp-day-actions' }, d.punches.length
+        ? h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.editDay = editing ? null : key; renderTimePay(); } }, editing ? 'Close' : 'Edit')
+        : h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.adding = p.name; tc.addDay = d.date; renderTimePay(); $('#tpBody').scrollIntoView?.({ block: 'start' }); } }, 'Add time')));
+    return editing ? [row, h('tr', { class: 'tp-day-edit-row' }, h('td', { colspan: '8' }, dayEditor(p, d)))] : [row];
   };
   return h('div', { class: 'tp-detail-body' },
-    p.punches.length ? h('table', { class: 'tp-punches' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Day'), h('th', {}, 'In'), h('th', {}, 'Out'), h('th', { class: 'num' }, 'Hours'), h('th', {}, ''), h('th', {}, ''))),
-      h('tbody', {}, ...p.punches.map(punchRow))) : h('p', { class: 'muted' }, 'No time clocked in this period.'),
-    p.time_off.length ? h('div', { class: 'tp-person-off' },
-      h('strong', {}, 'Time off: '),
-      p.time_off.map((r) => `${tcDays(r)} ${r.kind_label} (${tcHrs(r.hours_in_period)})`).join(' · ')) : null,
-    h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.adding = p.name; renderTimePay(); window.scrollTo?.(0, 0); $('#tpBody').scrollIntoView?.({ block: 'start' }); } }, `+ Add time for ${p.name}`));
+    p.days.length ? h('table', { class: 'tp-days' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Day'), h('th', {}, 'Scheduled'), h('th', {}, 'In'), h('th', {}, 'Lunch'), h('th', {}, 'Out'), h('th', { class: 'num' }, 'Hours'), h('th', {}, 'Attendance'), h('th', {}, ''))),
+      h('tbody', {}, ...p.days.flatMap(dayRows))) : h('p', { class: 'muted' }, 'No time clocked in this period.'),
+    h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.adding = p.name; tc.addDay = null; renderTimePay(); $('#tpBody').scrollIntoView?.({ block: 'start' }); } }, `+ Add time for ${p.name}`));
+}
+
+// A day's punches, to fix: clock-in, clock-out and a note for each; or delete one.
+function dayEditor(p, d) {
+  return h('div', { class: 'tp-day-edit' },
+    ...d.punches.map((x, i) => {
+      const inp = h('input', { type: 'datetime-local', value: toLocalInput(new Date(x.clock_in)) });
+      const out = h('input', { type: 'datetime-local', value: x.clock_out ? toLocalInput(new Date(x.clock_out)) : '' });
+      const note = h('input', { value: x.note || '', placeholder: 'Why it changed (optional)', maxlength: '200' });
+      return h('div', { class: `tp-edit-row ${x.auto_closed ? 'flagged' : ''}` },
+        h('span', { class: 'tp-edit-n' }, d.punches.length > 1 ? (i === 0 ? 'Before lunch' : i === d.punches.length - 1 ? 'After lunch' : `Part ${i + 1}`) : 'Shift'),
+        h('label', {}, 'In', inp),
+        h('label', {}, 'Out', out),
+        h('label', { class: 'grow' }, 'Note', note),
+        h('div', { class: 'tp-edit-actions' },
+          h('button', { type: 'button', class: 'primary', onclick: () => savePunch(x.id, { clock_in: new Date(inp.value).toISOString(), clock_out: out.value ? new Date(out.value).toISOString() : undefined, note: note.value }) }, 'Save'),
+          h('button', { type: 'button', class: 'link-btn danger', onclick: () => removePunch(x) }, 'Delete')),
+        (x.auto_closed || x.edited_by) && h('div', { class: 'tp-edit-meta muted' }, [x.auto_closed && 'Forgot to clock out: closed at the end of the day', x.edited_by && `Last fixed by ${x.edited_by}`].filter(Boolean).join(' · ')));
+    }));
 }
 
 async function saveRate(name, value) {
@@ -548,7 +662,7 @@ async function removePunch(x) {
 
 function tpAddForm(rows) {
   const names = rows.map((r) => r.name);
-  const day = new Date(); day.setHours(8, 0, 0, 0);
+  const day = tc.addDay ? tcKeyDate(tc.addDay) : new Date(); day.setHours(8, 0, 0, 0);
   const end = new Date(day); end.setHours(16, 0, 0, 0);
   return h('form', { class: 'rev-block tp-add', onsubmit: async (e) => {
     e.preventDefault();
@@ -608,9 +722,13 @@ function exportTimePay() {
   const q = (v) => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
   const dollars = (c) => (c == null ? '' : (c / 100).toFixed(2));
   const lines = [
-    ['Name', 'Role', 'Hourly rate', 'Regular hours', 'Overtime hours', 'Paid time off hours', 'Unpaid time off hours', 'Total paid hours', 'Gross pay'],
-    ...d.rows.map((r) => [r.name, r.role, dollars(r.rate_cents), r.regular_hours, r.overtime_hours, r.pto_hours, r.unpaid_off_hours, r.total_hours, dollars(r.gross_cents)]),
+    ['Name', 'Role', 'Hourly rate', 'Regular hours', 'Overtime hours', 'Paid time off hours', 'Unpaid time off hours', 'Total paid hours', 'Gross pay', 'Late', 'Left early', 'Long lunches', 'No-shows', 'Forgot to clock out'],
+    ...d.rows.map((r) => [r.name, r.role, dollars(r.rate_cents), r.regular_hours, r.overtime_hours, r.pto_hours, r.unpaid_off_hours, r.total_hours, dollars(r.gross_cents),
+      r.issues.late, r.issues.early, r.issues.long_lunch, r.issues.no_show, r.issues.missed_out]),
     ['Everyone', '', '', d.totals.regular_hours, d.totals.overtime_hours, d.totals.pto_hours, '', d.totals.total_hours, dollars(d.totals.gross_cents)],
+    [],
+    ['Date', 'Name', 'Attendance', 'Details'],
+    ...d.occurrences.map((o) => [o.date, o.user_name, ISSUE_INFO[o.type].chip(o), ISSUE_INFO[o.type].detail(o)]),
     [],
     ['Name', 'Clock in', 'Clock out', 'Hours', 'Note'],
     ...d.rows.flatMap((r) => r.punches.map((x) => [r.name, toLocalInput(new Date(x.clock_in)).replace('T', ' '), x.clock_out ? toLocalInput(new Date(x.clock_out)).replace('T', ' ') : 'still on', x.hours,

@@ -9,7 +9,11 @@ const ShopTime = require('../public/shop-time');
 const KINDS = { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid: 'Unpaid' };
 // Overtime after 40 hours a week by default. Daily overtime (Nevada has it for some workers) is off
 // until an admin sets the hours.
-const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'] };
+// Attendance: late or early by more than `grace_minutes` counts; lunch over `lunch_minutes` (plus grace) is long.
+const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'], grace_minutes: 5, lunch_minutes: 30 };
+const ISSUES = ['late', 'early', 'long_lunch', 'no_show', 'missed_out'];
+const isTime = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || ''));
+const minutesOf = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const HOUR = 3600000;
 const DAY = 86400000;
 const norm = (s) => String(s || '').trim().toLowerCase();
@@ -43,6 +47,12 @@ function createTimeService(db, { users, getShopHours }) {
       const m = Number(input.ot_multiplier);
       if (!(m >= 1 && m <= 3)) throw new HttpError(400, 'Overtime pay is 1 to 3 times the rate.');
       next.ot_multiplier = m;
+    }
+    for (const [key, max, what] of [['grace_minutes', 60, 'Late counts after 0 to 60 minutes.'], ['lunch_minutes', 180, 'Lunch can be 0 to 180 minutes.']]) {
+      if (!(key in input)) continue;
+      const v = Number(input[key]);
+      if (!(v >= 0 && v <= max)) throw new HttpError(400, what);
+      next[key] = v;
     }
     if ('paid_kinds' in input) next.paid_kinds = (input.paid_kinds || []).filter((k) => KINDS[k] && k !== 'unpaid');
     stmt("INSERT INTO settings (key, value) VALUES ('payroll', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
@@ -327,6 +337,89 @@ function createTimeService(db, { users, getShopHours }) {
     return { user_name: who, rate_cents: cents };
   }
 
+  // ---- work schedules (admins) ----
+  const scheduleOf = (name) => {
+    const row = stmt('SELECT days FROM work_schedules WHERE name_norm = ?').get(norm(name));
+    try { return row ? JSON.parse(row.days) : null; } catch { return null; }
+  };
+  // Everyone who clocks in (not admins), with their schedule: days[0..6] (Sunday first), each null or { start, end }.
+  function listSchedules() {
+    const people = users.list().filter((u) => u.active !== false && u.role !== 'admin');
+    const seen = new Set();
+    return people.filter((u) => !seen.has(norm(u.name)) && seen.add(norm(u.name)))
+      .map((u) => ({ user_name: u.name, role: u.role, days: scheduleOf(u.name) || Array(7).fill(null) }));
+  }
+  function saveSchedules(list, { user } = {}) {
+    if (!Array.isArray(list)) throw new HttpError(400, 'Send the schedules.');
+    const clean = list.map((s) => {
+      const name = String(s.user_name || '').trim();
+      if (!name) throw new HttpError(400, 'Each schedule needs a person.');
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const d = s.days?.[i];
+        if (!d) return null;
+        if (!isTime(d.start) || !isTime(d.end)) throw new HttpError(400, `Pick start and end times for ${name}.`);
+        if (minutesOf(d.end) <= minutesOf(d.start)) throw new HttpError(400, `${name}'s shift has to end after it starts.`);
+        return { start: d.start, end: d.end };
+      });
+      return { name, days };
+    });
+    for (const { name, days } of clean) {
+      if (days.every((d) => !d)) stmt('DELETE FROM work_schedules WHERE name_norm = ?').run(norm(name));
+      else stmt(`INSERT INTO work_schedules (name_norm, user_name, days, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT (name_norm) DO UPDATE SET user_name = excluded.user_name, days = excluded.days, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+        .run(norm(name), name, JSON.stringify(days), user ?? null, now());
+    }
+    return listSchedules();
+  }
+
+  // One person's days in the period: schedule, punches, lunch, hours and what went wrong.
+  function attendance(p, { from, to, at, settings }) {
+    const sched = scheduleOf(p.name);
+    const grace = settings.grace_minutes;
+    const todayKey = keyOf(at);
+    const days = [];
+    for (let d = dateOf(from); keyOf(d) <= to && keyOf(d) <= todayKey; d.setDate(d.getDate() + 1)) {
+      const key = keyOf(d);
+      const plan = sched?.[d.getDay()] || null;
+      const punches = p.punches.filter((x) => keyOf(new Date(x.clock_in)) === key);
+      const off = p.time_off.find((r) => r.start_date <= key && r.end_date >= key) || null;
+      if (!plan && !punches.length && !off) continue;
+      const at0 = (t) => { const x = new Date(d); x.setHours(0, minutesOf(t), 0, 0); return x; };
+      const lunches = [];
+      for (let i = 1; i < punches.length; i++) {
+        const gapFrom = punches[i - 1].clock_out;
+        if (gapFrom) lunches.push({ from: gapFrom, to: punches[i].clock_in, minutes: Math.round((new Date(punches[i].clock_in) - new Date(gapFrom)) / 60000) });
+      }
+      const last = punches.at(-1);
+      const onLunch = last && last.out_reason === 'lunch' && key === todayKey;
+      if (onLunch) lunches.push({ from: last.clock_out, to: null, minutes: Math.round((at - new Date(last.clock_out)) / 60000) });
+      const lunchMinutes = lunches.reduce((n, l) => n + l.minutes, 0);
+      const issues = [];
+      const dayOver = key < todayKey || (plan && at > at0(plan.end));
+      if (plan && !off) {
+        if (!punches.length) {
+          if (dayOver) issues.push({ type: 'no_show' });
+        } else {
+          const late = Math.round((new Date(punches[0].clock_in) - at0(plan.start)) / 60000);
+          if (late > grace) issues.push({ type: 'late', minutes: late });
+          if (last.clock_out && !last.open && !onLunch && !last.auto_closed) {
+            const early = Math.round((at0(plan.end) - new Date(last.clock_out)) / 60000);
+            if (early > grace) issues.push({ type: 'early', minutes: early });
+          }
+        }
+      }
+      if (settings.lunch_minutes && lunchMinutes > settings.lunch_minutes + grace) issues.push({ type: 'long_lunch', minutes: lunchMinutes - settings.lunch_minutes });
+      if (punches.some((x) => x.auto_closed)) issues.push({ type: 'missed_out' });
+      days.push({
+        date: key, schedule: plan, off: off ? { kind: off.kind, kind_label: off.kind_label } : null,
+        punches, first_in: punches[0]?.clock_in || null, last_out: last && !last.open && !onLunch ? last.clock_out : null,
+        open: Boolean(last?.open), on_lunch: Boolean(onLunch), lunches, lunch_minutes: lunchMinutes,
+        hours: round2(punches.reduce((n, x) => n + x.hours, 0)), issues,
+      });
+    }
+    return { days, has_schedule: Boolean(sched?.some(Boolean)) };
+  }
+
   // ---- the admins' Time & Pay numbers for a pay period ----
   function payroll({ from, to, at = new Date() } = {}) {
     if (!isDate(from) || !isDate(to) || to < from) throw new HttpError(400, 'Pick the pay period.');
@@ -392,7 +485,10 @@ function createTimeService(db, { users, getShopHours }) {
       }
       const rate = p.rate_cents;
       const pay = rate == null ? null : Math.round(rate * regular + rate * settings.ot_multiplier * overtime + rate * p.pto_hours);
+      const att = attendance(p, { from, to, at, settings });
+      const issues = Object.fromEntries(ISSUES.map((t) => [t, att.days.reduce((n, d) => n + d.issues.filter((i) => i.type === t).length, 0)]));
       return {
+        days: att.days, has_schedule: att.has_schedule, issues, issue_count: Object.values(issues).reduce((n, v) => n + v, 0),
         name: p.name, role: p.role, active: p.active, rate_cents: rate,
         regular_hours: round2(regular), overtime_hours: round2(overtime), pto_hours: round2(p.pto_hours), unpaid_off_hours: round2(p.unpaid_off_hours),
         total_hours: round2(regular + overtime + p.pto_hours), gross_cents: pay,
@@ -406,12 +502,16 @@ function createTimeService(db, { users, getShopHours }) {
       from, to, settings,
       rows,
       totals: { regular_hours: sum('regular_hours'), overtime_hours: sum('overtime_hours'), pto_hours: sum('pto_hours'), total_hours: sum('total_hours'), gross_cents: rows.reduce((n, r) => n + (r.gross_cents || 0), 0), missing_rates: rows.filter((r) => r.rate_cents == null && r.total_hours > 0).length },
+      issues: Object.fromEntries(ISSUES.map((t) => [t, rows.reduce((n, r) => n + r.issues[t], 0)])),
+      // Every late arrival, early leave, long lunch, no-show and forgotten clock-out, newest first.
+      occurrences: rows.flatMap((r) => r.days.flatMap((d) => d.issues.map((i) => ({ user_name: r.name, date: d.date, ...i, schedule: d.schedule, first_in: d.first_in, last_out: d.last_out, lunch_minutes: d.lunch_minutes }))))
+        .sort((a, b) => b.date.localeCompare(a.date) || a.user_name.localeCompare(b.user_name)),
       pending_time_off: listOff({ status: 'pending' }),
       pending_corrections: listCorrections({ status: 'pending' }),
     };
   }
 
-  return { status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
+  return { listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
 }
 
 module.exports = { createTimeService, TIME_OFF_KINDS: KINDS };

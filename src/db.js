@@ -330,6 +330,14 @@ CREATE TABLE IF NOT EXISTS time_corrections (
   created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS time_corrections_status ON time_corrections (status, created_at);
+-- Each person's work schedule: the days they work and their hours ("08:00" to "16:30"), for attendance.
+CREATE TABLE IF NOT EXISTS work_schedules (
+  name_norm  TEXT PRIMARY KEY,
+  user_name  TEXT NOT NULL,
+  days       TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS pay_rates (
   name_norm  TEXT PRIMARY KEY,
   user_name  TEXT NOT NULL,

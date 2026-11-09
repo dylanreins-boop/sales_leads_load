@@ -222,3 +222,50 @@ test('timecard corrections: people ask to fix, add or remove time; admins approv
   assert.equal((await call('DELETE', `/api/timecard/corrections/${oops.id}`, undefined, MIKE)).status, 403);
   assert.equal((await call('DELETE', `/api/timecard/corrections/${oops.id}`, undefined, SAM)).data.status, 'cancelled');
 });
+
+test('work schedules: late, left early, long lunch, no-show and forgotten clock-outs are flagged', () => {
+  const mem = openDatabase(':memory:');
+  const users = createUserService(mem, { serverUsers: [{ name: 'Mike', role: 'shop' }, { name: 'Luis', role: 'shop' }] });
+  const time = createTimeService(mem, { users, getShopHours: () => ShopTime.settingsOf({}) });
+  const weekdays = [null, ...Array(5).fill({ start: '08:00', end: '16:30' }), null];
+  assert.throws(() => time.saveSchedules([{ user_name: 'Mike', days: [null, { start: '16:00', end: '08:00' }] }]), /end after it starts/);
+  time.saveSchedules([{ user_name: 'Mike', days: weekdays }]);
+  assert.deepEqual(time.listSchedules().map((s) => [s.user_name, s.days[1]]), [['Mike', { start: '08:00', end: '16:30' }], ['Luis', null]]);
+
+  const t = (d, h, m = 0) => new Date(2026, 10, d, h, m);
+  const day = (d, inAt, lunch, outAt) => {
+    time.clockIn('Mike', { at: inAt });
+    if (lunch) { time.startLunch('Mike', { at: lunch[0] }); time.clockIn('Mike', { at: lunch[1] }); }
+    if (outAt) time.clockOut('Mike', { at: outAt });
+  };
+  day(2, t(2, 8, 2), [t(2, 12), t(2, 12, 30)], t(2, 16, 31)); // Mon: on time
+  day(3, t(3, 8, 20), [t(3, 12), t(3, 12, 30)], t(3, 16, 30)); // Tue: 20 min late
+  day(4, t(4, 7, 58), [t(4, 12), t(4, 13, 5)], t(4, 15, 45)); // Wed: long lunch, left 45 early
+  // Thu: no show. Fri: forgot to clock out.
+  time.clockIn('Mike', { at: t(6, 8) });
+  // Luis has no schedule: never flagged except a long lunch.
+  time.clockIn('Luis', { at: t(3, 10) });
+  time.clockOut('Luis', { at: t(3, 14) });
+
+  const pay = time.payroll({ from: '2026-11-01', to: '2026-11-07', at: t(9, 9) });
+  const mike = pay.rows.find((r) => r.name === 'Mike');
+  assert.deepEqual(mike.issues, { late: 1, early: 1, long_lunch: 1, no_show: 1, missed_out: 1 });
+  assert.equal(mike.issue_count, 5);
+  const byDay = Object.fromEntries(mike.days.map((d) => [d.date, d.issues]));
+  assert.deepEqual(byDay['2026-11-02'], []);
+  assert.deepEqual(byDay['2026-11-03'], [{ type: 'late', minutes: 20 }]);
+  assert.deepEqual(byDay['2026-11-04'], [{ type: 'early', minutes: 45 }, { type: 'long_lunch', minutes: 35 }]);
+  assert.deepEqual(byDay['2026-11-05'], [{ type: 'no_show' }]);
+  assert.deepEqual(byDay['2026-11-06'], [{ type: 'missed_out' }]);
+  assert.equal(mike.days.find((d) => d.date === '2026-11-02').lunch_minutes, 30);
+  assert.equal(mike.days.length, 5, 'weekends with nothing scheduled or clocked are left out');
+  assert.equal(pay.rows.find((r) => r.name === 'Luis').issue_count, 0);
+  assert.deepEqual(pay.occurrences.map((o) => o.date), ['2026-11-06', '2026-11-05', '2026-11-04', '2026-11-04', '2026-11-03']);
+
+  // Approved time off isn't a no-show; a looser grace period isn't late.
+  time.requestOff('Mike', { start_date: '2026-11-05', kind: 'sick' });
+  time.decideOff(time.listOff({ status: 'pending' })[0].id, { status: 'approved' }, { user: 'Dylan' });
+  time.saveSettings({ grace_minutes: 30, lunch_minutes: 60 });
+  const again = time.payroll({ from: '2026-11-01', to: '2026-11-07', at: t(9, 9) }).rows.find((r) => r.name === 'Mike');
+  assert.deepEqual(again.issues, { late: 0, early: 1, long_lunch: 0, no_show: 0, missed_out: 1 });
+});
