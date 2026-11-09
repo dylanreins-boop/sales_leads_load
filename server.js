@@ -220,7 +220,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const estimates = createEstimateService(db, { getShopHours: jobs.getShopHours });
   jobs.setEstimator((lead, services) => estimates.suggest({ ...lead, services }).hours);
   const analytics = createAnalyticsService(db, { commissions, payments, jobs, users, estimates });
-  const timeClock = createTimeService(db, { users, getShopHours: jobs.getShopHours });
+  const timeClock = createTimeService(db, { users, getShopHours: jobs.getShopHours, mailer, brand: config.brand, publicUrl: config.publicUrl });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -307,6 +307,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     vehicleType: query.get('vehicle_type'),
     status: query.get('status'),
   });
+  // The search box: every lead (working, past customers, old and dead), best matches first.
+  route('GET', '/api/leads/search', ({ query }) => leads.searchLeads(query.get('q')));
   route('GET', '/api/leads', ({ query }) => {
     leads.archiveOldLeads();
     return leads.listLeads(leadFilters(query));
@@ -834,7 +836,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // hours and pay for a period on the Time & Pay page.
   route('GET', '/api/clock', ({ actor }) => timeClock.status(actor.user), { roles: ANY_LOGIN });
   route('POST', '/api/clock/in', ({ actor }) => timeClock.clockIn(actor.user), { roles: ANY_LOGIN });
-  route('POST', '/api/clock/out', ({ actor }) => timeClock.clockOut(actor.user), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/out', ({ actor, body }) => timeClock.clockOut(actor.user, { approveWeek: Boolean(body?.approve_week) }), { roles: ANY_LOGIN });
+  route('POST', '/api/timecard/approve-week', ({ actor }) => timeClock.approveWeek(actor.user), { roles: ANY_LOGIN });
   route('POST', '/api/clock/lunch', ({ actor }) => timeClock.startLunch(actor.user), { roles: ANY_LOGIN });
   route('GET', '/api/timecard', ({ query, actor }) => timeClock.timecard(actor.user, { from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
   route('POST', '/api/timecard/corrections', ({ body, actor }) => timeClock.requestCorrection(actor.user, body), { roles: ANY_LOGIN });
@@ -847,6 +850,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/time-off', ({ query }) => timeClock.listOff({ status: query.get('status') }), { roles: ADMIN });
   route('PATCH', '/api/time-off/:id', ({ params, body, actor }) => timeClock.decideOff(Number(params.id), body, actor), { roles: ADMIN });
   route('GET', '/api/payroll', ({ query }) => timeClock.payroll({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
+  route('POST', '/api/payroll/weeks/:start/approve', ({ params, actor }) => timeClock.approvePayrollWeek(params.start, actor), { roles: ADMIN });
+  route('POST', '/api/payroll/weeks/:start/email', ({ params }) => timeClock.emailWeek(params.start), { roles: ADMIN });
   route('GET', '/api/schedules', () => timeClock.listSchedules(), { roles: ADMIN });
   route('PUT', '/api/schedules', ({ body, actor }) => timeClock.saveSchedules(body.schedules, actor), { roles: ADMIN });
   route('PUT', '/api/payroll/settings', ({ body }) => timeClock.saveSettings(body), { roles: ADMIN });
@@ -970,7 +975,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // New-lead alerts and the "nobody called yet" alert to admins, and the next win-back messages, every minute.
   const sendCampaigns = () => campaigns.sendNext().catch((err) => console.error('Campaign sending failed:', err.message));
   const sendWelcomes = () => messages.sendWelcomes().catch((err) => console.error('Welcome texts failed:', err.message));
-  const alertTimer = setInterval(() => { runAlerts(); sendCampaigns(); sendWelcomes(); }, 60000);
+  const alertTimer = setInterval(() => {
+    runAlerts(); sendCampaigns(); sendWelcomes();
+    timeClock.sendWeeklyDue().catch((err) => console.error('Weekly payroll email failed:', err.message));
+  }, 60000);
   alertTimer.unref();
   // Day-before reminders to customers and the shop's morning day sheet, checked every 5 minutes.
   const sendReminders = () => {
@@ -1022,7 +1030,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
       const status = err.status || 500;
       if (status === 500) console.error(err);
       const cors = url.pathname.startsWith('/api/intake/') ? corsHeaders(req) : {};
-      if (!res.headersSent) send(res, status, { error: status === 500 ? 'Server error' : err.message }, cors);
+      if (!res.headersSent) send(res, status, { error: status === 500 ? 'Server error' : err.message, ...(err.code && status < 500 && { code: err.code }) }, cors);
     }
   };
 }

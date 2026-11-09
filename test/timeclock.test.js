@@ -32,6 +32,8 @@ async function call(method, url, body, a = ADMIN) {
 }
 
 test('sales and shop clock in and out; clocking in twice keeps the first punch', async () => {
+  // Approving the week on clock-out is tested below; keep today from being review day here.
+  await call('PUT', '/api/payroll/settings', { review_day: (new Date().getDay() + 3) % 7 });
   assert.equal((await call('GET', '/api/clock', undefined, SAM)).data.on_clock, false);
   const on = (await call('POST', '/api/clock/in', undefined, SAM)).data;
   assert.equal(on.on_clock, true);
@@ -269,3 +271,60 @@ test('work schedules: late, left early, long lunch, no-show and forgotten clock-
   const again = time.payroll({ from: '2026-11-01', to: '2026-11-07', at: t(9, 9) }).rows.find((r) => r.name === 'Mike');
   assert.deepEqual(again.issues, { late: 0, early: 1, long_lunch: 0, no_show: 0, missed_out: 1 });
 });
+
+test('weekly pay: approve your week before clocking out on Friday; the summary is emailed to admins', async () => {
+  const mem = openDatabase(':memory:');
+  const users = createUserService(mem, { serverUsers: [{ name: 'Mike', role: 'shop' }, { name: 'Luis', role: 'shop' }] });
+  const sent = [];
+  const mailer = { configured: true, send: async (m) => { sent.push(m); } };
+  const time = createTimeService(mem, { users, getShopHours: () => ShopTime.settingsOf({}), mailer, brand: { name: 'Bob Moses' } });
+  time.setRate('Mike', '20');
+  const t = (d, h, m = 0) => new Date(2026, 10, d, h, m);
+  // Mike works Mon to Fri, 8 to 4:30 with a 30-minute lunch.
+  for (const d of [9, 10, 11, 12]) {
+    time.clockIn('Mike', { at: t(d, 8) });
+    time.startLunch('Mike', { at: t(d, 12) });
+    time.clockIn('Mike', { at: t(d, 12, 30) });
+    time.clockOut('Mike', { at: t(d, 16, 30) });
+  }
+  time.clockIn('Mike', { at: t(13, 8) });
+  const fri = time.status('Mike', t(13, 16));
+  assert.equal(fri.review_required, true);
+  assert.equal(fri.review_day, 'Friday');
+  assert.throws(() => time.clockOut('Mike', { at: t(13, 16, 30) }), (err) => err.status === 409 && err.code === 'week_review');
+  assert.equal(time.startLunch('Mike', { at: t(13, 12) }).on_lunch, true, 'lunch needs no review');
+  time.clockIn('Mike', { at: t(13, 12, 30) });
+
+  assert.equal(await time.sendWeeklyDue(t(13, 16)), false, 'no addresses yet');
+  time.saveSettings({ payroll_emails: 'dylan@example.com, owner@example.com' });
+  assert.throws(() => time.saveSettings({ payroll_emails: 'nope' }), /isn't an email/);
+
+  const out = time.clockOut('Mike', { at: t(13, 16, 30), approveWeek: true });
+  assert.equal(out.on_clock, false);
+  assert.ok(out.week_signed_off_at);
+  assert.equal(out.review_required, false);
+  const week = time.payroll({ from: '2026-11-08', to: '2026-11-14', at: t(13, 17) }).week;
+  assert.deepEqual(week.signoffs.map((x) => [x.user_name, Boolean(x.approved_at), x.hours]), [['Mike', true, 40]]);
+  assert.equal(week.all_signed, true);
+
+  // Everyone who worked has approved: the admins get the summary right away, once.
+  assert.equal(await time.sendWeeklyDue(t(13, 16, 31)), true);
+  assert.deepEqual(sent.map((m) => m.to), ['dylan@example.com', 'owner@example.com']);
+  assert.match(sent[0].subject, /Payroll Sun, Nov 8 - Sat, Nov 14: 40 h, \$800\.00/);
+  assert.match(sent[0].text, /Everyone approved their time/);
+  assert.match(sent[0].text, /Mike +\$20\.00\/h +40 h/);
+  assert.equal(sent[0].attachments[0].filename, 'payroll-2026-11-08-to-2026-11-14.csv');
+  assert.match(sent[0].attachments[0].content.toString(), /Approved their time/);
+  assert.equal(await time.sendWeeklyDue(t(13, 18)), false);
+
+  // Next week Luis works but never approves: it goes Saturday at 8 AM, saying who it's waiting on.
+  time.clockIn('Luis', { at: t(16, 8) });
+  time.clockOut('Luis', { at: t(16, 16) });
+  assert.equal(await time.sendWeeklyDue(t(20, 18)), false);
+  assert.equal(await time.sendWeeklyDue(t(21, 8, 1)), true);
+  assert.match(sent.at(-1).text, /Still waiting on: Luis/);
+
+  const approved = time.approvePayrollWeek('2026-11-08', { user: 'Dylan' });
+  assert.equal(approved.week.approved_by, 'Dylan');
+});
+

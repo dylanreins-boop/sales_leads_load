@@ -208,6 +208,31 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row) }));
   }
 
+  // The search box: every lead, working, past customers, old and dead, best matches first (names
+  // that start with what was typed, then the newest), with the basics to tell them apart.
+  function searchLeads(q, { limit = 12 } = {}) {
+    const text = String(q || '').trim();
+    if (text.length < 2 && !/\d/.test(text)) return { results: [], total: 0 };
+    const rows = listLeads({ q: text, view: 'all' });
+    const t = text.toLowerCase();
+    const score = (l) => {
+      const name = (l.full_name || '').toLowerCase();
+      if (name.startsWith(t)) return 0;
+      if (name.split(/\s+/).some((w) => w.startsWith(t))) return 1;
+      return 2;
+    };
+    const ranked = rows.map((l, i) => ({ l, s: score(l), i })).sort((a, b) => a.s - b.s || a.i - b.i).slice(0, limit).map((x) => x.l);
+    return {
+      total: rows.length,
+      results: ranked.map((l) => ({
+        id: l.id, full_name: l.full_name, first_name: l.first_name, last_name: l.last_name, phone: l.phone, email: l.email,
+        vehicle_year: l.vehicle_year, vehicle_make: l.vehicle_make, vehicle_model: l.vehicle_model, vehicle_color: l.vehicle_color, vehicle_type: l.vehicle_type,
+        stage: l.stage, status: l.status, pipeline: l.pipeline, source: l.source, received_at: l.received_at,
+        last_contacted_at: l.last_contacted_at, next_reminder_at: l.next_reminder_at, jobs_done: l.jobs_done, last_pickup_at: l.last_pickup_at,
+      })),
+    };
+  }
+
   // Someone opened the lead.
   function markOpened(id, { user } = {}) {
     stmt('UPDATE leads SET last_opened_at = ?, last_opened_by = ? WHERE id = ?').run(now(), user ?? null, id);
@@ -551,7 +576,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   return {
-    ingest, listLeads, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
+    searchLeads, ingest, listLeads, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
     archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,

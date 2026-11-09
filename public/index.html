@@ -47,7 +47,11 @@
     <button type="button" id="appearanceBtn" class="link-btn">Appearance</button>
     <button type="button" id="signOutBtn" class="link-btn" hidden>Sign out</button>
     <div class="filters lead-only">
-      <input id="search" type="search" placeholder="Search name, phone, email, vehicle" aria-label="Search leads">
+      <div class="search-box">
+        <input id="search" type="search" placeholder="Search all leads: name, phone, email, vehicle" aria-label="Search all leads" autocomplete="off"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="searchResults">
+        <div id="searchResults" class="search-pop" role="listbox" aria-label="Matching leads" hidden></div>
+      </div>
       <select id="sourceFilter" aria-label="Filter by source">
         <option value="">All sources</option>
         <option value="facebook">Facebook</option>
@@ -220,11 +224,13 @@
     <div class="rev-toolbar">
       <h2 id="tpTitle" class="rev-title">Time &amp; Pay</h2>
       <div class="rev-controls">
+        <span id="tpWeekNav" class="tp-week-nav">
+          <button type="button" id="tpPrevWeek" class="icon-btn nav-arrow" aria-label="Week before">&lsaquo;</button>
+          <span id="tpWeekLabel" class="tp-week-label"></span>
+          <button type="button" id="tpNextWeek" class="icon-btn nav-arrow" aria-label="Week after">&rsaquo;</button>
+        </span>
         <select id="tpPeriod" aria-label="Pay period">
-          <option value="week">This week</option>
-          <option value="lastweek">Last week</option>
-          <option value="two" selected>This 2 weeks</option>
-          <option value="lasttwo">Last 2 weeks</option>
+          <option value="week" selected>Pay week</option>
           <option value="month">This month</option>
           <option value="lastmonth">Last month</option>
           <option value="custom">Pick dates…</option>
@@ -235,7 +241,7 @@
           <input type="date" id="tpTo" aria-label="To">
         </span>
         <button type="button" id="tpAdd">Add time</button>
-        <button type="button" id="tpSettingsBtn">Overtime &amp; time off rules</button>
+        <button type="button" id="tpSettingsBtn">Payroll rules</button>
         <button type="button" id="tpExport">Download CSV</button>
       </div>
     </div>

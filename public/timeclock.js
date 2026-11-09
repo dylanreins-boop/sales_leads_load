@@ -4,7 +4,7 @@
 // rates, regular / overtime / paid time off hours and gross pay for a pay period, fix punches, CSV).
 // Uses the helpers from app.js ($, h, fill, api, toast, fail, money, toLocalInput, showPanel...).
 
-const tc = { editDay: null, addDay: null, allOcc: false, schedules: null, status: null, tick: null, done: false, card: null, cardPeriod: 'two', fixing: null, pay: null, open: new Set(), editing: null, adding: false, settings: false };
+const tc = { weekOffset: 0, cardPeriod: 'week', editDay: null, addDay: null, allOcc: false, schedules: null, status: null, tick: null, done: false, card: null, fixing: null, pay: null, open: new Set(), editing: null, adding: false, settings: false };
 const TC_KINDS = () => state.meta.timeOffKinds || { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid: 'Unpaid' };
 
 // ---------- formatting ----------
@@ -82,6 +82,7 @@ const TC_BUTTONS = {
 };
 
 function confirmAction(key) {
+  if (key === 'out' && tc.status?.review_required) return openWeekReview();
   const a = TC_ACTIONS[key];
   tc.done = false;
   fill($('#clockDialogBody'),
@@ -102,6 +103,10 @@ async function doAction(key, btn) {
   try {
     tc.status = await api(a.path, { method: 'POST' });
   } catch (err) {
+    if (/approve your week/.test(err.message)) {
+      await loadClock().catch(() => {});
+      return openWeekReview();
+    }
     $('#clockDialog').close();
     fail(err);
     return loadClock().catch(() => {});
@@ -119,6 +124,65 @@ async function doAction(key, btn) {
       h('button', { type: 'button', class: 'tc-action go', onclick: () => $('#clockDialog').close() }, 'Done')),
     h('p', { class: 'muted tc-dlg-hint' }, 'Takes you to the calendar.'));
   $('#clockDialogBody .tc-action').focus();
+}
+
+// Clocking out on review day (Friday): look over the week, confirm it's right, then clock out.
+async function openWeekReview() {
+  const s = tc.status;
+  const start = s.week_start;
+  const end = ShopTime.dayKey(new Date(tcKeyDate(start).getTime() + 6 * 86400000 + 3600000));
+  let card;
+  try { card = await api(`/api/timecard?from=${start}&to=${end}`); } catch (err) { return fail(err); }
+  tc.done = false;
+  const days = new Map();
+  for (const p of card.punches) {
+    const k = ShopTime.dayKey(p.clock_in);
+    if (!days.has(k)) days.set(k, []);
+    days.get(k).push(p);
+  }
+  const pending = card.corrections.filter((c) => c.status === 'pending');
+  const totalMs = card.punches.reduce((n, p) => n + Math.max(0, new Date(p.clock_out || Date.now()) - new Date(p.clock_in)), 0);
+  const sure = h('input', { type: 'checkbox' });
+  const go = h('button', { type: 'button', class: 'tc-action stop', disabled: true, onclick: async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      tc.status = await api('/api/clock/out', { method: 'POST', body: { approve_week: true } });
+    } catch (err) { $('#clockDialog').close(); return fail(err); }
+    renderClockPill();
+    renderMyTime();
+    loadTimecard().catch(() => {});
+    tc.done = true;
+    fill($('#clockDialogBody'),
+      h('div', { class: 'tc-dlg-check stop', 'aria-hidden': 'true' }, '✓'),
+      h('h2', {}, 'Week approved, you\'re clocked out'),
+      h('p', { class: 'tc-dlg-note' }, `You worked ${tcHM(tc.status.week_hours * 3600000)} this week. Your hours go to the office for payroll.${new Date().getDay() >= 5 ? ' Have a good weekend!' : ''}`),
+      h('div', { class: 'tc-dlg-actions' }, h('button', { type: 'button', class: 'tc-action go', onclick: () => $('#clockDialog').close() }, 'Done')),
+      h('p', { class: 'muted tc-dlg-hint' }, 'Takes you to the calendar.'));
+    $('#clockDialogBody .tc-action').focus();
+  } }, 'Approve my week & clock out');
+  sure.addEventListener('change', () => { go.disabled = !sure.checked; });
+  fill($('#clockDialogBody'),
+    h('h2', {}, 'Review your week'),
+    h('p', { class: 'muted' }, `${tcDay(tcKeyDate(start))} – ${tcDay(tcKeyDate(end))}. Check your hours, then approve them to clock out.`),
+    h('div', { class: 'tc-review' },
+      ...[...days].map(([k, list]) => h('div', { class: 'tc-review-day' },
+        h('span', { class: 'tc-review-date' }, tcDay(tcKeyDate(k))),
+        h('span', { class: 'tc-review-spans' }, list.map((p) => `${tcClock(p.clock_in)} – ${p.clock_out ? tcClock(p.clock_out) : 'now'}`).join(', ')),
+        h('span', { class: 'tc-review-hrs' }, tcHM(list.reduce((n, p) => n + Math.max(0, new Date(p.clock_out || Date.now()) - new Date(p.clock_in)), 0))))),
+      !days.size && h('p', { class: 'muted' }, 'No time clocked this week.'),
+      h('div', { class: 'tc-review-total' }, h('span', {}, 'This week'), h('strong', {}, tcHM(totalMs)))),
+    pending.length ? h('p', { class: 'tc-review-note' }, `You have ${pending.length} correction${pending.length === 1 ? '' : 's'} waiting for an admin. Approving now is fine; the admin fixes it before payroll.`) : null,
+    h('label', { class: 'check tc-review-check' }, sure, ' My hours are right'),
+    h('div', { class: 'tc-dlg-actions' },
+      go,
+      h('button', { type: 'button', class: 'tc-action ghost', onclick: () => {
+        $('#clockDialog').close();
+        tc.cardPeriod = 'week';
+        loadTimecard().then(() => $('#tcCard')?.scrollIntoView({ block: 'start', behavior: 'smooth' })).catch(fail);
+        toast('Tap Fix next to the time that\'s wrong, then clock out again to approve.');
+      } }, 'Something\'s wrong'),
+      h('button', { type: 'button', class: 'link-btn', onclick: () => $('#clockDialog').close() }, 'Cancel')));
+  if (!$('#clockDialog').open) $('#clockDialog').showModal();
 }
 
 // Leaving the confirmation (Done, Escape or tapping outside) goes to the shop calendar.
@@ -256,7 +320,7 @@ function tcPeriod(v) {
   const plus = (n) => { const d = new Date(sunday); d.setDate(d.getDate() + n); return d; };
   return { week: [plus(0), plus(6)], lastweek: [plus(-7), plus(-1)], two: [plus(-7), plus(6)], lasttwo: [plus(-14), plus(-1)] }[v].map(key);
 }
-const TC_PERIODS = { two: 'This 2 weeks', week: 'This week', lastweek: 'Last week', lasttwo: 'Last 2 weeks' };
+const TC_PERIODS = { week: 'This week', lastweek: 'Last week', two: 'This 2 weeks', lasttwo: 'Last 2 weeks' };
 const CORR_LABEL = { pending: 'Waiting for approval', approved: 'Approved', denied: 'Denied', cancelled: 'Cancelled' };
 
 // "Tue, Nov 10: 8:40 AM – 5:00 PM → 8:00 AM – 5:00 PM"
@@ -335,6 +399,13 @@ function renderTimecard() {
       h('select', { 'aria-label': 'Timecard period', onchange: (e) => { tc.cardPeriod = e.target.value; tc.fixing = null; loadTimecard().catch(fail); } },
         ...Object.entries(TC_PERIODS).map(([k, v]) => h('option', { value: k, selected: k === tc.cardPeriod }, v))),
       d && h('strong', { class: 'tc-tc-total' }, `${tcHM(d.total_hours * 3600000)} total`)),
+    tc.status && h('div', { class: `tc-week-ok ${tc.status.week_signed_off_at ? 'ok' : ''}` },
+      tc.status.week_signed_off_at
+        ? `✓ You approved this week's time ${fmtDateTime(tc.status.week_signed_off_at)}.`
+        : `You approve this week's time when you clock out on ${tc.status.review_day}.`,
+      !tc.status.week_signed_off_at && h('button', { type: 'button', class: 'link-btn', onclick: async () => {
+        try { tc.status = await api('/api/timecard/approve-week', { method: 'POST' }); toast('Thanks! This week\'s time is approved.'); renderTimecard(); } catch (err) { fail(err); }
+      } }, 'Approve it now')),
     !d ? h('p', { class: 'muted' }, 'Loading…')
       : days.size ? h('div', { class: 'tc-tc-days' }, ...[...days].map(([k, list]) => h('div', { class: 'tc-tc-day' },
         h('div', { class: 'tc-tc-date' }, tcDay(tcKeyDate(k)), h('span', { class: 'muted' }, tcHM(list.reduce((n, p) => n + p.hours, 0) * 3600000))),
@@ -362,10 +433,8 @@ function tpRange() {
   const sunday = new Date(today); sunday.setDate(today.getDate() - today.getDay());
   const plus = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   if (v === 'custom') return $('#tpFrom').value && $('#tpTo').value ? [$('#tpFrom').value, $('#tpTo').value] : null;
-  if (v === 'week') return [key(sunday), key(plus(sunday, 6))];
-  if (v === 'lastweek') return [key(plus(sunday, -7)), key(plus(sunday, -1))];
-  if (v === 'two') return [key(plus(sunday, -7)), key(plus(sunday, 6))];
-  if (v === 'lasttwo') return [key(plus(sunday, -14)), key(plus(sunday, -1))];
+  // Paid weekly: Sunday to Saturday, moved with the arrows.
+  if (v === 'week') { const w = plus(sunday, 7 * tc.weekOffset); return [key(w), key(plus(w, 6))]; }
   if (v === 'month') return [key(new Date(today.getFullYear(), today.getMonth(), 1)), key(new Date(today.getFullYear(), today.getMonth() + 1, 0))];
   return [key(new Date(today.getFullYear(), today.getMonth() - 1, 1)), key(new Date(today.getFullYear(), today.getMonth(), 0))];
 }
@@ -374,6 +443,13 @@ async function loadTimePay() {
   const r = tpRange();
   if (!r) return;
   tc.range = r;
+  $('#tpWeekNav').hidden = $('#tpPeriod').value !== 'week';
+  if ($('#tpPeriod').value === 'week') {
+    const a = tcKeyDate(r[0]);
+    const b = tcKeyDate(r[1]);
+    const md = (d) => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    $('#tpWeekLabel').textContent = `${tc.weekOffset === 0 ? 'This week' : tc.weekOffset === -1 ? 'Last week' : 'Week of'} · ${md(a)} – ${a.getMonth() === b.getMonth() ? b.getDate() : md(b)}`;
+  }
   tc.pay = await api(`/api/payroll?from=${r[0]}&to=${r[1]}`);
   $('#tpRange').textContent = `${tcDay(tcKeyDate(r[0]))} to ${tcDay(tcKeyDate(r[1]))}. Overtime after ${tc.pay.settings.ot_weekly_hours} hours a week${tc.pay.settings.ot_daily_hours ? ` or ${tc.pay.settings.ot_daily_hours} a day` : ''} (Sunday to Saturday), at ${tc.pay.settings.ot_multiplier}× the rate.`;
   renderTimePay();
@@ -471,10 +547,56 @@ function schedulesCard(d) {
       h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.schedules = null; renderTimePay(); } }, 'Cancel')));
 }
 
+// The pay week: who has approved their time, the email to the admins, and approving it for payroll.
+function weekCard(w) {
+  const done = w.signoffs.filter((x) => x.approved_at).length;
+  const emails = tc.pay.settings.payroll_emails || [];
+  return h('section', { class: `tp-week ${w.all_signed ? 'all' : ''}` },
+    h('div', { class: 'tp-week-head' },
+      h('div', {},
+        h('h3', {}, `Pay week ${tcDay(tcKeyDate(w.start))} – ${tcDay(tcKeyDate(w.end))}`),
+        h('p', { class: 'muted' }, w.signoffs.length
+          ? `${done} of ${w.signoffs.length} approved their time. They approve when they clock out on ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][tc.pay.settings.review_day]}.`
+          : 'Nobody has worked this week yet.')),
+      h('div', { class: 'tp-week-actions' },
+        w.approved_at
+          ? h('span', { class: 'tp-ok' }, `✓ Approved for payroll by ${w.approved_by}, ${fmtDateTime(w.approved_at)}`)
+          : h('button', { type: 'button', class: 'primary', onclick: approvePayWeek }, 'Approve week for payroll'),
+        h('button', { type: 'button', onclick: emailPayWeek }, w.emailed_at ? 'Email it again' : 'Email summary now'))),
+    w.signoffs.length ? h('div', { class: 'tp-signoffs' }, ...w.signoffs.map((x) => h('span', {
+      class: `tp-signoff ${x.approved_at ? (x.changed ? 'changed' : 'ok') : 'waiting'}`,
+      title: x.approved_at ? `Approved ${tcHrs(x.hours)}${x.changed ? `; now ${tcHrs(x.worked)} after changes` : ''}` : 'Hasn\'t approved their time yet',
+    }, x.approved_at ? (x.changed ? '⚠ ' : '✓ ') : '○ ', h('strong', {}, x.user_name), ' ',
+    x.approved_at ? (x.changed ? 'hours changed since' : new Date(x.approved_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })) : 'waiting'))) : null,
+    h('p', { class: 'muted tp-week-mail' }, w.emailed_at
+      ? `Emailed to ${w.emailed_to.join(', ')} · ${fmtDateTime(w.emailed_at)}`
+      : !w.email_ready ? 'Email sending isn\'t set up on the server yet (see EMAIL_ in the setup guide). Until then, use Download CSV.'
+      : emails.length
+        ? `Emails ${emails.join(', ')} once everyone has approved, or the morning after ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][tc.pay.settings.review_day]}.`
+        : 'Add the admins\' email addresses in Payroll rules to get this summary by email each week.'));
+}
+
+async function approvePayWeek() {
+  try {
+    await api(`/api/payroll/weeks/${tc.pay.week.start}/approve`, { method: 'POST' });
+    toast('Week approved for payroll.');
+    await loadTimePay();
+  } catch (err) { fail(err); }
+}
+
+async function emailPayWeek() {
+  try {
+    const r = await api(`/api/payroll/weeks/${tc.pay.week.start}/email`, { method: 'POST' });
+    toast(`Sent to ${r.sent_to.join(', ')}.`);
+    await loadTimePay();
+  } catch (err) { fail(err); }
+}
+
 function renderTimePay() {
   const d = tc.pay;
   const t = d.totals;
   fill($('#tpBody'),
+    d.week && weekCard(d.week),
     tc.settings && tpSettings(d.settings),
     tc.schedules && schedulesCard(d),
     tc.adding && tpAddForm(d.rows),
@@ -695,13 +817,20 @@ function tpSettings(s) {
       await api('/api/payroll/settings', { method: 'PUT', body: {
         ot_weekly_hours: f.get('ot_weekly_hours'), ot_daily_hours: f.get('daily_on') ? f.get('ot_daily_hours') : null,
         ot_multiplier: f.get('ot_multiplier'), paid_kinds: f.getAll('paid_kinds'),
+        review_day: f.get('review_day'), payroll_emails: f.get('payroll_emails'),
       } });
       toast('Saved. The numbers are updated.');
       tc.settings = false;
       await loadTimePay();
     } catch (err) { fail(err); }
   } },
-  h('h3', {}, 'Overtime & time off rules'),
+  h('h3', {}, 'Payroll rules'),
+  h('div', { class: 'tp-add-grid' },
+    h('label', {}, 'Everyone approves their week when they clock out on',
+      h('select', { name: 'review_day' }, ...['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((n, i) => h('option', { value: i, selected: i === s.review_day }, n)))),
+    h('label', { class: 'tp-wide' }, 'Email the weekly summary to (admins, separated by commas)',
+      h('input', { name: 'payroll_emails', value: (s.payroll_emails || []).join(', '), placeholder: 'owner@example.com, office@example.com' }))),
+  h('p', { class: 'hint' }, 'The pay week is Sunday to Saturday. The summary (hours, overtime, gross pay and a CSV of every punch) is emailed once everyone has approved their time, or the morning after if someone hasn\'t. Anyone who isn\'t scheduled that day approves on their last scheduled day.'),
   h('div', { class: 'tp-add-grid' },
     h('label', {}, 'Overtime after (hours a week)', h('input', { type: 'number', name: 'ot_weekly_hours', min: '1', max: '80', step: '0.5', value: s.ot_weekly_hours })),
     h('label', {}, 'Overtime pay (times the rate)', h('input', { type: 'number', name: 'ot_multiplier', min: '1', max: '3', step: '0.05', value: s.ot_multiplier })),
@@ -767,6 +896,8 @@ function initTimeClock() {
     if ($('#tpPeriod').value === 'custom' && !$('#tpFrom').value && tc.range) [$('#tpFrom').value, $('#tpTo').value] = tc.range;
     loadTimePay().catch(fail);
   });
+  $('#tpPrevWeek').addEventListener('click', () => { tc.weekOffset -= 1; loadTimePay().catch(fail); });
+  $('#tpNextWeek').addEventListener('click', () => { tc.weekOffset += 1; loadTimePay().catch(fail); });
   for (const id of ['#tpFrom', '#tpTo']) $(id).addEventListener('change', () => loadTimePay().catch(fail));
   $('#tpAdd').addEventListener('click', () => { tc.adding = tc.adding ? false : true; renderTimePay(); });
   $('#tpSettingsBtn').addEventListener('click', () => { tc.settings = !tc.settings; renderTimePay(); });

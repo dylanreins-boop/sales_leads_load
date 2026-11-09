@@ -10,7 +10,11 @@ const KINDS = { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid
 // Overtime after 40 hours a week by default. Daily overtime (Nevada has it for some workers) is off
 // until an admin sets the hours.
 // Attendance: late or early by more than `grace_minutes` counts; lunch over `lunch_minutes` (plus grace) is long.
-const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'], grace_minutes: 5, lunch_minutes: 30 };
+// Paid weekly, Sunday to Saturday: everyone approves their week when they clock out on `review_day`
+// (Friday), and the week's summary is emailed to `payroll_emails`.
+const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'], grace_minutes: 5, lunch_minutes: 30, review_day: 5, payroll_emails: [] };
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const ISSUES = ['late', 'early', 'long_lunch', 'no_show', 'missed_out'];
 const isTime = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || ''));
 const minutesOf = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -23,7 +27,7 @@ const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const dateOf = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
 const keyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-function createTimeService(db, { users, getShopHours }) {
+function createTimeService(db, { users, getShopHours, mailer = null, brand = {}, publicUrl = '' }) {
   const stmt = (sql) => db.prepare(sql);
 
   // ---- settings ----
@@ -53,6 +57,17 @@ function createTimeService(db, { users, getShopHours }) {
       const v = Number(input[key]);
       if (!(v >= 0 && v <= max)) throw new HttpError(400, what);
       next[key] = v;
+    }
+    if ('review_day' in input) {
+      const d = Number(input.review_day);
+      if (!Number.isInteger(d) || d < 0 || d > 6) throw new HttpError(400, 'Pick the day people approve their week.');
+      next.review_day = d;
+    }
+    if ('payroll_emails' in input) {
+      const list = (Array.isArray(input.payroll_emails) ? input.payroll_emails : String(input.payroll_emails || '').split(/[,;\s]+/)).map((e) => e.trim()).filter(Boolean);
+      const bad = list.find((e) => !isEmail(e));
+      if (bad) throw new HttpError(400, `${bad} isn't an email address.`);
+      next.payroll_emails = [...new Set(list)].slice(0, 10);
     }
     if ('paid_kinds' in input) next.paid_kinds = (input.paid_kinds || []).filter((k) => KINDS[k] && k !== 'unpaid');
     stmt("INSERT INTO settings (key, value) VALUES ('payroll', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
@@ -101,7 +116,40 @@ function createTimeService(db, { users, getShopHours }) {
         return { date: keyOf(from), hours: round2(between(from, to)) };
       }),
       time_off: mine(name),
+      ...weekReview(name, at, Boolean(on || lunch)),
     };
+  }
+
+  // ---- approving your own week ----
+  const weekStartOf = (at) => { const d = new Date(at); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return keyOf(d); };
+  const signoffOf = (name, week) => stmt('SELECT * FROM week_signoffs WHERE name_norm = ? AND week_start = ?').get(norm(name), week);
+  // The day someone approves their week: Friday (the setting), or their last scheduled day if they
+  // don't work that day.
+  function reviewDayFor(name) {
+    const day = getSettings().review_day;
+    const sched = scheduleOf(name);
+    if (!sched || sched[day] || !sched.some(Boolean)) return day;
+    const before = [0, 1, 2, 3, 4, 5, 6].filter((i) => i <= day && sched[i]);
+    return before.length ? before.at(-1) : sched.findLastIndex(Boolean);
+  }
+  function weekReview(name, at, working) {
+    const week = weekStartOf(at);
+    const signed = signoffOf(name, week);
+    const day = reviewDayFor(name);
+    return {
+      week_start: week,
+      week_signed_off_at: signed?.approved_at || null,
+      review_day: DAY_NAMES[day],
+      review_required: working && !signed && new Date(at).getDay() === day,
+    };
+  }
+  function approveWeek(name, { at = new Date() } = {}) {
+    if (!name) throw new HttpError(400, 'Sign in to approve your time.');
+    const s = status(name, at);
+    stmt(`INSERT INTO week_signoffs (name_norm, user_name, week_start, hours, approved_at) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT (name_norm, week_start) DO UPDATE SET hours = excluded.hours, approved_at = excluded.approved_at`)
+      .run(norm(name), name, s.week_start, s.week_hours, new Date(at).toISOString());
+    return status(name, at);
   }
 
   // Clocking in again after lunch is coming back from lunch.
@@ -114,8 +162,21 @@ function createTimeService(db, { users, getShopHours }) {
   }
 
   // Clocking out on lunch ends the day where lunch started (lunch isn't paid).
-  function clockOut(name, { at = new Date(), reason = null } = {}) {
+  // Going home on review day (Friday) takes approving the week first, or with it (approveWeek).
+  function clockOut(name, { at = new Date(), reason = null, approveWeek: approving = false } = {}) {
     closeForgotten(at);
+    if (!reason && !approving) {
+      const r = weekReview(name, at, Boolean(openPunch(name) || lunchPunch(name, at)));
+      if (r.review_required) {
+        const err = new HttpError(409, `Review and approve your week before you clock out on ${r.review_day}.`);
+        err.code = 'week_review';
+        throw err;
+      }
+    }
+    finishClockOut(name, { at, reason });
+    return approving ? approveWeek(name, { at }) : status(name, at);
+  }
+  function finishClockOut(name, { at, reason }) {
     const p = openPunch(name);
     if (!p) {
       const lunch = lunchPunch(name, at);
@@ -420,6 +481,117 @@ function createTimeService(db, { users, getShopHours }) {
     return { days, has_schedule: Boolean(sched?.some(Boolean)) };
   }
 
+  // ---- pay weeks: everyone's sign-off, the admins' email, the admins' approval ----
+  const payWeek = (start) => stmt('SELECT * FROM payroll_weeks WHERE week_start = ?').get(start) || { week_start: start };
+  const savePayWeek = (start, fields) => {
+    const cur = payWeek(start);
+    const next = { ...cur, ...fields };
+    stmt(`INSERT INTO payroll_weeks (week_start, emailed_at, emailed_to, approved_by, approved_at) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT (week_start) DO UPDATE SET emailed_at = excluded.emailed_at, emailed_to = excluded.emailed_to, approved_by = excluded.approved_by, approved_at = excluded.approved_at`)
+      .run(start, next.emailed_at ?? null, next.emailed_to ?? null, next.approved_by ?? null, next.approved_at ?? null);
+  };
+  const weekEnd = (start) => { const d = dateOf(start); d.setDate(d.getDate() + 6); return keyOf(d); };
+  // Only for a period that's exactly one Sunday-to-Saturday week. Who needs to sign off: anyone who
+  // worked that week or was scheduled to.
+  function weekInfo(from, to, rows) {
+    if (dateOf(from).getDay() !== 0 || weekEnd(from) !== to) return null;
+    const signoffs = rows.map((r) => {
+      const s = signoffOf(r.name, from);
+      const worked = r.regular_hours + r.overtime_hours;
+      const expected = worked > 0 || r.days.some((d) => d.schedule && !d.off);
+      return { user_name: r.name, expected, approved_at: s?.approved_at || null, hours: s?.hours ?? null, changed: Boolean(s && Math.abs(s.hours - worked) > 0.02), worked: round2(worked) };
+    }).filter((x) => x.expected || x.approved_at);
+    const w = payWeek(from);
+    return { start: from, end: to, signoffs, all_signed: signoffs.every((x) => x.approved_at), email_ready: Boolean(mailer?.configured), emailed_at: w.emailed_at || null, emailed_to: w.emailed_to ? JSON.parse(w.emailed_to) : [], approved_by: w.approved_by || null, approved_at: w.approved_at || null };
+  }
+
+  function approvePayrollWeek(start, { user } = {}) {
+    if (!isDate(start) || dateOf(start).getDay() !== 0) throw new HttpError(400, 'Pick a week starting on Sunday.');
+    savePayWeek(start, { approved_by: user ?? 'Admin', approved_at: now() });
+    return payroll({ from: start, to: weekEnd(start) });
+  }
+
+  // The week's summary for payroll, as plain text and a CSV.
+  const usd = (c) => (c == null ? 'no rate' : `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  const hrs = (h) => (h ? `${round2(h)} h` : '-');
+  const fmtDay = (key) => dateOf(key).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const fmtAt = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  function weekEmail(start) {
+    const r = payroll({ from: start, to: weekEnd(start) });
+    const w = r.week;
+    const waiting = w.signoffs.filter((x) => !x.approved_at).map((x) => x.user_name);
+    const cols = [['Name', 14], ['Rate', 10], ['Regular', 9], ['Overtime', 9], ['Paid off', 9], ['Total', 9], ['Gross pay', 12], ['Approved their time', 0]];
+    const line = (vals) => vals.map((v, i) => (cols[i][1] ? String(v).padEnd(cols[i][1]) : String(v))).join(' ');
+    const signed = (name) => {
+      const x = w.signoffs.find((s) => s.user_name === name);
+      if (!x) return '-';
+      if (!x.approved_at) return 'NOT YET';
+      return `${fmtAt(x.approved_at)}${x.changed ? ' (hours changed since)' : ''}`;
+    };
+    const t = r.totals;
+    const issues = Object.entries(r.issues).filter(([, n]) => n).map(([k, n]) => `${n} ${{ late: 'late arrival', early: 'left early', long_lunch: 'long lunch', no_show: 'no-show', missed_out: 'forgot to clock out' }[k]}${n === 1 || k === 'early' ? '' : 's'}`);
+    const text = [
+      `Payroll for ${fmtDay(start)} - ${fmtDay(w.end)}`,
+      waiting.length ? `Still waiting on: ${waiting.join(', ')} (hasn't approved their time).` : 'Everyone approved their time.',
+      '',
+      line(cols.map((c) => c[0])),
+      ...r.rows.map((x) => line([x.name, x.rate_cents == null ? '-' : `${usd(x.rate_cents)}/h`, hrs(x.regular_hours), hrs(x.overtime_hours), hrs(x.pto_hours), hrs(x.total_hours), usd(x.gross_cents), signed(x.name)])),
+      line(['Everyone', '', hrs(t.regular_hours), hrs(t.overtime_hours), hrs(t.pto_hours), hrs(t.total_hours), usd(t.gross_cents), '']),
+      '',
+      `Overtime after ${r.settings.ot_weekly_hours} hours a week${r.settings.ot_daily_hours ? ` or ${r.settings.ot_daily_hours} a day` : ''}, at ${r.settings.ot_multiplier}x. Gross pay is before taxes and deductions.`,
+      t.missing_rates ? `${t.missing_rates} ${t.missing_rates === 1 ? 'person has' : 'people have'} no hourly rate, so their pay isn't added in.` : null,
+      issues.length ? `Attendance: ${issues.join(', ')}.` : null,
+      r.pending_corrections.length ? `Timecard corrections still waiting for approval: ${r.pending_corrections.length} (${[...new Set(r.pending_corrections.map((c) => c.user_name))].join(', ')}).` : null,
+      '',
+      'The attached CSV has every clock-in and clock-out. Forward this to payroll once it looks right.',
+      publicUrl ? `Review or approve the week: ${publicUrl}/#time` : null,
+    ].filter((x) => x != null).join('\n');
+    const q = (v) => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
+    const dollars = (c) => (c == null ? '' : (c / 100).toFixed(2));
+    const csv = [
+      ['Name', 'Role', 'Hourly rate', 'Regular hours', 'Overtime hours', 'Paid time off hours', 'Total paid hours', 'Gross pay', 'Approved their time'],
+      ...r.rows.map((x) => [x.name, x.role, dollars(x.rate_cents), x.regular_hours, x.overtime_hours, x.pto_hours, x.total_hours, dollars(x.gross_cents), signed(x.name)]),
+      ['Everyone', '', '', t.regular_hours, t.overtime_hours, t.pto_hours, t.total_hours, dollars(t.gross_cents), ''],
+      [],
+      ['Name', 'Clock in', 'Clock out', 'Hours', 'Note'],
+      ...r.rows.flatMap((x) => x.punches.map((p) => [x.name, fmtAt(p.clock_in), p.clock_out ? fmtAt(p.clock_out) : 'still on', p.hours, [p.out_reason === 'lunch' && 'then lunch', p.auto_closed && 'forgot to clock out', p.note].filter(Boolean).join('; ')])),
+    ].map((l) => l.map(q).join(',')).join('\n');
+    const subject = `Payroll ${fmtDay(start)} - ${fmtDay(w.end)}: ${hrs(t.total_hours)}, ${usd(t.gross_cents)}${waiting.length ? ` (waiting on ${waiting.length})` : ''}`;
+    return { subject, text, csv, week: w };
+  }
+
+  async function emailWeek(start, { at = new Date() } = {}) {
+    if (!isDate(start) || dateOf(start).getDay() !== 0) throw new HttpError(400, 'Pick a week starting on Sunday.');
+    const to = getSettings().payroll_emails;
+    if (!to.length) throw new HttpError(400, 'Add the admins\' email addresses in Overtime & payroll rules first.');
+    if (!mailer?.configured) throw new HttpError(400, 'Email sending isn\'t set up yet. Download the CSV and send it yourself.');
+    const m = weekEmail(start);
+    const attachments = [{ filename: `payroll-${start}-to-${m.week.end}.csv`, content: Buffer.from(m.csv), type: 'text/csv' }];
+    for (const addr of to) await mailer.send({ to: addr, subject: `${brand.name ? `${brand.name}: ` : ''}${m.subject}`, text: m.text, attachments });
+    savePayWeek(start, { emailed_at: new Date(at).toISOString(), emailed_to: JSON.stringify(to) });
+    return { ok: true, sent_to: to };
+  }
+
+  // Each minute: once everyone has approved this week's time, email the summary. If someone never
+  // does, it goes the morning after review day (8 AM) anyway, saying who it's waiting on.
+  async function sendWeeklyDue(at = new Date()) {
+    const settings = getSettings();
+    if (!settings.payroll_emails.length || !mailer?.configured) return false;
+    for (const back of [7, 0]) {
+      const d = new Date(at); d.setDate(d.getDate() - back);
+      const start = weekStartOf(d);
+      if (payWeek(start).emailed_at) continue;
+      const info = payroll({ from: start, to: weekEnd(start), at }).week;
+      if (!info?.signoffs.length) continue;
+      const late = dateOf(start); late.setDate(late.getDate() + settings.review_day + 1); late.setHours(8, 0, 0, 0);
+      if (info.all_signed || at >= late) {
+        await emailWeek(start, { at });
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ---- the admins' Time & Pay numbers for a pay period ----
   function payroll({ from, to, at = new Date() } = {}) {
     if (!isDate(from) || !isDate(to) || to < from) throw new HttpError(400, 'Pick the pay period.');
@@ -506,12 +678,13 @@ function createTimeService(db, { users, getShopHours }) {
       // Every late arrival, early leave, long lunch, no-show and forgotten clock-out, newest first.
       occurrences: rows.flatMap((r) => r.days.flatMap((d) => d.issues.map((i) => ({ user_name: r.name, date: d.date, ...i, schedule: d.schedule, first_in: d.first_in, last_out: d.last_out, lunch_minutes: d.lunch_minutes }))))
         .sort((a, b) => b.date.localeCompare(a.date) || a.user_name.localeCompare(b.user_name)),
+      week: weekInfo(from, to, rows),
       pending_time_off: listOff({ status: 'pending' }),
       pending_corrections: listCorrections({ status: 'pending' }),
     };
   }
 
-  return { listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
+  return { approveWeek, approvePayrollWeek, emailWeek, weekEmail, sendWeeklyDue, listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
 }
 
 module.exports = { createTimeService, TIME_OFF_KINDS: KINDS };

@@ -338,6 +338,24 @@ CREATE TABLE IF NOT EXISTS work_schedules (
   updated_by TEXT,
   updated_at TEXT NOT NULL
 );
+-- Each person approving their own week's time (they're paid weekly, Sunday to Saturday).
+CREATE TABLE IF NOT EXISTS week_signoffs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_norm   TEXT NOT NULL,
+  user_name   TEXT NOT NULL,
+  week_start  TEXT NOT NULL,
+  hours       REAL NOT NULL,
+  approved_at TEXT NOT NULL,
+  UNIQUE (name_norm, week_start)
+);
+-- A pay week: when the summary was emailed to the admins, and when an admin approved it for payroll.
+CREATE TABLE IF NOT EXISTS payroll_weeks (
+  week_start  TEXT PRIMARY KEY,
+  emailed_at  TEXT,
+  emailed_to  TEXT,
+  approved_by TEXT,
+  approved_at TEXT
+);
 CREATE TABLE IF NOT EXISTS pay_rates (
   name_norm  TEXT PRIMARY KEY,
   user_name  TEXT NOT NULL,

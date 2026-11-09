@@ -152,10 +152,9 @@ function tomorrowAtReminderHour() {
 
 // ---------- board ----------
 async function loadLeads() {
+  // The board isn't filtered by the search box; search shows every match in its own dropdown.
   const params = new URLSearchParams();
-  const q = $('#search').value.trim();
   const source = $('#sourceFilter').value;
-  if (q) params.set('q', q);
   const oldParams = new URLSearchParams(params);
   oldParams.set('view', 'old');
   const customerParams = new URLSearchParams(params);
@@ -235,8 +234,6 @@ function renderTabs() {
 // The Excel download matches the tab and filters on screen.
 function exportUrl() {
   const params = new URLSearchParams();
-  const q = $('#search').value.trim();
-  if (q) params.set('q', q);
   if (state.pipeline === 'customers') {
     params.set('view', 'customers');
     if (state.customerVehicle) params.set('vehicle_type', state.customerVehicle);
@@ -1351,6 +1348,114 @@ function applyBrand(brand) {
 }
 
 // ---------- wiring ----------
+// ---------- search: every lead (working, past customers, old and dead) in a dropdown ----------
+const srch = { results: [], total: 0, active: -1, seq: 0, q: '' };
+const searchable = (q) => q.length >= 2 || /\d/.test(q);
+
+// The part that matched, highlighted.
+function hl(text, q) {
+  const str = String(text ?? '');
+  const i = q ? str.toLowerCase().indexOf(q.toLowerCase()) : -1;
+  if (i < 0) return str;
+  return [str.slice(0, i), h('mark', {}, str.slice(i, i + q.length)), str.slice(i + q.length)];
+}
+const joinDots = (parts) => parts.filter(Boolean).flatMap((p, i) => (i ? [' · ', ...[p].flat()] : [p].flat()));
+const srDate = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+
+function searchTag(l) {
+  if (l.status === 'customer') return { cls: 'customer', text: 'Past customer' };
+  if (l.status === 'dead') return { cls: 'dead', text: 'Dead lead' };
+  if (l.status === 'old') return { cls: 'old', text: 'Old lead' };
+  const pipe = state.meta.allPipelines?.find((p) => p.id === l.pipeline)?.label;
+  return { cls: 'active', text: [stageLabel(l.stage), pipe].filter(Boolean).join(' · ') };
+}
+
+function renderSearch() {
+  const box = $('#searchResults');
+  const q = srch.q;
+  fill(box,
+    srch.results.length ? srch.results.map((l, i) => {
+      const tag = searchTag(l);
+      const vehicle = [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ') || l.vehicle_type;
+      let when = `Came in ${srDate(l.received_at)}`;
+      if (l.status === 'customer' && l.jobs_done) when = `${l.jobs_done} job${l.jobs_done === 1 ? '' : 's'}${l.last_pickup_at ? `, last picked up ${srDate(l.last_pickup_at)}` : ''}`;
+      else if (l.last_contacted_at) when += ` · last contact ${srDate(l.last_contacted_at)}`;
+      return h('button', {
+        type: 'button', role: 'option', id: `sr-${l.id}`, class: `search-item ${i === srch.active ? 'active' : ''}`, 'aria-selected': String(i === srch.active),
+        onmousedown: (e) => e.preventDefault(), // keep focus in the box until the click lands
+        onmousemove: () => { if (srch.active !== i) { srch.active = i; markSearch(); } },
+        onclick: () => pickSearch(l),
+      },
+      h('div', { class: 'si-top' }, h('span', { class: 'si-name' }, hl(leadName(l), q)), h('span', { class: `si-tag ${tag.cls}` }, tag.text)),
+      (l.phone || l.email) && h('div', { class: 'si-line' }, joinDots([l.phone && hl(l.phone, q), l.email && hl(l.email, q)])),
+      h('div', { class: 'si-line muted' }, joinDots([vehicle && hl(vehicle, q), l.vehicle_color, when])));
+    }) : h('div', { class: 'search-empty' }, `No leads match “${q}”.`),
+    srch.total > srch.results.length && h('div', { class: 'search-more' }, `Showing ${srch.results.length} of ${srch.total}. Keep typing to narrow it down.`));
+  box.hidden = false;
+  $('#search').setAttribute('aria-expanded', 'true');
+  markSearch();
+}
+
+function markSearch() {
+  $('#searchResults').querySelectorAll('.search-item').forEach((el, i) => {
+    el.classList.toggle('active', i === srch.active);
+    el.setAttribute('aria-selected', String(i === srch.active));
+    if (i === srch.active) el.scrollIntoView({ block: 'nearest' });
+  });
+  const cur = srch.results[srch.active];
+  if (cur) $('#search').setAttribute('aria-activedescendant', `sr-${cur.id}`);
+  else $('#search').removeAttribute('aria-activedescendant');
+}
+
+function closeSearch() {
+  $('#searchResults').hidden = true;
+  $('#search').setAttribute('aria-expanded', 'false');
+  $('#search').removeAttribute('aria-activedescendant');
+}
+
+async function runSearch() {
+  const q = $('#search').value.trim();
+  srch.q = q;
+  if (!searchable(q)) { srch.seq += 1; return closeSearch(); }
+  const seq = ++srch.seq;
+  const r = await api(`/api/leads/search?q=${encodeURIComponent(q)}`);
+  if (seq !== srch.seq || document.activeElement !== $('#search')) return; // a newer search, or they moved on
+  srch.results = r.results;
+  srch.total = r.total;
+  srch.active = r.results.length ? 0 : -1;
+  renderSearch();
+}
+
+// Picking a lead opens it full screen.
+function pickSearch(lead) {
+  closeSearch();
+  $('#search').blur();
+  if (state.section !== 'leads') showSection('leads');
+  openFull(lead.id);
+}
+
+function initSearch() {
+  const input = $('#search');
+  const run = debounce(() => runSearch().catch(fail), 180);
+  input.addEventListener('input', run);
+  input.addEventListener('focus', () => { if (searchable(input.value.trim())) runSearch().catch(fail); });
+  input.addEventListener('blur', () => setTimeout(closeSearch, 120));
+  input.addEventListener('keydown', (e) => {
+    const open = !$('#searchResults').hidden;
+    if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); return closeSearch(); }
+    if (!open || !srch.results.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = srch.results.length;
+      srch.active = (srch.active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+      markSearch();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      pickSearch(srch.results[Math.max(0, srch.active)]);
+    }
+  });
+}
+
 function debounce(fn, ms) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
@@ -1368,7 +1473,7 @@ async function init() {
   initCalendar();
   document.querySelectorAll('.main-nav button').forEach((b) => b.addEventListener('click', () => showSection(b.dataset.section)));
 
-  $('#search').addEventListener('input', debounce(() => loadLeads().catch(fail), 250));
+  initSearch();
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
   $('#syncFb').addEventListener('click', syncFacebook);
   $('#syncGoogle').addEventListener('click', syncGoogle);

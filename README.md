@@ -293,6 +293,15 @@ The tabs on the Leads page are pipelines. Admins open **Pipelines** to:
 
 The pipeline menus on Revenue, Analytics and the Excel export list the pipelines too.
 
+## Search
+
+The search box at the top looks through **every** lead: working leads on every pipeline, past customers, and old
+and dead leads, by name, phone, email or vehicle. Matches drop down as you type (two letters or any digits),
+best first (names that start with what you typed), each with the basics: name, where it is (e.g. "Follow Up 2 ·
+RV Pipeline", "Past customer", "Old lead", "Dead lead"), phone and email, vehicle and color, and when it came in
+or was last contacted. Click one (or use the arrow keys and Enter) to open it full screen. The board itself isn't
+filtered by the search box.
+
 ## Full screen
 
 Click a lead to open it at the side; **double-click** it (or Shift+Enter) to open it full screen, with its sections in
@@ -508,9 +517,19 @@ Tapping it opens **My time**, full screen on every device:
   around a missing tech by surprise. Only days the shop is open count toward the hours. Admins click the
   bar to see the request: their note, when they asked, who approved it, and a button to cancel it.
 
+**Paid weekly (Sunday to Saturday).** On Friday (or their last scheduled day that week, if they're off
+Friday), **Clock out** first shows the week's time, day by day with the total. They tick **My hours are right**
+and **Approve my week & clock out**, or tap **Something's wrong** to ask for a fix first. They can also approve
+early from their Timecard. Once everyone who worked or was scheduled has approved, the admins listed in
+**Payroll rules** get an email: each person's rate, regular, overtime and paid-off hours, total, gross pay and
+when they approved, plus a CSV of every punch, ready to forward to payroll. If someone never approves, it goes
+the next morning at 8 anyway and says who it's waiting on. (Email needs EMAIL_ settings on the server.)
+
 **Time & Pay (admins)** is its own page in the main menu, with a badge for time off waiting on approval:
 
-- Pick the period (this week, last week, this 2 weeks, last 2 weeks, this or last month, or any dates).
+- It opens on the **pay week** (‹ › to go back and forth), or pick this or last month, or any dates.
+- **Pay week** card: who has approved their time (✓ with when, ○ waiting, ⚠ if their hours changed after they
+  approved), **Approve week for payroll**, **Email summary now**, and whether the email has gone out.
 - **Attendance**: set each person's **Work schedule** (the days they work and their start and end times) and
   Time & Pay flags what went wrong in the period: **late arrivals**, **left early**, **long lunches**, **no-shows**
   (scheduled, didn't clock in, no approved time off) and **forgot to clock out**. You see totals for each, a list
@@ -813,6 +832,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead) |
+| GET | `/api/leads/search?q=` | The search box: every lead, best matches first |
 | POST | `/api/leads/:id/restore` | Put an old or dead lead back on its board |
 | GET | `/api/export.xlsx?…same filters…` | Excel download |
 | GET | `/api/jobs?from=&to=` | Jobs on the calendar between two dates |
@@ -847,7 +867,10 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET / PATCH | `/api/time-off?status=pending`, `/api/time-off/:id` | Admins: requests, `{ status: approved\|denied, note }` |
 | GET | `/api/time-off/calendar?from=&to=` | Approved time off for the calendar |
 | GET | `/api/payroll?from=&to=` | Time & Pay for a period (admins) |
-| PUT | `/api/pay-rates`, `/api/payroll/settings` | Hourly rates `{ user_name, rate }` and overtime rules |
+| PUT | `/api/pay-rates`, `/api/payroll/settings` | Hourly rates `{ user_name, rate }` and payroll rules (overtime, `review_day`, `payroll_emails`) |
+| POST | `/api/timecard/approve-week`, `/api/clock/out { approve_week }` | Approve your own week (on Friday, clocking out needs it) |
+| POST | `/api/payroll/weeks/:sunday/approve`, `/api/payroll/weeks/:sunday/email` | Admins: approve a pay week, email its summary now |
+| GET / PUT | `/api/schedules` | Work schedules for attendance |
 | POST / PATCH / DELETE | `/api/time/punches[/:id]` | Admins add, fix or remove clocked time |
 | GET / PATCH | `/api/calls`, `/api/calls/:id`, `/api/calls/:id/review` | Dialer: calls, notes, admin review |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
