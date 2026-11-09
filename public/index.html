@@ -70,6 +70,8 @@
       <button id="winbackBtn" type="button" class="lead-only admin-only">Win-back</button>
       <button id="referralsBtn" type="button" class="lead-only admin-only">Referrals</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
+      <button id="dialerBtn" type="button" class="lead-only dialer-only" hidden>Start calling</button>
+      <button id="callsBtn" type="button" class="admin-only dialer-only" hidden>Calls</button>
       <button id="remindersBtn" type="button" class="primary">
         Reminders <span id="reminderBadge" class="badge" hidden></span>
       </button>
@@ -402,6 +404,9 @@
         </form>
       </section>
 
+      <!-- The dialer (build with CALLS_ENABLED): call from the app, live call notes -->
+      <section id="callSection" class="card-section call-section" hidden></section>
+
       <section class="card-section">
         <h3>Disposition</h3>
         <form id="dispoForm">
@@ -573,6 +578,11 @@
           <input name="alert_phone" type="tel" placeholder="Also text me alerts at (optional)" aria-label="Mobile number for alert texts">
           <button type="submit">Save</button>
         </form>
+        <form id="callPhoneForm" class="inline-form" hidden>
+          <input name="call_phone" type="tel" placeholder="My phone for the dialer" aria-label="My phone for the dialer">
+          <button type="submit">Save</button>
+        </form>
+        <p id="callPhoneHint" class="hint" hidden>The dialer rings this phone first, then connects you to the customer from the shop's number.</p>
       </section>
       <div id="remindersList"></div>
     </div>
@@ -741,6 +751,27 @@
   </aside>
 
   <!-- Import leads (admins): bring in leads from a spreadsheet -->
+  <aside id="callsPanel" class="drawer wide" aria-label="Calls" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Calls</h2>
+        <div class="muted">Every dialer call with its notes. Review them, score them and leave the rep a coaching note.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <form id="callsFilter" class="calls-filter">
+        <select name="period" aria-label="Period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select>
+        <select name="rep" aria-label="Rep"><option value="">Everyone</option></select>
+        <label class="check"><input type="checkbox" name="unreviewed"> Not reviewed yet</label>
+        <label class="check"><input type="checkbox" name="flagged"> Flagged only</label>
+      </form>
+      <div id="callsList" class="calls-list"></div>
+    </div>
+  </aside>
+
+  <div id="dialerBar" class="dialer-bar" hidden role="region" aria-label="Dialer"></div>
+
   <aside id="cardImportPanel" class="drawer wide" aria-label="Import card payments" hidden>
     <div class="drawer-head">
       <div>
@@ -1058,5 +1089,6 @@
   <script src="appearance.js"></script>
   <script src="growth.js"></script>
   <script src="analytics.js"></script>
+  <script src="calls.js"></script>
 </body>
 </html>

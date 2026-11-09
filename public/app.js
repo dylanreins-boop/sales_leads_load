@@ -523,7 +523,7 @@ async function restoreLead(id) {
 
 // ---------- lead drawer ----------
 function showPanel(panel) {
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -578,6 +578,7 @@ function renderLead(lead) {
     renderTexts(lead);
     renderBookingLinks(lead);
     renderReferral(lead);
+    if (state.meta.callsEnabled) renderCalls(lead).catch(() => {});
   }
 
   const stageSelect = $('#stageSelect');
@@ -866,6 +867,7 @@ async function saveDisposition(e) {
     if (email?.status === 'sent') toast(`Follow-up email sent to ${email.to_email}`);
     else if (email) toast(`Follow-up email not sent: ${email.error}`, 'error');
     renderLead(lead);
+    if (state.meta.callsEnabled) dialerAfterSave(lead);
     await Promise.all([loadLeads(), loadReminders()]);
   } catch (err) { fail(err); }
 }
@@ -1392,6 +1394,7 @@ async function init() {
   initImport();
   initGrowth();
   initAnalytics();
+  initCalls();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');

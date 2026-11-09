@@ -409,8 +409,24 @@ function renderAnalytics(d) {
     group('The team', null, repsCard),
     group('Follow-up and marketing', 'What was sent and made during the period.', followGroup),
     group('The shop and the money', null, shopGroup),
+    d.calls && group('Calls', 'Calls made from the dialer in the period. Reached means the customer picked up and talked.', callsGroup(d.calls)),
     group('Work time', 'From the shop\'s work timer (Start work, Pause, Finished on each job). Jobs count when their work was finished in the period; booked is the work time set when the job was booked.', laborGroup(d.labor)));
   drawCharts();
+}
+
+function callsGroup(c) {
+  if (!c.calls) return h('div', { class: 'an-card' }, h('p', { class: 'an-empty' }, 'No dialer calls in this period.'));
+  const mins = (s) => (s == null ? '–' : s < 60 ? `${Math.round(s)} sec` : `${Math.round(s / 60)} min`);
+  return h('div', { class: 'an-grid' },
+    h('div', { style: 'grid-column: 1 / -1' }, h('div', { class: 'an-stats' },
+      tile('Calls', anNum(c.calls)),
+      tile('Reached', anNum(c.connected), { sub: `${anPct(c.connected / c.calls)} of calls` }),
+      tile('Talk time', mins(c.talk_seconds), { sub: c.connected ? `${mins(c.talk_seconds / c.connected)} per call reached` : null }),
+      tile('Reviewed', anNum(c.reviewed), { sub: `${anPct(c.reviewed / c.calls)} of calls` }))),
+    h('div', { style: 'grid-column: 1 / -1' }, card('By rep', 'Booked counts calls whose notes say a date was set.',
+      table([{ label: 'Rep', num: false }, 'Calls', 'Reached', 'Reach rate', 'Talk time', 'Booked', 'Flagged', 'Average score'],
+        c.reps.map((r) => [r.name, r.calls, r.connected, anPct(r.connected / r.calls), mins(r.talk_seconds), r.booked, r.flagged, r.avg_score == null ? '–' : `${r.avg_score.toFixed(1)} / 5`])))),
+    card('What calls missed', 'From the call notes: things the rep didn\'t do.', hbars(c.flags.map((f) => ({ label: f.label, value: f.n })))));
 }
 
 function laborGroup(l) {

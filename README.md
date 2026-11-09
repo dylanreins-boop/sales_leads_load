@@ -16,6 +16,7 @@ It needs no npm packages: just Node.js 22.13 or newer. Data is stored in SQLite 
 
 ```bash
 cp .env.example .env      # then edit it
+npm install               # two packages, used only by the dialer's AI call notes
 npm start                 # http://localhost:3000
 npm test                  # runs the test suite
 ```
@@ -457,6 +458,42 @@ pick a different time; once they do, the suggestion becomes a "Use" button. Pain
 lead's Color field, grouped into black, white, silver/gray and so on. Analytics → Work time shows the
 results by paint color and **What booking suggestions use now**.
 
+## The dialer (the build with CALLS_ENABLED)
+
+The app comes in two builds from the same code: **without the dialer** (the default) and **with the
+dialer**, turned on with `CALLS_ENABLED=1`. With it off, none of the dialer exists: no buttons, no
+screens, no routes.
+
+**Calling.** On a lead, **Call** rings the rep's own phone (set under Reminders → My phone for the
+dialer); when they pick up, Twilio calls the customer from the shop's number. The customer first hears
+"Hi, this call may be transcribed for quality. Connecting you now." (`CALL_NOTICE`), then they're
+connected. Calls only go out during calling hours (`CALL_HOURS`, default 8 AM to 9 PM) and never to
+leads marked do-not-call or wrong number.
+
+**No recordings.** What each side says is written out live (Twilio real-time transcription). No
+audio is recorded or kept, by Twilio or the app. The lead shows the conversation as it happens.
+
+**Call notes.** When the call ends, the notes are written for the lead: a short summary, what the
+customer wants, the price given, their concerns, the next step, the outcome, and flags for anything
+missed (no price given, no next step, booking link not offered, customer upset, asked not to call…),
+plus a coaching tip. With `ANTHROPIC_API_KEY` set, Claude writes the notes; without it (or if Claude
+can't be reached), the app writes basic notes from the words used. **Use as the call outcome** fills
+in the disposition and notes for the rep to check and save.
+
+**Start calling** works through the call list: call-backs that are due first, then new leads nobody
+has reached (leads whose best time is now go first). After the rep saves the outcome, the next call
+starts in 5 seconds; they can pause, skip or stop.
+
+**Reviewing calls.** Admins get **Calls**: every call with its notes, filterable by rep, flagged, or
+not reviewed yet. Open one to read the notes and what was said, give it a score (1–5) and a coaching
+note; the rep sees the note on the lead. Analytics adds a Calls section: calls, reached, talk time,
+bookings, flags and average score per rep.
+
+**Setting it up.** Twilio (the same account as texting), `PUBLIC_URL` (Twilio has to reach the app),
+`CALLS_ENABLED=1`, and an `ANTHROPIC_API_KEY` for AI notes. Each rep adds their phone for the dialer.
+Before turning it on, have your attorney confirm the transcription notice covers Nevada and the
+states your customers call from; it plays on every call.
+
 ## Analytics
 
 Admins get an **Analytics** tab with every number the app keeps, for one date range (last 7 or 30 days,
@@ -727,6 +764,8 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST | `/api/jobs/:id/work/start` · `/pause` · `/finish` | The shop's work timer |
 | POST / PATCH / DELETE | `/api/jobs/:id/work`, `/api/work/:id` | Admins add, fix or remove work time |
 | GET | `/api/estimate?lead_id=&services=` or `?job_id=` | Suggested work time and why |
+| POST | `/api/leads/:id/calls` | Dialer: start a call (CALLS_ENABLED) |
+| GET / PATCH | `/api/calls`, `/api/calls/:id`, `/api/calls/:id/review` | Dialer: calls, notes, admin review |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
 | GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
 | POST | `/webhooks/twilio/voice` | Incoming calls (forward, then text back if missed) |
@@ -762,6 +801,9 @@ src/analytics.js     the Analytics report; public/analytics.js its page and char
 src/worktime.js      the shop's work timer
 src/estimates.js     work time learned from finished jobs (vehicle type, paint color, services)
 src/cardimport.js    card payments from a Talech / Elavon export, matched to jobs
+src/calls.js         the dialer (CALLS_ENABLED): calls, live transcription, review
+src/callsummary.js   call notes with Claude (or basic notes without a key)
+public/calls.js      the dialer's screens
 src/google-lsa.js    Google Local Services leads (Google Ads API)
 public/growth.js     referral links and the Referrals panel
 src/import.js        importing leads from a spreadsheet; src/sheets.js reads .xlsx and CSV
