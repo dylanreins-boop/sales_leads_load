@@ -18,6 +18,7 @@ const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { createPipelineService } = require('./src/pipelines');
+const { createTimeService, TIME_OFF_KINDS } = require('./src/timeclock');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
 const { leadsWorkbook } = require('./src/export');
@@ -219,6 +220,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const estimates = createEstimateService(db, { getShopHours: jobs.getShopHours });
   jobs.setEstimator((lead, services) => estimates.suggest({ ...lead, services }).hours);
   const analytics = createAnalyticsService(db, { commissions, payments, jobs, users, estimates });
+  const timeClock = createTimeService(db, { users, getShopHours: jobs.getShopHours });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -295,6 +297,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     allPipelines: PIPELINES.map(({ id, label, types }) => ({ id, label, types })),
     bookingServices: BOOKING_SERVICES,
     heardAboutOptions: HEARD_ABOUT_OPTIONS,
+    timeOffKinds: TIME_OFF_KINDS,
   }), { roles: ANY_LOGIN });
   const leadFilters = (query) => ({
     q: query.get('q'),
@@ -826,6 +829,24 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   }), { roles: ADMIN });
   route('PUT', '/api/pipelines', ({ body, actor }) => pipelines.save(body.pipelines, actor), { roles: ADMIN });
 
+  // ---- Time clock, time off and pay ----
+  // Everyone clocks in and out and asks for time off; admins approve it, set hourly rates and see the
+  // hours and pay for a period on the Time & Pay page.
+  route('GET', '/api/clock', ({ actor }) => timeClock.status(actor.user), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/in', ({ actor }) => timeClock.clockIn(actor.user), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/out', ({ actor }) => timeClock.clockOut(actor.user), { roles: ANY_LOGIN });
+  route('POST', '/api/time-off', ({ body, actor }) => timeClock.requestOff(actor.user, body), { roles: ANY_LOGIN });
+  route('DELETE', '/api/time-off/:id', ({ params, actor }) => timeClock.cancelOff(Number(params.id), actor), { roles: ANY_LOGIN });
+  route('GET', '/api/time-off/calendar', ({ query }) => timeClock.calendarOff({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
+  route('GET', '/api/time-off', ({ query }) => timeClock.listOff({ status: query.get('status') }), { roles: ADMIN });
+  route('PATCH', '/api/time-off/:id', ({ params, body, actor }) => timeClock.decideOff(Number(params.id), body, actor), { roles: ADMIN });
+  route('GET', '/api/payroll', ({ query }) => timeClock.payroll({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
+  route('PUT', '/api/payroll/settings', ({ body }) => timeClock.saveSettings(body), { roles: ADMIN });
+  route('PUT', '/api/pay-rates', ({ body, actor }) => timeClock.setRate(body.user_name, body.rate, actor), { roles: ADMIN });
+  route('POST', '/api/time/punches', ({ body, actor }) => timeClock.addPunch(body, actor), { roles: ADMIN });
+  route('PATCH', '/api/time/punches/:id', ({ params, body, actor }) => timeClock.editPunch(Number(params.id), body, actor), { roles: ADMIN });
+  route('DELETE', '/api/time/punches/:id', ({ params }) => timeClock.removePunch(Number(params.id)), { roles: ADMIN });
+
   // ---- Analytics (admin): every number the app tracks, for a date range ----
   route('GET', '/api/analytics', ({ query }) => {
     const report = analytics.report({ from: query.get('from'), to: query.get('to'), pipeline: query.get('pipeline') });
@@ -931,7 +952,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // Move two-week-old leads off the boards now and every hour.
   leads.archiveOldLeads();
   workTime.stopForgotten();
-  const sweep = setInterval(() => { leads.archiveOldLeads(); workTime.stopForgotten(); }, 3600000);
+  const sweep = setInterval(() => { leads.archiveOldLeads(); workTime.stopForgotten(); timeClock.closeForgotten(); }, 3600000);
   sweep.unref();
   // Review-request emails go out every 15 minutes once they're due.
   const sendReviews = () => reviews.sendDue().catch((err) => console.error('Review requests failed:', err.message));

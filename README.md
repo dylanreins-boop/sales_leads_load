@@ -398,7 +398,7 @@ The word after the password sets what that person can do:
 |---|---|---|
 | `admin` | Everything: both pipelines, Old & Dead Leads, the shop calendar | Everything sales and shop can, plus the **Updates** feed, Excel export, the follow-up email template and Facebook sync |
 | `sales` | The lead pipelines, their call reminders, and the shop calendar (view only) | Work leads, log calls, edit lead info, and **book** jobs (the booking time goes on the shop calendar). On the calendar they can open any job to see times, status, notes, the checklist and photos, but can't change anything. No export or settings |
-| `shop` | The job calendar only | Open jobs, change status, times and notes, tick the checklist, add photos |
+| `shop` | The job calendar only | Open jobs, change status, times and notes, tick the checklist, add photos, clock in and out, ask for time off |
 
 A login with no level is `sales`. The single shared `APP_USER`/`APP_PASSWORD` login is `admin`, and with no
 logins set at all, everyone is treated as `admin`.
@@ -479,6 +479,33 @@ suggestion and why ("SUVs here average 5.8 hours · Black paint runs 12% longer"
 pick a different time; once they do, the suggestion becomes a "Use" button. Paint color comes from the
 lead's Color field, grouped into black, white, silver/gray and so on. Analytics → Work time shows the
 results by paint color and **What booking suggestions use now**.
+
+## Time clock, time off and pay
+
+Everyone with a login (sales, shop, and admins if they like) clocks in and out with the **Clock in** button
+at the top of the app. While they're on, it shows a green dot and how long they've been on. Tapping it opens
+**My time**: clock in or out, hours today and this week, **Ask for time off** (first and last day, kind:
+vacation, sick, personal or unpaid, hours a day, a note), and their requests with the answer.
+
+- Someone who forgets to clock out is clocked out at the end of the shop day (or a normal day's hours after
+  they clocked in, if that was later), never past midnight, and the time is flagged **to check**.
+- Time off waits for an admin. Approved time off shows on the shop calendar ("Mike off") so nobody books
+  around a missing tech by surprise. Only days the shop is open count toward the hours.
+
+**Time & Pay (admins)** is its own page in the main menu, with a badge for time off waiting on approval:
+
+- Pick the period (this week, last week, this 2 weeks, last 2 weeks, this or last month, or any dates).
+- **Approve** or **Deny** time off (a denial can carry a note the person sees).
+- Totals: hours, regular, overtime, paid time off, and gross pay for everyone.
+- One row per person: the **hourly rate** (type it in and press Enter), regular, overtime and paid-off hours,
+  total, and gross pay. Open a row to see every punch, **Edit** or **Delete** one, or **Add time** someone
+  forgot to clock.
+- **Overtime & time off rules**: overtime after 40 hours a week (Sunday to Saturday) at 1.5× by default; an
+  optional daily overtime limit (Nevada has daily overtime for some hourly workers: check with your
+  accountant); which kinds of time off are paid (vacation and sick by default, at the regular rate).
+- **Download CSV**: the totals per person plus every punch, for whoever runs payroll.
+
+Gross pay is before taxes and deductions. Shop logins never see rates or pay.
 
 ## The dialer (the build with CALLS_ENABLED)
 
@@ -788,6 +815,13 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/estimate?lead_id=&services=` or `?job_id=` | Suggested work time and why |
 | POST | `/api/leads/:id/calls` | Dialer: start a call (CALLS_ENABLED) |
 | GET / PUT | `/api/pipelines` | The pipelines (admins) |
+| GET / POST | `/api/clock`, `/api/clock/in`, `/api/clock/out` | The time clock for whoever is signed in |
+| POST / DELETE | `/api/time-off[/:id]` | Ask for time off `{ start_date, end_date, kind, hours_per_day, note }` / cancel it |
+| GET / PATCH | `/api/time-off?status=pending`, `/api/time-off/:id` | Admins: requests, `{ status: approved\|denied, note }` |
+| GET | `/api/time-off/calendar?from=&to=` | Approved time off for the calendar |
+| GET | `/api/payroll?from=&to=` | Time & Pay for a period (admins) |
+| PUT | `/api/pay-rates`, `/api/payroll/settings` | Hourly rates `{ user_name, rate }` and overtime rules |
+| POST / PATCH / DELETE | `/api/time/punches[/:id]` | Admins add, fix or remove clocked time |
 | GET / PATCH | `/api/calls`, `/api/calls/:id`, `/api/calls/:id/review` | Dialer: calls, notes, admin review |
 | GET / POST | `/api/campaigns` | Win-back campaigns |
 | GET / POST | `/api/public/referral/:code` | The public referral form (`/r/:code`) |
@@ -826,6 +860,7 @@ src/estimates.js     work time learned from finished jobs (vehicle type, paint c
 src/cardimport.js    card payments from a Talech / Elavon export, matched to jobs
 src/calls.js         the dialer (CALLS_ENABLED): calls, live transcription, review
 src/pipelines.js     the pipelines admins set up; public/pipelines.js its screen
+src/timeclock.js     time clock, time off, hourly rates and Time & Pay; public/timeclock.js its screens
 src/callsummary.js   call notes with Claude (or basic notes without a key)
 public/calls.js      the dialer's screens
 src/google-lsa.js    Google Local Services leads (Google Ads API)

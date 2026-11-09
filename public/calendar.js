@@ -55,6 +55,19 @@ function title() {
   return cal.anchor.toLocaleDateString([], { month: 'long', year: 'numeric' });
 }
 
+// Who's off on a given day (approved time off), as small tags: "Mike off · Vacation".
+function offOn(day) {
+  const key = ShopTime.dayKey(day);
+  return (cal.off || []).filter((r) => r.start_date <= key && r.end_date >= key);
+}
+function offTags(day, { long = false } = {}) {
+  const list = offOn(day);
+  if (!list.length) return null;
+  return h('div', { class: 'off-tags' }, ...list.map((r) => h('span', {
+    class: `off-tag kind-${r.kind}`, title: `${r.user_name} is off: ${r.kind_label}${r.hours_per_day ? ` (${r.hours_per_day} hrs)` : ''}`,
+  }, long ? `${r.user_name} off · ${r.kind_label}` : `${r.user_name} off`)));
+}
+
 // Jobs on a given day, and where that day falls in each job (drop-off, middle, pick-up).
 function jobsOn(day) {
   const start = startOfDay(day);
@@ -199,11 +212,14 @@ function warnShopTime(result) {
 async function loadCalendar() {
   const { from, to } = range();
   const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
-  const [jobs, unscheduled, sheet] = await Promise.all([
+  const days = new URLSearchParams({ from: ShopTime.dayKey(from), to: ShopTime.dayKey(to) });
+  const [jobs, unscheduled, sheet, off] = await Promise.all([
     api(`/api/jobs?${params}`),
     isAdmin() ? api('/api/jobs/unscheduled') : Promise.resolve([]),
     cal.view === 'sheet' ? api(`/api/jobs/day-sheet?date=${ShopTime.dayKey(cal.anchor)}`) : null,
+    api(`/api/time-off/calendar?${days}`).catch(() => []),
   ]);
+  cal.off = off;
   cal.jobs = jobs;
   cal.sheet = sheet;
   cal.unscheduled = unscheduled;
@@ -267,6 +283,7 @@ function renderMonth(body) {
     h('div', { class: 'cal-cell-top' },
       h('button', { type: 'button', class: 'cal-date', title: 'Show this week', onclick: () => { cal.anchor = day; setView('week'); } }, day.getDate()),
       loadTag(day, entries)),
+    offTags(day),
     h('div', { class: 'cal-chips' }, ...shown.map(chip),
       entries.length > shown.length && h('button', {
         type: 'button', class: 'cal-more', onclick: () => { cal.anchor = day; setView('week'); },
@@ -322,6 +339,7 @@ function renderWeek(body) {
     return h('section', { class: `week-col ${isOpen(day) ? '' : 'weekend'} ${sameDay(day, today) ? 'today' : ''}` },
       h('header', { class: 'week-head' }, h('span', { class: 'week-dow' }, dayName(day)), h('span', { class: 'week-date' }, day.getDate()), loadTag(day, entries)),
       isOpen(day) && h('div', { class: 'week-load' }, loadBar(booked)),
+      offTags(day, { long: true }),
       h('div', { class: 'week-jobs' }, entries.length ? entries.map((e) => jobCard(e))
         : h('div', { class: 'week-empty' }, isOpen(day) ? 'No jobs' : 'Closed')));
   })));
@@ -333,7 +351,7 @@ function renderList(body) {
   const days = [];
   for (let d = new Date(from); d < to; d = addDays(d, 1)) {
     const entries = jobsOn(d);
-    if (entries.length || sameDay(d, today)) days.push({ day: new Date(d), entries });
+    if (entries.length || offOn(d).length || sameDay(d, today)) days.push({ day: new Date(d), entries });
   }
   if (!days.length) {
     body.replaceChildren(h('p', { class: 'cal-empty' }, 'No jobs this month. Jobs show up here when a lead is booked.'));
@@ -341,6 +359,7 @@ function renderList(body) {
   }
   body.replaceChildren(h('div', { class: 'cal-list' }, ...days.map(({ day, entries }) => h('section', { class: `list-day ${sameDay(day, today) ? 'today' : ''}`, id: sameDay(day, today) ? 'calToday' : null },
     h('h3', { class: 'list-day-head' }, longDate(day), sameDay(day, today) && h('span', { class: 'today-tag' }, 'Today'), loadTag(day, entries)),
+    offTags(day, { long: true }),
     entries.length ? h('div', { class: 'list-jobs' }, ...entries.map((e) => jobCard(e))) : h('p', { class: 'muted' }, 'No jobs today.')))));
   // Jump to today inside the calendar. On phones the whole page scrolls instead, and jumping would push
   // the header and month buttons off the top, so it starts from the top there.

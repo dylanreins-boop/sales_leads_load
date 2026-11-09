@@ -277,6 +277,48 @@ CREATE TABLE IF NOT EXISTS call_lines (
 );
 CREATE INDEX IF NOT EXISTS call_lines_call ON call_lines (call_id);
 
+-- The time clock: one row per stretch on the clock (clock in -> clock out).
+CREATE TABLE IF NOT EXISTS time_punches (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_norm   TEXT NOT NULL,
+  user_name   TEXT NOT NULL,
+  clock_in    TEXT NOT NULL,
+  clock_out   TEXT,                              -- null while on the clock
+  auto_closed INTEGER NOT NULL DEFAULT 0,        -- left on overnight; closed at the end of the shop's day
+  note        TEXT,
+  edited_by   TEXT,
+  edited_at   TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS time_punches_who ON time_punches (name_norm, clock_in);
+
+-- Time off people ask for; admins approve or deny it.
+CREATE TABLE IF NOT EXISTS time_off (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_norm     TEXT NOT NULL,
+  user_name     TEXT NOT NULL,
+  start_date    TEXT NOT NULL,                   -- YYYY-MM-DD
+  end_date      TEXT NOT NULL,                   -- YYYY-MM-DD, the last day off
+  hours_per_day REAL NOT NULL,
+  kind          TEXT NOT NULL,                   -- vacation | sick | personal | unpaid
+  note          TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending', -- pending | approved | denied | cancelled
+  decided_by    TEXT,
+  decided_at    TEXT,
+  decision_note TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS time_off_dates ON time_off (start_date, end_date);
+
+-- Hourly pay rates, set by admins.
+CREATE TABLE IF NOT EXISTS pay_rates (
+  name_norm  TEXT PRIMARY KEY,
+  user_name  TEXT NOT NULL,
+  cents      INTEGER NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS lsa_seen (
   lsa_id   TEXT PRIMARY KEY,
   lead_id  INTEGER,

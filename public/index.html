@@ -38,7 +38,11 @@
       <button type="button" data-section="commissions">Commissions</button>
       <button type="button" data-section="revenue" class="admin-only">Revenue</button>
       <button type="button" data-section="analytics" class="admin-only">Analytics</button>
+      <button type="button" data-section="time" class="admin-only">Time &amp; Pay</button>
     </nav>
+    <button type="button" id="clockBtn" class="clock-pill" hidden aria-haspopup="dialog">
+      <span class="clock-dot" aria-hidden="true"></span><span id="clockLabel">Clock in</span>
+    </button>
     <span id="currentUser" class="muted" hidden></span>
     <button type="button" id="appearanceBtn" class="link-btn">Appearance</button>
     <button type="button" id="signOutBtn" class="link-btn" hidden>Sign out</button>
@@ -209,6 +213,34 @@
     </div>
     <p id="anRange" class="muted rev-note"></p>
     <div id="anBody" class="an-body"></div>
+  </section>
+
+  <!-- Time & Pay (admins): hours from the time clock, time off and gross pay for a pay period -->
+  <section id="timeSection" class="section time-pay" aria-labelledby="tpTitle" hidden>
+    <div class="rev-toolbar">
+      <h2 id="tpTitle" class="rev-title">Time &amp; Pay</h2>
+      <div class="rev-controls">
+        <select id="tpPeriod" aria-label="Pay period">
+          <option value="week">This week</option>
+          <option value="lastweek">Last week</option>
+          <option value="two" selected>This 2 weeks</option>
+          <option value="lasttwo">Last 2 weeks</option>
+          <option value="month">This month</option>
+          <option value="lastmonth">Last month</option>
+          <option value="custom">Pick dates…</option>
+        </select>
+        <span id="tpCustom" class="an-custom" hidden>
+          <input type="date" id="tpFrom" aria-label="From">
+          <span class="muted">to</span>
+          <input type="date" id="tpTo" aria-label="To">
+        </span>
+        <button type="button" id="tpAdd">Add time</button>
+        <button type="button" id="tpSettingsBtn">Overtime &amp; time off rules</button>
+        <button type="button" id="tpExport">Download CSV</button>
+      </div>
+    </div>
+    <p id="tpRange" class="muted rev-note"></p>
+    <div id="tpBody" class="tp-body"></div>
   </section>
 
   <!-- Revenue (admins): job amounts added up by day, week, month and year to date -->
@@ -762,6 +794,17 @@
     <div class="drawer-body" id="pipelinesBody"></div>
   </aside>
 
+  <aside id="timePanel" class="drawer" aria-label="My time" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>My time</h2>
+        <div class="muted" id="timeWho"></div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body" id="timeBody"></div>
+  </aside>
+
   <aside id="callsPanel" class="drawer wide" aria-label="Calls" hidden>
     <div class="drawer-head">
       <div>
@@ -1102,5 +1145,6 @@
   <script src="analytics.js"></script>
   <script src="calls.js"></script>
   <script src="pipelines.js"></script>
+  <script src="timeclock.js"></script>
 </body>
 </html>

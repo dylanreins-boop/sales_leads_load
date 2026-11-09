@@ -187,7 +187,8 @@ function showSection(name) {
   $('#revenueSection').hidden = section !== 'revenue';
   $('#analyticsSection').hidden = section !== 'analytics';
   $('#commissionsSection').hidden = section !== 'commissions';
-  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue', analytics: 'Analytics', commissions: 'Commissions' }[section] || 'Lead Pipeline';
+  $('#timeSection').hidden = section !== 'time';
+  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue', analytics: 'Analytics', commissions: 'Commissions', time: 'Time & Pay' }[section] || 'Lead Pipeline';
   document.querySelectorAll('.main-nav button').forEach((b) => {
     if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -197,6 +198,7 @@ function showSection(name) {
   else if (section === 'revenue') loadRevenue().catch(fail);
   else if (section === 'analytics') loadAnalytics().catch(fail);
   else if (section === 'commissions') loadCommissions().catch(fail);
+  else if (section === 'time') loadTimePay().catch(fail);
   else renderBoard();
 }
 
@@ -571,7 +573,7 @@ function setLeadFull(on) {
 
 function showPanel(panel) {
   if (panel !== $('#drawer')) setLeadFull(false);
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#timePanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -1451,6 +1453,7 @@ async function init() {
   initAnalytics();
   initCalls();
   initPipelines();
+  initTimeClock();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');
@@ -1460,7 +1463,7 @@ async function init() {
   }
   await Promise.all([loadLeads(), loadReminders()]);
   const linked = location.hash.slice(1);
-  showSection(linked === 'calendar' || (isAdmin() && ['revenue', 'analytics'].includes(linked)) ? linked : 'leads');
+  showSection(linked === 'calendar' || (isAdmin() && ['revenue', 'analytics', 'time'].includes(linked)) ? linked : 'leads');
   // Opened from a phone alert: /?lead=12 opens that lead.
   const fromAlert = Number(new URLSearchParams(location.search).get('lead'));
   if (fromAlert) {
