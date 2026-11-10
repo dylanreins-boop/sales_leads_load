@@ -101,11 +101,7 @@ module.exports = {
     hours: process.env.CALL_HOURS || '8-21',
   },
 
-  // Card deposits on online bookings (Stripe Checkout). Without a key, customers book and pay the deposit later.
-  stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
-  },
+
 
   // New Facebook and website leads ping the sales team; if nobody has called within this many
   // minutes, the admins get pinged too.

@@ -251,7 +251,7 @@ function initAlerts() {
 const linkUrl = (l) => `${location.origin}/book/${l.token}`;
 function linkStatus(l) {
   if (l.cancelled_at) return ['Turned off', 'muted'];
-  if (l.job_id) return [`Booked online ${fmtDateTime(l.booked_at)}${l.deposit_paid_at ? ' · deposit paid by card' : ''}`, 'ok'];
+  if (l.job_id) return [`Booked online ${fmtDateTime(l.booked_at)}`, 'ok'];
   if (new Date(l.expires_at) < new Date()) return ['Expired', 'muted'];
   return [`Waiting for the customer · works until ${new Date(l.expires_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}`, ''];
 }

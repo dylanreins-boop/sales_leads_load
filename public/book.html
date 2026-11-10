@@ -98,7 +98,7 @@
         el('dt', {}, 'Time in the shop'), el('dd', {}, `About ${data.work_label}`),
         el('dt', {}, 'Price'), el('dd', { class: 'price' }, money(data.amount_cents)),
         data.deposit_cents > 0 && el('dt', {}, 'Deposit'),
-        data.deposit_cents > 0 && el('dd', {}, `${money(data.deposit_cents)}${data.deposit_paid ? ' (paid, thank you)' : ' to hold your day'}`));
+        data.deposit_cents > 0 && el('dd', {}, `${money(data.deposit_cents)}${data.deposit_paid ? ' (paid, thank you)' : ' to hold your day, paid at the shop'}`));
     }
 
     // Open days grouped by week: "Week of Nov 9".
@@ -134,14 +134,11 @@
         return;
       }
       if (data.status === 'booked') {
-        const paid = new URLSearchParams(location.search).has('paid') && data.deposit_paid;
         fill(card,
           el('div', { class: 'done' }, el('div', { class: 'check', 'aria-hidden': 'true' }, '✓'), el('h1', {}, 'You\'re booked!'),
-            data.booked && el('p', {}, `Drop-off: ${data.booked.drop_off}`, el('br'), `Expected pick-up: ${data.booked.pick_up}`),
-            paid && el('p', {}, 'Your deposit is paid. Thank you!')),
+            data.booked && el('p', {}, `Drop-off: ${data.booked.drop_off}`, el('br'), `Expected pick-up: ${data.booked.pick_up}`)),
           summary(),
           error && el('p', { class: 'book-error', role: 'alert' }, error),
-          data.pay_online && el('button', { type: 'button', class: 'primary go', onclick: pay }, `Pay your ${money(data.deposit_cents)} deposit by card`),
           el('p', { class: 'muted' }, 'We sent your confirmation by text or email. Need to change the day? Just call or text us.'));
         return;
       }
@@ -152,16 +149,14 @@
         data.days.length ? dayPicker() : el('p', {}, 'We\'re fully booked for the next few weeks. Call or text us and we\'ll fit you in.'),
         picked && el('div', { class: 'choice' }, `Drop-off ${when(picked.drop_off)}`, el('br'), `Expected pick-up ${when(picked.pick_up)}`),
         error && el('p', { class: 'book-error', role: 'alert' }, error),
-        picked && el('button', { type: 'button', id: 'go', class: 'primary go', onclick: book },
-          data.pay_online ? `Book it and pay the ${money(data.deposit_cents)} deposit` : 'Book this day'));
+        picked && el('button', { type: 'button', id: 'go', class: 'primary go', onclick: book }, 'Book this day'));
     }
 
     async function book(e) {
       e.target.disabled = true;
       e.target.textContent = 'Booking…';
       try {
-        const result = await call('POST', `/api/public/booking/${token}`, { date: picked.date });
-        if (result.redirect) { location.href = result.redirect; return; }
+        await call('POST', `/api/public/booking/${token}`, { date: picked.date });
         await load();
       } catch (err) {
         await load().catch(() => {});
@@ -169,16 +164,8 @@
       }
     }
 
-    async function pay(e) {
-      e.target.disabled = true;
-      try {
-        location.href = (await call('POST', `/api/public/booking/${token}/pay`)).redirect;
-      } catch (err) { render(err.message); }
-    }
-
     async function load() {
-      const paid = new URLSearchParams(location.search).get('paid');
-      data = await call('GET', `/api/public/booking/${token}${paid ? `?paid=${encodeURIComponent(paid)}` : ''}`);
+      data = await call('GET', `/api/public/booking/${token}`);
       if (picked && !data.days.some((d) => d.date === picked.date)) picked = null;
       render();
     }

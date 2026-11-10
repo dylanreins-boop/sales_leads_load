@@ -458,8 +458,8 @@ account. Anyone can also enter a mobile number to get alerts by text (with Twili
 From a lead (usually right after a quote), **Send a booking link** by text or email, or copy it. The
 customer's page shows the price, the 10% deposit, and only the days that still have room in the shop
 under the hours-per-day rule. Picking a day books the job on the calendar for that rep (their booking and
-their commission) and sends the confirmation. With `STRIPE_SECRET_KEY` set, the customer then pays the
-deposit on Stripe's payment page and it's recorded on the job; without it, they pay at drop-off. **Preview**
+their commission) and sends the confirmation. The deposit is paid at the shop on its own card machine,
+and recorded on the job by hand like every other payment (the app takes no payments itself). **Preview**
 shows the rep what the customer sees. Links work for 30 days and can be turned off.
 
 ## Work timer
@@ -621,7 +621,7 @@ shows the change from the period just before.
   vehicle types.
 - **The team:** per person, leads worked, calls logged, texts, emails, quotes, bookings, close rate,
   revenue, commission and how fast they respond.
-- **Follow-up and marketing:** quotes and follow-ups, online booking links and card deposits, texts and
+- **Follow-up and marketing:** quotes and follow-ups, online booking links, texts and
   reply rate, missed calls, emails, win-back campaigns, referrals and partners.
 - **The shop and the money:** drop-offs, pick-ups, days in the shop, how full the shop's hours were,
   sign-offs, photos, reminders and review requests; deposits, payments, refunds, still owed and commissions.
@@ -865,12 +865,12 @@ each feature on when its keys are added):
 6. **Facebook leads**: `FB_PAGE_ACCESS_TOKEN`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `FB_FORM_IDS`, and the
    webhook (see Connecting Facebook Lead Ads).
 7. **Website form**: `WEBSITE_API_KEY` and the form snippet (see Connecting the website form).
-8. **Card deposits** on booking links: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`.
-9. **Google Local Services**, **ad spend**, **Talech card payments**: set up from inside the app when ready.
-10. **The dialer build only**: `CALLS_ENABLED=1`, the Twilio number, and `ANTHROPIC_API_KEY` for AI call notes.
-11. **Phones**: everyone opens the address on their phone and taps Add to Home Screen; shop people allow
+8. **Google Local Services**, **ad spend**, **Talech card payments**: set up from inside the app when ready.
+   Payments themselves are taken on the shop's card machine and entered in the app by hand.
+9. **The dialer build only**: `CALLS_ENABLED=1`, the Twilio number, and `ANTHROPIC_API_KEY` for AI call notes.
+10. **Phones**: everyone opens the address on their phone and taps Add to Home Screen; shop people allow
     location when asked (needed to clock in).
-12. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server).
+11. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server).
 
 ## Deploying elsewhere
 
@@ -953,7 +953,7 @@ src/db.js            SQLite schema
 src/messages.js      texts, saved texts, booking confirmations and day-before reminders
 src/sms.js           Twilio texting (send, webhook signature check)
 src/alerts.js        new-lead and reply alerts; src/push.js sends them (Web Push, no dependencies)
-src/bookings.js      online booking links; src/stripe.js card deposits (Stripe Checkout)
+src/bookings.js      online booking links
 src/daysheet.js      the shop's morning day-sheet email
 src/payments.js      payments and balance due; src/invoices.js invoice PDFs (src/pdf.js, no dependencies)
 src/campaigns.js     quote follow-ups and win-back campaigns

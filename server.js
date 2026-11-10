@@ -32,7 +32,6 @@ const { createTexter, toE164 } = require('./src/sms');
 const { createMessageService } = require('./src/messages');
 const { createPush } = require('./src/push');
 const { createAlertService } = require('./src/alerts');
-const { createStripe } = require('./src/stripe');
 const { createBookingService } = require('./src/bookings');
 const { createDaySheetMailer } = require('./src/daysheet');
 const { createImportService } = require('./src/import');
@@ -203,8 +202,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     leads, jobs, texter, mailer, brand: config.brand,
     onReply: (lead, text) => alerts.replied(lead, text, { baseUrl: config.publicUrl }).catch((err) => console.error('Reply alert failed:', err.message)),
   });
-  const stripe = createStripe(config.stripe, fetchImpl);
-  const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand: config.brand });
+  const bookings = createBookingService(db, { leads, jobs, commissions, messages, alerts, brand: config.brand });
   const daySheets = createDaySheetMailer(db, { jobs, mailer, brand: config.brand });
   const campaigns = createCampaignService(db, { leads, messages, bookings, mailer, texter, publicUrl: config.publicUrl });
   const referrals = createReferralService(db, { leads, brand: config.brand });
@@ -288,7 +286,6 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     recoatMonths: config.recoatMonths,
     shopHours: jobs.getShopHours(),
     textingConfigured: texter.configured,
-    paymentsConfigured: stripe.configured,
     depositMethods: DEPOSIT_METHODS,
     commissionOwedWhen: OWED_WHEN,
     facebookConfigured: Boolean(config.facebook.pageAccessToken),
@@ -669,19 +666,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     return { link: { ...link, url }, sent, lead: leads.getLead(id) };
   });
   route('POST', '/api/booking-links/:id/cancel', ({ params, actor }) => bookings.cancel(Number(params.id), actor));
-  // What the customer's booking page shows; ?paid= is Stripe sending them back after paying.
-  route('GET', '/api/public/booking/:token', async ({ req, params, query }) => {
-    if (query.get('paid')) await bookings.confirmPayment(params.token, query.get('paid')).catch((err) => console.error('Payment check failed:', err.message));
+  // What the customer's booking page shows.
+  route('GET', '/api/public/booking/:token', ({ req, params }) => {
     // Someone signed in to the app is previewing the page (a rep checking the link).
     return { ...bookings.view(params.token), staff_preview: Boolean(users.anyLogins() && authenticate(req)) };
   }, { isPublic: true });
-  route('POST', '/api/public/booking/:token', ({ req, params, body }) => bookings.book(params.token, body, { baseUrl: baseUrl(req) }), { isPublic: true });
-  route('POST', '/api/public/booking/:token/pay', async ({ req, params }) => ({ redirect: await bookings.startPayment(params.token, { baseUrl: baseUrl(req) }) }), { isPublic: true });
-  // Stripe: "checkout.session.completed" marks the deposit paid (signature checked).
-  route('POST', '/webhooks/stripe', ({ raw, req }) => {
-    if (!stripe.verify(raw.toString('utf8'), req.headers['stripe-signature'])) throw new HttpError(400, 'Bad signature');
-    return { received: true, recorded: bookings.paymentWebhook(JSON.parse(raw.toString('utf8'))) };
-  }, { isPublic: true, rawBody: true });
+  route('POST', '/api/public/booking/:token', ({ params, body }) => bookings.book(params.token, body), { isPublic: true });
 
   // ---- Phone alerts (new leads, customer replies) ----
   route('GET', '/api/alerts/me', ({ actor }) => ({

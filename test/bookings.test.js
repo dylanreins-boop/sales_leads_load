@@ -1,44 +1,20 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const crypto = require('node:crypto');
 
 process.env.TZ = 'America/Los_Angeles';
 process.env.APP_USERS = 'Dylan:admin-pass:admin,Sam:sales-pass:sales,Mike:shop-pass:shop';
 process.env.APP_PASSWORD = '';
-process.env.STRIPE_SECRET_KEY = 'sk_test_123';
-process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
 process.env.PUBLIC_URL = 'https://leads.example.com';
 process.env.TWILIO_ACCOUNT_SID = '';
 process.env.EMAIL_PROVIDER = '';
 
 const { createApp } = require('../server');
 const { openDatabase } = require('../src/db');
-const { formEncode, verifyStripeSignature } = require('../src/stripe');
-
-// Pretend Stripe: Checkout sessions that can be marked paid.
-const sessions = new Map();
-async function fakeFetch(url, options = {}) {
-  if (url === 'https://api.stripe.com/v1/checkout/sessions') {
-    const form = new URLSearchParams(options.body);
-    const id = `cs_${sessions.size + 1}`;
-    sessions.set(id, {
-      id, url: `https://checkout.stripe.com/pay/${id}`, payment_status: 'unpaid',
-      amount_total: Number(form.get('line_items[0][price_data][unit_amount]')),
-      metadata: { booking_link: form.get('metadata[booking_link]'), job_id: form.get('metadata[job_id]') },
-      success_url: form.get('success_url'),
-    });
-    return new Response(JSON.stringify(sessions.get(id)), { status: 200 });
-  }
-  const m = url.match(/checkout\/sessions\/(cs_\d+)$/);
-  if (m) return new Response(JSON.stringify(sessions.get(m[1])), { status: 200 });
-  return new Response('{}', { status: 200 });
-}
-
 let server;
 let base;
 before(async () => {
-  server = http.createServer(createApp({ db: openDatabase(':memory:'), fetchImpl: fakeFetch }));
+  server = http.createServer(createApp({ db: openDatabase(':memory:'), fetchImpl: async () => new Response('{}', { status: 200 }) }));
   await new Promise((resolve) => server.listen(0, resolve));
   base = `http://localhost:${server.address().port}`;
 });
@@ -80,7 +56,8 @@ test('a rep makes a booking link from the quote; the customer sees the price and
   assert.equal(view.first_name, 'Ana');
   assert.equal(view.vehicle, '2023 Tesla Model 3');
   assert.equal(view.services, 'Full decon & coat');
-  assert.equal(view.pay_online, true);
+  assert.equal(view.deposit_cents, 13000, 'shown; paid at the shop');
+  assert.equal('pay_online' in view, false, 'no online payment');
   assert.ok(view.days.length > 15, 'weeks of open days');
   assert.ok(view.days.every((d) => ![0, 6].includes(new Date(d.drop_off).getDay())), 'weekdays only');
   assert.ok(view.days.every((d) => new Date(d.drop_off).getHours() === 8), 'drop-off at opening time');
@@ -88,7 +65,7 @@ test('a rep makes a booking link from the quote; the customer sees the price and
   assert.equal((await call('POST', `/api/leads/${lead.id}/booking-links`, {}, SHOP)).status, 403);
 });
 
-test('full days are not offered; booking puts the job on the calendar for the rep, then the deposit is paid by card', async () => {
+test('full days are not offered; booking puts the job on the calendar for the rep', async () => {
   const lead = await leadWithQuote();
   const { link } = (await call('POST', `/api/leads/${lead.id}/booking-links`, {})).data;
   const first = (await call('GET', `/api/public/booking/${link.token}`, undefined, null)).data.days[0];
@@ -103,10 +80,7 @@ test('full days are not offered; booking puts the job on the calendar for the re
   const day = after.days[0];
   const booked = await call('POST', `/api/public/booking/${link.token}`, { date: day.date }, null);
   assert.equal(booked.status, 201, JSON.stringify(booked.data));
-  assert.match(booked.data.redirect, /^https:\/\/checkout\.stripe\.com\/pay\/cs_\d+$/);
-  const sessionId = booked.data.redirect.split('/').pop();
-  assert.equal(sessions.get(sessionId).amount_total, 13000);
-  assert.equal(sessions.get(sessionId).success_url, `https://leads.example.com/book/${link.token}?paid={CHECKOUT_SESSION_ID}`);
+  assert.deepEqual(booked.data, { booked: true }, 'no card payment page: the deposit is paid at the shop');
 
   const fresh = (await call('GET', `/api/leads/${lead.id}`)).data;
   assert.equal(fresh.stage, 'booked');
@@ -118,41 +92,18 @@ test('full days are not offered; booking puts the job on the calendar for the re
   assert.equal(job.deposit_cents, null);
   assert.equal((await call('POST', `/api/public/booking/${link.token}`, { date: day.date }, null)).status, 400, 'one booking per link');
 
-  // Back from Stripe before paying: nothing recorded. After paying: the deposit shows.
-  await call('GET', `/api/public/booking/${link.token}?paid=${sessionId}`, undefined, null);
-  assert.equal((await call('GET', `/api/leads/${lead.id}`)).data.jobs[0].deposit_cents, null);
-  sessions.get(sessionId).payment_status = 'paid';
-  const paidView = (await call('GET', `/api/public/booking/${link.token}?paid=${sessionId}`, undefined, null)).data;
+  // The deposit is taken at the shop and entered on the job by hand; the page then shows it paid.
+  await call('PATCH', `/api/jobs/${job.id}/deposit`, { taken: true, amount: '130', method: 'Card' }, login('Dylan', 'admin-pass'));
+  const paidView = (await call('GET', `/api/public/booking/${link.token}`, undefined, null)).data;
   assert.equal(paidView.status, 'booked');
   assert.equal(paidView.deposit_paid, true);
-  assert.equal(paidView.pay_online, false);
-  const paidJob = (await call('GET', `/api/leads/${lead.id}`)).data.jobs[0];
-  assert.deepEqual([paidJob.deposit_cents, paidJob.deposit_method, paidJob.deposit_by], [13000, 'Card', 'Online payment']);
 });
 
-test('the Stripe webhook records the deposit when its signature checks out', async () => {
-  const lead = await leadWithQuote();
-  const { link } = (await call('POST', `/api/leads/${lead.id}/booking-links`, { amount: '1700' })).data;
-  const day = (await call('GET', `/api/public/booking/${link.token}`, undefined, null)).data.days[3];
-  await call('POST', `/api/public/booking/${link.token}`, { date: day.date }, null);
-  const event = JSON.stringify({ type: 'checkout.session.completed', data: { object: { payment_status: 'paid', amount_total: 17000, metadata: { booking_link: String(link.id) } } } });
-  const t = Math.floor(Date.now() / 1000);
-  const sign = (body, secret = 'whsec_test') => `t=${t},v1=${crypto.createHmac('sha256', secret).update(`${t}.${body}`).digest('hex')}`;
-  const post = (body, signature) => fetch(`${base}/webhooks/stripe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': signature }, body });
-  assert.equal((await post(event, sign(event, 'wrong'))).status, 400);
-  const ok = await post(event, sign(event));
-  assert.equal(ok.status, 201);
-  assert.equal((await ok.json()).recorded, true);
-  assert.equal((await call('GET', `/api/leads/${lead.id}`)).data.jobs[0].deposit_cents, 17000);
-  assert.equal((await (await post(event, sign(event))).json()).recorded, false, 'only once');
-});
-
-test('reps can turn a link off; Stripe helpers encode and verify', async () => {
+test('reps can turn a link off', async () => {
   const lead = await leadWithQuote();
   const { link } = (await call('POST', `/api/leads/${lead.id}/booking-links`, {})).data;
   assert.equal((await call('POST', `/api/booking-links/${link.id}/cancel`)).data.status, 'cancelled');
   const view = (await call('GET', `/api/public/booking/${link.token}`, undefined, null)).data;
   assert.deepEqual([view.status, view.days], ['cancelled', []]);
-  assert.equal(formEncode({ a: { b: [{ c: 1 }] }, d: 'x y' }).toString(), 'a%5Bb%5D%5B0%5D%5Bc%5D=1&d=x+y');
-  assert.equal(verifyStripeSignature('{}', 't=1,v1=00', 'whsec'), false, 'too old');
+  assert.equal((await call('POST', `/api/public/booking/${link.token}/pay`, {}, null)).status, 404, 'no online payment route');
 });

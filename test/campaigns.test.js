@@ -24,7 +24,7 @@ function setup() {
   const emails = [];
   const mailer = { configured: true, send: async (m) => { emails.push(m); } };
   const messages = createMessageService(db, { leads, jobs, texter, mailer, brand: { name: 'Bob Moses Ceramic Coating' } });
-  const bookings = createBookingService(db, { leads, jobs, commissions, messages, stripe: { configured: false }, alerts: { notify: async () => [] }, brand: {} });
+  const bookings = createBookingService(db, { leads, jobs, commissions, messages, alerts: { notify: async () => [] }, brand: {} });
   const quotes = createQuoteService(db, { leads, brand: {} });
   const campaigns = createCampaignService(db, { leads, messages, bookings, mailer, texter, publicUrl: 'https://leads.example.com' });
   return { db, leads, quotes, messages, campaigns, texts, emails };

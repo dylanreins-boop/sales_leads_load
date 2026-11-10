@@ -14,7 +14,7 @@ const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFrac
 const longDate = (d) => new Date(d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 const when = (d) => new Date(d).toLocaleString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-function createBookingService(db, { leads, jobs, commissions, messages, stripe, alerts, brand = {} }) {
+function createBookingService(db, { leads, jobs, commissions, messages, alerts, brand = {} }) {
   const stmt = (sql) => db.prepare(sql);
   const now = () => new Date().toISOString();
 
@@ -100,13 +100,12 @@ function createBookingService(db, { leads, jobs, commissions, messages, stripe, 
       status,
       booked: job && job.status !== 'cancelled' ? { drop_off: when(job.start_at), pick_up: when(job.end_at) } : null,
       deposit_paid: depositPaid,
-      pay_online: stripe.configured && link.deposit_cents > 0 && !depositPaid,
       days: status === 'open' ? openDays(link) : [],
     };
   }
 
-  // The customer picked a day. Returns { redirect } when the deposit is paid by card next.
-  async function book(token, { date } = {}, { baseUrl = '' } = {}) {
+  // The customer picked a day. The deposit, if any, is paid at the shop (it's recorded on the job by hand).
+  async function book(token, { date } = {}) {
     const link = byToken(token);
     if (!link) throw new HttpError(404, 'This booking link doesn\'t work.');
     const status = statusOf(link);
@@ -134,52 +133,10 @@ function createBookingService(db, { leads, jobs, commissions, messages, stripe, 
         tag: `booked-${lead.id}`,
       }).catch(() => {});
     }
-    if (stripe.configured && link.deposit_cents > 0) return { redirect: await startPayment(token, { baseUrl }) };
     return { booked: true };
   }
 
-  // A Stripe payment page for the deposit; the customer comes back to the booking page after.
-  async function startPayment(token, { baseUrl = '' } = {}) {
-    const link = byToken(token);
-    if (!link?.job_id) throw new HttpError(400, 'Pick your drop-off day first.');
-    if (!stripe.configured) throw new HttpError(400, 'Card payments aren\'t set up. We\'ll take the deposit at drop-off.');
-    const lead = leads.getLead(link.lead_id);
-    const session = await stripe.checkout({
-      cents: link.deposit_cents,
-      name: `Deposit: ${vehicleText(lead)} with ${brand.name || 'us'}`,
-      email: lead.email,
-      successUrl: `${baseUrl}/book/${token}?paid={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${baseUrl}/book/${token}`,
-      metadata: { booking_link: String(link.id), job_id: String(link.job_id) },
-    });
-    stmt('UPDATE booking_links SET stripe_session_id = ? WHERE id = ?').run(session.id, link.id);
-    return session.url;
-  }
-
-  // Records a paid deposit once (from the webhook, or when the customer lands back on the page).
-  function recordPayment(link, session) {
-    if (link.deposit_paid_at || session.payment_status !== 'paid') return false;
-    if (String(session.metadata?.booking_link) !== String(link.id)) return false;
-    stmt('UPDATE booking_links SET deposit_paid_at = ? WHERE id = ?').run(now(), link.id);
-    commissions.setDeposit(link.job_id, { taken: true, amount: (session.amount_total / 100).toFixed(2), method: 'Card' }, { user: 'Online payment' });
-    return true;
-  }
-
-  async function confirmPayment(token, sessionId) {
-    const link = byToken(token);
-    if (!link || !stripe.configured || !sessionId) return false;
-    if (link.stripe_session_id && link.stripe_session_id !== sessionId) return false;
-    return recordPayment(link, await stripe.getSession(sessionId));
-  }
-
-  function paymentWebhook(event) {
-    if (event?.type !== 'checkout.session.completed') return false;
-    const session = event.data?.object || {};
-    const link = byId(Number(session.metadata?.booking_link));
-    return link ? recordPayment(link, session) : false;
-  }
-
-  return { create, cancel, listFor, view, openDays, book, startPayment, confirmPayment, paymentWebhook };
+  return { create, cancel, listFor, view, openDays, book };
 }
 
 module.exports = { createBookingService };

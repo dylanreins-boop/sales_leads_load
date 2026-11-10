@@ -376,17 +376,14 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
   }
 
   function bookingLinkStats({ inRange, inPipe }) {
-    const links = stmt('SELECT lead_id, created_at, booked_at, deposit_paid_at, deposit_cents, amount_cents, cancelled_at FROM booking_links').all().filter((b) => inPipe(b.lead_id));
+    const links = stmt('SELECT lead_id, created_at, booked_at, amount_cents, cancelled_at FROM booking_links').all().filter((b) => inPipe(b.lead_id));
     const made = links.filter((b) => inRange(b.created_at));
     const booked = links.filter((b) => inRange(b.booked_at));
-    const paid = links.filter((b) => inRange(b.deposit_paid_at));
     return {
       sent: made.length,
       booked: booked.length,
       booked_rate: rate(made.filter((b) => b.booked_at).length, made.length),
       booked_cents: sum(booked, (b) => b.amount_cents),
-      deposits_paid: paid.length,
-      deposits_cents: sum(paid, (b) => b.deposit_cents),
     };
   }
 
