@@ -654,6 +654,8 @@ function renderJob() {
 
     signOffSection(job, edit),
 
+    socialJobSection(job, edit),
+
     // Schedule
     h('section', { class: 'card-section' },
       h('h3', {}, 'Work time, drop-off and pick-up'),
@@ -885,6 +887,8 @@ function signOffSection(job, edit) {
         h('button', { type: 'button', class: 'link-btn signature-clear', onclick: (e) => clearPad(e.target.closest('.signature-wrap').querySelector('canvas')) }, 'Clear')),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'agree' }),
         ` I walked around my vehicle with ${state.meta.brand?.name || 'the shop'} and agree its condition is as noted above and in the before photos.`),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'social_ok' }),
+        ` OK to post photos of my vehicle on ${state.meta.brand?.name || 'the shop'}'s social media (no names or license plates).`),
       h('button', { type: 'submit', class: 'primary' }, 'Save signature')));
 }
 
@@ -945,7 +949,7 @@ async function saveSignOff(e) {
   if (!canvas.dataset.signed) return toast('Have the customer sign in the box', 'error');
   if (!f.agree.checked) return toast('The customer needs to tick the box to agree', 'error');
   try {
-    cal.job = await api(`/api/jobs/${cal.job.id}/signoff`, { method: 'POST', body: { name: f.name.value, notes: f.notes.value, agree: true, signature: canvas.toDataURL('image/png') } });
+    cal.job = await api(`/api/jobs/${cal.job.id}/signoff`, { method: 'POST', body: { name: f.name.value, notes: f.notes.value, agree: true, social_ok: f.social_ok.checked, signature: canvas.toDataURL('image/png') } });
     renderJob();
     syncJobOnCalendar(cal.job);
     toast('Signature saved');

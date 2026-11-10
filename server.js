@@ -18,6 +18,7 @@ const { mapWebsiteLead, isSpam } = require('./src/website');
 const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { createPipelineService } = require('./src/pipelines');
+const { createSocialService } = require('./src/social');
 const { createTimeService, TIME_OFF_KINDS } = require('./src/timeclock');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
@@ -164,7 +165,7 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer } = {}) {
+function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer, socialMedia } = {}) {
   const leads = createLeadService(db, {
     reminderHour: config.reminderHour,
     skipWeekends: config.reminderSkipWeekends,
@@ -176,6 +177,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const filesDir = photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos');
   const jobs = createJobService(db, { leads, photosDir: filesDir });
   const appearance = createAppearanceService(db, { photosDir: filesDir });
+  // Social posts: the photos and video made for posting live next to the job photos.
+  const social = createSocialService(db, {
+    jobs, brand: config.brand, publicUrl: config.publicUrl, mediaDir: path.join(filesDir, 'social'), fetchImpl, ...(socialMedia && { media: socialMedia }),
+    keys: { ...config.social, facebookToken: config.facebook.pageAccessToken, graphVersion: config.facebook.graphVersion },
+  });
   const users = createUserService(db, { serverUsers: config.users });
   // The admins' pipelines, loaded before anything sorts leads onto them.
   const pipelines = createPipelineService(db);
@@ -411,6 +417,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     if (job.start_at !== before.start_at) messages.jobMoved(job.id);
     const figures = payments.decorate(commissions.figures(job));
     // Marked Ready for pickup: tell the customer, with what's still owed (never shown to the shop).
+    // Finished (ready or picked up): a social post waits for an admin, if the customer OK'd it.
+    if (['ready', 'picked_up'].includes(job.status) && !['ready', 'picked_up'].includes(before.status)) social.autoDraft(job.id);
     if (job.status === 'ready' && before.status !== 'ready') {
       await messages.sendReady(job.id, { user: actor.user, balanceCents: figures.amount_due_cents })
         .catch((err) => console.error('Ready-for-pickup message failed:', err.message));
@@ -834,6 +842,29 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     route('POST', '/webhooks/twilio/calls/:id/transcript', ({ req, body, params }) => { signed(req, body); calls.transcript(Number(params.id), body); return { ok: true }; }, { isPublic: true });
     route('POST', '/webhooks/twilio/calls/:id/status', ({ req, body, params }) => { signed(req, body); calls.ended(Number(params.id), body); return { ok: true }; }, { isPublic: true });
   }
+
+  // ---- Social posts (admins approve every post) ----
+  route('GET', '/api/social', () => ({ ...social.list(), settings: social.getSettings(), connections: social.connections(), platforms: social.PLATFORMS }), { roles: ADMIN });
+  route('GET', '/api/social/waiting', () => ({ count: social.waitingCount() }), { roles: ADMIN });
+  route('PUT', '/api/social/settings', ({ body }) => social.saveSettings(body), { roles: ADMIN });
+  route('POST', '/api/social/jobs/:id', ({ params, actor }) => social.draftFor(Number(params.id), actor), { roles: ADMIN });
+  route('PATCH', '/api/social/:id', ({ params, body }) => social.update(Number(params.id), body), { roles: ADMIN });
+  route('POST', '/api/social/:id/skip', ({ params, actor }) => social.skip(Number(params.id), actor), { roles: ADMIN });
+  route('POST', '/api/social/:id/post', ({ params, actor }) => social.publish(Number(params.id), actor), { roles: ADMIN });
+  route('POST', '/api/social/:id/retry', ({ params, actor }) => social.publish(Number(params.id), { ...actor, retry: true }), { roles: ADMIN });
+  // The customer's OK to post photos (ticked at the sign-off, or changed later).
+  route('PATCH', '/api/jobs/:id/social-ok', ({ params, body, actor }) => {
+    jobs.setSocialOk(Number(params.id), Boolean(body.ok), actor);
+    return jobView(Number(params.id));
+  }, { roles: CALENDAR });
+  // The photos and video for a post, fetched by Facebook, Instagram and TikTok (the token is the key).
+  route('GET', '/social/media/:token/:name', ({ params, res }) => {
+    const m = social.mediaFile(params.token, params.name);
+    if (!m) throw new HttpError(404, 'Not found');
+    const data = fs.readFileSync(m.file);
+    res.writeHead(200, { 'Content-Type': m.type, 'Content-Length': data.length, 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+    res.end(data);
+  }, { isPublic: true });
 
   // ---- Pipelines (admins set them up) ----
   route('GET', '/api/pipelines', () => ({

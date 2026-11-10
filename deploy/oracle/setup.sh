@@ -33,7 +33,7 @@ fi
 echo "==> Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y ca-certificates curl gnupg git sqlite3 debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
+apt-get install -y ca-certificates curl gnupg git sqlite3 ffmpeg debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
 
 echo "==> Installing Node.js 22"
 if ! command -v node >/dev/null || [[ "$(node -p 'process.versions.node.split(".").map(Number).reduce((a, n, i) => a + n * [1e6, 1e3, 1][i], 0)')" -lt 22013000 ]]; then

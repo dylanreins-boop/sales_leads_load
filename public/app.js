@@ -607,7 +607,7 @@ function setLeadFull(on) {
 
 function showPanel(panel) {
   if (panel !== $('#drawer')) setLeadFull(false);
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#timePanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#timePanel'), $('#socialPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -1596,6 +1596,7 @@ async function init() {
   initCalls();
   initPipelines();
   initTimeClock();
+  initSocial();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');

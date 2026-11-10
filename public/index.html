@@ -79,6 +79,7 @@
       <button id="referralsBtn" type="button" class="lead-only admin-only">Referrals</button>
       <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
       <button id="pipelinesBtn" type="button" class="lead-only admin-only">Pipelines</button>
+      <button id="socialBtn" type="button" class="admin-only">Social <span id="socialBadge" class="badge" hidden></span></button>
       <button id="dialerBtn" type="button" class="lead-only dialer-only" hidden>Start calling</button>
       <button id="callsBtn" type="button" class="admin-only dialer-only" hidden>Calls</button>
       <button id="remindersBtn" type="button" class="primary">
@@ -803,6 +804,17 @@
     <div class="drawer-body" id="pipelinesBody"></div>
   </aside>
 
+  <aside id="socialPanel" class="drawer wide" aria-label="Social posts" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2>Social posts</h2>
+        <div class="muted">Finished jobs' before and after photos, ready for Facebook, Instagram, TikTok and YouTube Shorts. Nothing posts until you tap Post it.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body" id="socialBody"></div>
+  </aside>
+
   <aside id="timePanel" class="drawer tc-panel" aria-label="My time" hidden>
     <div class="drawer-head">
       <div>
@@ -1176,5 +1188,6 @@
   <script src="calls.js"></script>
   <script src="pipelines.js"></script>
   <script src="timeclock.js"></script>
+  <script src="social.js"></script>
 </body>
 </html>

@@ -374,6 +374,23 @@ CREATE TABLE IF NOT EXISTS clock_alerts (
   seen_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS clock_alerts_open ON clock_alerts (seen_at, created_at);
+-- Social posts made from a finished job's photos: a draft an admin approves, then the result per platform.
+CREATE TABLE IF NOT EXISTS social_posts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id      INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  status      TEXT NOT NULL DEFAULT 'draft',
+  caption     TEXT NOT NULL,
+  photo_ids   TEXT NOT NULL,
+  platforms   TEXT NOT NULL,
+  results     TEXT,
+  media_token TEXT,
+  created_by  TEXT,
+  created_at  TEXT NOT NULL,
+  decided_by  TEXT,
+  decided_at  TEXT,
+  posted_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS social_posts_job ON social_posts (job_id);
 CREATE TABLE IF NOT EXISTS pay_rates (
   name_norm  TEXT PRIMARY KEY,
   user_name  TEXT NOT NULL,
@@ -510,6 +527,8 @@ function migrate(db) {
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
   if (!has('user_prefs', 'call_phone')) db.exec('ALTER TABLE user_prefs ADD COLUMN call_phone TEXT');
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
+  // The customer said photos of their vehicle may be posted on social media (at the drop-off sign-off).
+  if (!has('jobs', 'social_ok')) db.exec('ALTER TABLE jobs ADD COLUMN social_ok INTEGER');
   if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
   // Where they were when they clocked in (shop logins clock in at the shop), and how far that was from it.
   for (const [column, type] of [['clock_in_lat', 'REAL'], ['clock_in_lng', 'REAL'], ['clock_in_accuracy', 'REAL'], ['clock_in_distance', 'REAL'], ['clock_in_off_site', 'INTEGER']]) {

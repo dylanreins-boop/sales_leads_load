@@ -717,6 +717,47 @@ Set `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SEC
 The first sync reaches back 30 days. Google only shares a caller's number when there is one (some are
 tracking numbers).
 
+## Social media posts
+
+Finished jobs' photos can go to the company's **Facebook**, **Instagram**, **TikTok** and **YouTube
+Shorts**, with one tap from an admin. Nothing posts on its own.
+
+1. **The customer's OK.** The drop-off sign-off has a checkbox: "OK to post photos of my vehicle (no
+   names or license plates)". It's added to the signed terms. The job's **Social media** section shows
+   it, and staff can change it if the customer changes their mind. No OK, no post.
+2. **A draft.** When a job with after photos (and the OK) is marked **Ready for pickup** or **Picked up**,
+   a draft appears in **Social** (admins; the badge counts what's waiting). Admins can also tap **Make a
+   social post** on any job with the OK.
+3. **Approve.** Pick the photos (up to 2 before, then the after photos; 8 at most), edit the caption,
+   pick where it goes and tap **Post it**, or **Save for later** / **Skip**. Captions fill in from a
+   template (Social → Settings) with the vehicle, color, services, company, city and phone. Customer names
+   are never used. Shoot photos so plates aren't readable.
+4. **Results.** Each place shows Posted with a View link, or why it didn't post, and **Try the failed
+   ones again** retries only those.
+
+What each place gets: Facebook, a Page post with the photos; Instagram, a carousel; TikTok, a photo post;
+YouTube Shorts, a short vertical before-and-after video the server makes from the photos (needs `ffmpeg`,
+which the Docker image and `deploy/oracle/setup.sh` install). Photos are sized to 1080x1350 and served from
+`PUBLIC_URL` for a day so the platforms can fetch them, so `PUBLIC_URL` must be the public HTTPS address.
+
+Connecting each one (once, on the server; the Settings card shows what's connected):
+
+- **Facebook**: the same Meta app and Page token as Facebook leads, with `pages_manage_posts` added.
+  Set `FB_PAGE_ID`.
+- **Instagram**: make the Instagram account a Business account and link it to the Facebook Page; add
+  `instagram_basic` and `instagram_content_publish` to the token. Set `IG_USER_ID` (Graph API Explorer:
+  `<PAGE_ID>?fields=instagram_business_account`).
+- **TikTok**: create an app at developers.tiktok.com with **Content Posting API** (Direct Post) and the
+  `video.publish` scope; sign in once with the company's TikTok to get a refresh token. Set
+  `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REFRESH_TOKEN`, and verify the `PUBLIC_URL` domain
+  in the TikTok app (needed for photo posts). Until TikTok audits the app, posts are private ("only me").
+- **YouTube Shorts**: a Google Cloud project with **YouTube Data API v3**, an OAuth client, and a refresh
+  token from signing in once with the channel's Google account (scope `youtube.upload`). Set
+  `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`. Until Google verifies the app,
+  uploads are private; make them public from YouTube Studio.
+
+All four APIs are free to use.
+
 ## Importing leads from before the app
 
 Admins: **Import leads** takes an Excel (.xlsx) or CSV file with one lead per row. The app matches the
@@ -867,10 +908,12 @@ each feature on when its keys are added):
 7. **Website form**: `WEBSITE_API_KEY` and the form snippet (see Connecting the website form).
 8. **Google Local Services**, **ad spend**, **Talech card payments**: set up from inside the app when ready.
    Payments themselves are taken on the shop's card machine and entered in the app by hand.
-9. **The dialer build only**: `CALLS_ENABLED=1`, the Twilio number, and `ANTHROPIC_API_KEY` for AI call notes.
-10. **Phones**: everyone opens the address on their phone and taps Add to Home Screen; shop people allow
+9. **Social media posts** (optional): `FB_PAGE_ID`, `IG_USER_ID`, and the TikTok and YouTube keys (see
+   Social media posts). TikTok's and Google's app reviews take a week or two, so start early.
+10. **The dialer build only**: `CALLS_ENABLED=1`, the Twilio number, and `ANTHROPIC_API_KEY` for AI call notes.
+11. **Phones**: everyone opens the address on their phone and taps Add to Home Screen; shop people allow
     location when asked (needed to clock in).
-11. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server).
+12. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server).
 
 ## Deploying elsewhere
 
@@ -923,6 +966,11 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/payroll?from=&to=` | Time & Pay for a period (admins) |
 | PUT | `/api/pay-rates`, `/api/payroll/settings` | Hourly rates `{ user_name, rate }` and payroll rules (overtime, `review_day`, `payroll_emails`) |
 | POST | `/api/timecard/approve-week`, `/api/clock/out { approve_week }` | Approve your own week (on Friday, clocking out needs it) |
+| GET | `/api/social`, `/api/social/waiting` | Admins: social posts waiting, posted and skipped, settings, what's connected / the waiting count |
+| POST | `/api/social/jobs/:id` | Admins: make a social post from a job (the customer must have OK'd it) |
+| PATCH / POST | `/api/social/:id`, `/api/social/:id/post\|retry\|skip` | Admins: edit `{ caption, photo_ids, platforms }`, post it, retry the failed places, skip it |
+| PUT | `/api/social/settings` | Admins: `{ auto_draft, platforms, caption, hashtags }` |
+| PATCH | `/api/jobs/:id/social-ok` | Staff: the customer's OK to post photos `{ ok }` |
 | POST | `/api/payroll/weeks/:sunday/approve`, `/api/payroll/weeks/:sunday/email` | Admins: approve a pay week, email its summary now |
 | GET / POST | `/api/clock/alerts`, `/api/clock/alerts/seen { ids \| 'all' }` | Admins: clock-ins away from the shop not yet marked seen (the red bar) |
 | GET / PUT | `/api/schedules` | Work schedules for attendance |
@@ -966,6 +1014,7 @@ src/cardimport.js    card payments from a Talech / Elavon export, matched to job
 src/calls.js         the dialer (CALLS_ENABLED): calls, live transcription, review
 src/pipelines.js     the pipelines admins set up; public/pipelines.js its screen
 src/timeclock.js     time clock, time off, hourly rates and Time & Pay; public/timeclock.js its screens
+src/social.js        social media posts (Facebook, Instagram, TikTok, YouTube Shorts); public/social.js the Social panel
 src/callsummary.js   call notes with Claude (or basic notes without a key)
 public/calls.js      the dialer's screens
 src/google-lsa.js    Google Local Services leads (Google Ads API)

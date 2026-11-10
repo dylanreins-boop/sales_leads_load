@@ -459,7 +459,7 @@ function createJobService(db, { leads, photosDir }) {
   // ---- customer sign-off at drop-off ----
   // The customer reviews the vehicle's condition with the shop and signs on the tablet or phone.
   // The wording, the condition notes and the before-photo count are saved with the signature.
-  function signOff(jobId, { name, notes, signature, agree } = {}, { user, company = 'the shop' } = {}) {
+  function signOff(jobId, { name, notes, signature, agree, social_ok: socialOk } = {}, { user, company = 'the shop' } = {}) {
     const job = getJob(jobId);
     if (job.signoff_at) throw new HttpError(400, 'This job is already signed off.');
     const who = String(name ?? '').trim().slice(0, 80);
@@ -477,12 +477,13 @@ function createJobService(db, { leads, photosDir }) {
       'I agree its condition is as described below and shown in the before photos.',
       `Condition notes: ${condition || 'None noted.'}`,
       `Before photos taken: ${before}.`,
-    ].join('\n');
+      socialOk ? `Photos of my vehicle may be posted on ${company}'s social media (no names or license plates).` : null,
+    ].filter(Boolean).join('\n');
     fs.mkdirSync(photosDir, { recursive: true });
     const file = `signoff-${jobId}-${crypto.randomUUID()}.png`;
     fs.writeFileSync(path.join(photosDir, file), image);
-    stmt('UPDATE jobs SET signoff_name = ?, signoff_at = ?, signoff_by = ?, signoff_file = ?, signoff_terms = ?, updated_at = ? WHERE id = ?')
-      .run(who, ts, user ?? null, file, terms, ts, jobId);
+    stmt('UPDATE jobs SET signoff_name = ?, signoff_at = ?, signoff_by = ?, signoff_file = ?, signoff_terms = ?, social_ok = ?, updated_at = ? WHERE id = ?')
+      .run(who, ts, user ?? null, file, terms, socialOk ? 1 : 0, ts, jobId);
     leads.logActivity(job.lead_id, 'signoff', { note: `${who} signed off on the vehicle's condition at drop-off${condition ? `: ${condition}` : ''}`, user });
     return getJob(jobId);
   }
@@ -491,6 +492,14 @@ function createJobService(db, { leads, photosDir }) {
     const job = getJob(jobId);
     if (!job.signoff_file) throw new HttpError(404, 'Not signed yet');
     return path.join(photosDir, path.basename(job.signoff_file));
+  }
+
+  // The customer's OK to post photos of their vehicle, changed later (they said so on the phone, say).
+  function setSocialOk(jobId, ok, { user } = {}) {
+    const job = getJob(jobId);
+    stmt('UPDATE jobs SET social_ok = ?, updated_at = ? WHERE id = ?').run(ok ? 1 : 0, now(), jobId);
+    leads.logActivity(job.lead_id, 'note', { note: ok ? 'Customer OK\'d posting photos of the vehicle' : 'Customer did not OK posting photos', user });
+    return getJob(jobId);
   }
 
   // Admins can clear a sign-off made by mistake (the customer signs again).
@@ -505,7 +514,7 @@ function createJobService(db, { leads, photosDir }) {
 
   return {
     setEstimator, defaultWork,
-    signOff, signOffImage, clearSignOff,
+    signOff, signOffImage, clearSignOff, setSocialOk,
     getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };

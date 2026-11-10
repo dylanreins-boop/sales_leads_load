@@ -127,6 +127,15 @@ module.exports = {
     graphVersion: process.env.FB_GRAPH_VERSION || 'v23.0',
   },
 
+  // Social posts from finished jobs (an admin approves each). Facebook and Instagram use the Page token
+  // above (it needs the pages_manage_posts and instagram_content_publish permissions).
+  social: {
+    facebookPageId: process.env.FB_PAGE_ID || '',
+    instagramUserId: process.env.IG_USER_ID || '',
+    tiktok: { accessToken: process.env.TIKTOK_ACCESS_TOKEN || '', clientKey: process.env.TIKTOK_CLIENT_KEY || '', clientSecret: process.env.TIKTOK_CLIENT_SECRET || '', refreshToken: process.env.TIKTOK_REFRESH_TOKEN || '' },
+    youtube: { clientId: process.env.YOUTUBE_CLIENT_ID || '', clientSecret: process.env.YOUTUBE_CLIENT_SECRET || '', refreshToken: process.env.YOUTUBE_REFRESH_TOKEN || '' },
+  },
+
   // Google Local Services Ads leads, read through the Google Ads API.
   googleAds: {
     developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
