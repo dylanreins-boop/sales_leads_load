@@ -62,6 +62,7 @@ async function loadAnalytics() {
   try {
     const q = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
     if ($('#anPipeline').value) q.set('pipeline', $('#anPipeline').value);
+    if ($('#anSource').value) q.set('source', $('#anSource').value);
     an.data = await api(`/api/analytics?${q}`);
     const last = new Date(to - 1);
     const pf = new Date(an.data.range.prev_from);
@@ -312,6 +313,13 @@ function renderAnalytics(d) {
   const leadsGroup = h('div', { class: 'an-grid' },
     card('From lead to pickup', 'How far the new leads got. Reached means a real conversation (a call outcome, a text back, or a booking).',
       hbars(d.funnel.map((f) => ({ label: f.step, value: f.n })), { of: d.funnel[0].n || null })),
+    d.months.length > 1 && h('div', { style: 'grid-column: 1 / -1' }, card('Each month\'s new leads', 'Every row follows only the leads that came in that month, to today: so a month is never credited with jobs from earlier leads. The newest months are still being worked.',
+      table(['Month', 'Came in', 'Reached', 'Quoted', 'Booked', 'Picked up', 'Booked %', 'Revenue'],
+        d.months.map((m) => [
+          `${new Date(`${m.month}-15T12:00:00`).toLocaleDateString([], { month: 'short', year: 'numeric' })}${m.partial ? ' (part)' : ''}`,
+          anNum(m.came_in), anNum(m.reached), anNum(m.quoted), anNum(m.booked), anNum(m.picked_up),
+          anPct(m.came_in ? m.booked / m.came_in : null), anMoney(m.revenue_cents),
+        ])))),
     card('How fast new leads were worked', `Time from a lead coming in to the first call, text or note. Clock time, nights included. Median ${anMinutes(sp.median_min)}; ${anPct(sp.within_15_rate)} within 15 minutes.`,
       speedBar,
       legend(sp.buckets.map((b, i) => ({ name: `${b.label} (${b.n})`, color: segColors[i] }))),
@@ -580,6 +588,7 @@ function initAnalytics() {
   $('#anFrom').addEventListener('change', reload);
   $('#anTo').addEventListener('change', reload);
   $('#anPipeline').addEventListener('change', reload);
+  $('#anSource').addEventListener('change', reload);
   $('#anExport').addEventListener('click', exportAnalytics);
   window.addEventListener('resize', () => {
     clearTimeout(an.resizeTimer);

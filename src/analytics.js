@@ -58,9 +58,33 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
     return { start, end, prevStart: new Date(new Date(start) - len).toISOString(), prevEnd: start };
   }
 
+  // Each month's new leads and how far they got, so a month's leads are only compared with their own
+  // bookings (not with jobs from leads that came in earlier). Up to the last 12 months of the range.
+  function monthsOf(start, end, cohortOf) {
+    const out = [];
+    const first = new Date(start);
+    let m = new Date(first.getFullYear(), first.getMonth(), 1);
+    while (m.toISOString() < end) {
+      const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+      const a = m.toISOString() < start ? start : m.toISOString();
+      const b = next.toISOString() > end ? end : next.toISOString();
+      const c = cohortOf(a, b);
+      out.push({
+        month: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`, partial: a !== m.toISOString() || b !== next.toISOString(),
+        came_in: c.length, reached: c.filter((l) => l.reached).length, quoted: c.filter((l) => l.quoted).length,
+        booked: c.filter((l) => l.booked).length, picked_up: c.filter((l) => l.picked_up).length,
+        revenue_cents: c.reduce((n, l) => n + (l.revenue_cents || 0), 0),
+      });
+      m = next;
+    }
+    return out.slice(-12);
+  }
+
   function report(query = {}) {
     const { start, end, prevStart, prevEnd } = bounds(query);
     const pipeline = PIPELINES.some((p) => p.id === query.pipeline) ? query.pipeline : '';
+    // Lead source: narrows the new-lead numbers (the funnel, speed, months) to leads from one source.
+    const source = /^[a-z_]{2,20}$/.test(query.source || '') ? query.source : '';
     const inRange = (t, a = start, b = end) => t != null && t >= a && t < b;
 
     // ---- everything, loaded once (a shop's data is small) ----
@@ -84,7 +108,7 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
     const settings = jobs.getShopHours();
 
     // ---- the leads that came in ----
-    const cohortOf = (a, b) => allLeads.filter((l) => inRange(l.received_at, a, b) && (!pipeline || l.pipeline === pipeline)).map((l) => {
+    const cohortOf = (a, b) => allLeads.filter((l) => inRange(l.received_at, a, b) && (!pipeline || l.pipeline === pipeline) && (!source || l.source === source)).map((l) => {
       const mine = jobsByLead.get(l.id) || [];
       const touches = workByLead.get(l.id) || [];
       const first = touches.find((a2) => a2.created_at >= l.received_at);
@@ -138,7 +162,8 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
     const spendTotal = sum(spendRows, (r) => r.cents);
 
     return {
-      range: { from: start, to: end, prev_from: prevStart, prev_to: prevEnd, pipeline },
+      range: { from: start, to: end, prev_from: prevStart, prev_to: prevEnd, pipeline, source },
+      months: monthsOf(start, end, cohortOf),
       kpis: kpis(cohort, start, end, spendTotal),
       prev: kpis(prevCohort, prevStart, prevEnd, prevSpend),
       trend: trend({ start, end, cohort, liveJobs, paymentRows: paymentRows.filter((p) => jobById.has(p.job_id)), allJobs }),

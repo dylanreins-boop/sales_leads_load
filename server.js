@@ -340,6 +340,25 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   });
   // ---- Overview (the home screen) and lead scoring ----
   route('GET', '/api/overview', () => insights.overview());
+  // ---- Leaderboard and each rep's page ----
+  route('GET', '/api/leaderboard', ({ query }) => insights.leaderboard(query.get('period') || 'month'));
+  route('GET', '/api/reps/:name', ({ params, actor }) => {
+    const name = params.name;
+    const profile = insights.repProfile(name);
+    // Commission money: the rep themself and admins only.
+    if (actor.role === 'admin' || actor.user === name) {
+      const year = `${new Date().getFullYear()}-01-01`;
+      const jobsFor = commissions.list({ rep: name }).jobs;
+      const sumOf = (list, f) => list.reduce((n, j) => n + (f(j) || 0), 0);
+      profile.commission = {
+        owed_cents: sumOf(jobsFor.filter((j) => j.commission_status === 'owed'), (j) => j.commission_cents),
+        pending_cents: sumOf(jobsFor.filter((j) => j.commission_status === 'pending'), (j) => j.commission_cents),
+        paid_year_cents: sumOf(jobsFor.filter((j) => j.commission_paid_at >= year), (j) => j.commission_paid_cents),
+      };
+    }
+    return profile;
+  });
+  route('PUT', '/api/goals', ({ body }) => insights.setGoal(body.name, body.monthly), { roles: ADMIN });
   route('GET', '/api/settings/lead-score', () => insights.getScoring());
   route('PUT', '/api/settings/lead-score', ({ body }) => insights.saveScoring(body), { roles: ADMIN });
   // ---- Shop calendar ----
@@ -929,7 +948,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
 
   // ---- Analytics (admin): every number the app tracks, for a date range ----
   route('GET', '/api/analytics', ({ query }) => {
-    const report = analytics.report({ from: query.get('from'), to: query.get('to'), pipeline: query.get('pipeline') });
+    const report = analytics.report({ from: query.get('from'), to: query.get('to'), pipeline: query.get('pipeline'), source: query.get('source') });
     return calls ? { ...report, calls: calls.stats({ start: report.range.from, end: report.range.to }) } : report;
   }, { roles: ADMIN });
 

@@ -301,7 +301,82 @@ function createInsightService(db, { quotes, leads, roleOf = () => null, extraSug
     };
   }
 
-  return { getScoring, saveScoring, decorate, repStats, overview, SCORE_RULES };
+  // ---- Leaderboard: a week or a month, with each rep's monthly goal ----
+  const PERIODS = {
+    week: 'This week', last_week: 'Last week', month: 'This month', last_month: 'Last month', quarter: 'Last 3 months', year: 'This year',
+  };
+  function periodRange(period = 'month', now = new Date()) {
+    const today = startOfDay(now);
+    const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const tomorrow = new Date(today.getTime() + DAY);
+    switch (period) {
+      case 'week': return [monday, tomorrow];
+      case 'last_week': return [new Date(monday.getTime() - 7 * DAY), monday];
+      case 'last_month': return [new Date(today.getFullYear(), today.getMonth() - 1, 1), new Date(today.getFullYear(), today.getMonth(), 1)];
+      case 'quarter': return [new Date(today.getFullYear(), today.getMonth() - 2, 1), tomorrow];
+      case 'year': return [new Date(today.getFullYear(), 0, 1), tomorrow];
+      default: return [new Date(today.getFullYear(), today.getMonth(), 1), tomorrow];
+    }
+  }
+  function getGoals() {
+    const row = stmt("SELECT value FROM settings WHERE key = 'rep_goals'").get();
+    try { return row ? JSON.parse(row.value) : {}; } catch { return {}; }
+  }
+  function setGoal(name, monthly) {
+    const who = String(name || '').trim().slice(0, 40);
+    if (!who) throw new HttpError(400, 'Pick a rep.');
+    const goals = getGoals();
+    const text = String(monthly ?? '').replace(/[$,\s]/g, '');
+    if (!text) delete goals[who];
+    else {
+      if (!/^\d+(\.\d{1,2})?$/.test(text)) throw new HttpError(400, 'Enter the monthly goal in dollars, like 20000.');
+      goals[who] = Math.round(Number(text) * 100);
+    }
+    stmt("INSERT INTO settings (key, value) VALUES ('rep_goals', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(goals));
+    return goals;
+  }
+  function leaderboard(period = 'month') {
+    const p = PERIODS[period] ? period : 'month';
+    const [from, to] = periodRange(p);
+    const reps = repStats({ from, to });
+    const goals = getGoals();
+    // This month's booked sales, for goal progress (whatever period is shown).
+    const [mFrom, mTo] = periodRange('month');
+    const month = new Map(repStats({ from: mFrom, to: mTo }).map((r) => [r.name, r.booked_cents]));
+    for (const name of Object.keys(goals)) if (!reps.some((r) => r.name === name)) reps.push({ name, calls: 0, leads_called: 0, conversations: 0, contact_rate: null, appointments: 0, booked_cents: 0, quotes: 0, conversion: null, avg_talk_seconds: null, dialer_calls: 0, dialer_appointment_rate: null });
+    return {
+      period: p, label: PERIODS[p], periods: PERIODS, from: from.toISOString(), to: to.toISOString(),
+      reps: reps.map((r) => ({ ...r, goal_cents: goals[r.name] ?? null, month_booked_cents: month.get(r.name) || 0 })),
+    };
+  }
+  // One rep: this month, the last 6 months, and the goal.
+  function repProfile(name) {
+    const who = String(name || '').trim();
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i -= 1) {
+      const a = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const b = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const r = repStats({ from: a, to: b }).find((x) => x.name === who);
+      months.push({ month: `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, '0')}`, booked_cents: r?.booked_cents || 0, appointments: r?.appointments || 0, calls: r?.calls || 0, conversion: r?.conversion ?? null });
+    }
+    const [mFrom, mTo] = periodRange('month');
+    const month = repStats({ from: mFrom, to: mTo }).find((x) => x.name === who) || null;
+    const [wFrom, wTo] = periodRange('week');
+    const week = repStats({ from: wFrom, to: wTo }).find((x) => x.name === who) || null;
+    const goal = getGoals()[who] ?? null;
+    // Days left in the month, for "on pace".
+    const daysIn = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const day = now.getDate();
+    return {
+      name: who, month, week, months, goal_cents: goal,
+      goal_progress: goal ? Math.round(((month?.booked_cents || 0) / goal) * 1000) / 10 : null,
+      pace_cents: month ? Math.round(((month.booked_cents || 0) / day) * daysIn) : 0,
+      open_leads: stmt(`SELECT COUNT(*) AS n FROM leads WHERE archived_at IS NULL AND stage IN (${OPEN_STAGES.map(() => '?').join(',')}) AND last_contact_by = ?`).get(...OPEN_STAGES, who).n,
+    };
+  }
+
+  return { getScoring, saveScoring, decorate, repStats, overview, leaderboard, repProfile, getGoals, setGoal, periodRange, SCORE_RULES };
 }
 
 module.exports = { createInsightService, SCORE_RULES, OPEN_STAGES, median, startOfDay, pct, DAY };
