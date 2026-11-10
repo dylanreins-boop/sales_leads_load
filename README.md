@@ -526,6 +526,16 @@ to 100 m of the phone's stated accuracy counts in their favor. Each clock-in kee
 (📍 on the day in Time & Pay; Edit shows the distance). Admins can still add or fix time by hand. Phones only share
 location with sites on HTTPS, which the deploy guides set up.
 
+**Admins are alerted when someone clocks in away from the shop.** Every clock-in (or try) from too far away, or
+with location turned off, puts a **bright red bar** across the top of the app for every admin, on every page:
+"⚠ CLOCK-IN AWAY FROM THE SHOP · Mike tried to clock in 3.4 miles from the shop · 7:49 AM · 2 tries · refused",
+with **Where?** (a map from where they were to the shop) and **Got it**. It flashes when a new one comes in, the
+browser tab shows "⚠ (2)", and it stays until an admin taps Got it. Admins with phone alerts turned on also get
+a phone alert right away (once per person per half hour, however many times they tap Try again). In **Payroll
+rules** you choose what happens: **Don't let them clock in** (the default) or **Let them clock in, but flag it**.
+Flagged clock-ins show as a red "Clocked in 3.4 miles away" on that day and in Attendance, and Time & Pay lists
+every clock-in away from the shop for the period.
+
 **Paid weekly (Sunday to Saturday).** On Friday (or their last scheduled day that week, if they're off
 Friday), **Clock out** first shows the week's time, day by day with the total. They tick **My hours are right**
 and **Approve my week & clock out**, or tap **Something's wrong** to ask for a fix first. They can also approve
@@ -879,6 +889,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | PUT | `/api/pay-rates`, `/api/payroll/settings` | Hourly rates `{ user_name, rate }` and payroll rules (overtime, `review_day`, `payroll_emails`) |
 | POST | `/api/timecard/approve-week`, `/api/clock/out { approve_week }` | Approve your own week (on Friday, clocking out needs it) |
 | POST | `/api/payroll/weeks/:sunday/approve`, `/api/payroll/weeks/:sunday/email` | Admins: approve a pay week, email its summary now |
+| GET / POST | `/api/clock/alerts`, `/api/clock/alerts/seen { ids \| 'all' }` | Admins: clock-ins away from the shop not yet marked seen (the red bar) |
 | GET / PUT | `/api/schedules` | Work schedules for attendance |
 | POST / PATCH / DELETE | `/api/time/punches[/:id]` | Admins add, fix or remove clocked time |
 | GET / PATCH | `/api/calls`, `/api/calls/:id`, `/api/calls/:id/review` | Dialer: calls, notes, admin review |

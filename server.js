@@ -220,7 +220,13 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const estimates = createEstimateService(db, { getShopHours: jobs.getShopHours });
   jobs.setEstimator((lead, services) => estimates.suggest({ ...lead, services }).hours);
   const analytics = createAnalyticsService(db, { commissions, payments, jobs, users, estimates });
-  const timeClock = createTimeService(db, { users, getShopHours: jobs.getShopHours, mailer, brand: config.brand, publicUrl: config.publicUrl });
+  // Someone clocked in (or tried to) away from the shop: ping every admin's phone right away.
+  const timeClock = createTimeService(db, {
+    users, getShopHours: jobs.getShopHours, mailer, brand: config.brand, publicUrl: config.publicUrl,
+    onAlert: (msg) => alerts.notify(users.list().filter((u) => u.active !== false && u.role === 'admin').map((u) => u.name), {
+      title: `⚠ ${msg.title}`, body: msg.body, link: `${config.publicUrl || ''}/#time`, tag: 'clock-alert',
+    }),
+  });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -854,6 +860,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/payroll', ({ query }) => timeClock.payroll({ from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
   route('POST', '/api/payroll/weeks/:start/approve', ({ params, actor }) => timeClock.approvePayrollWeek(params.start, actor), { roles: ADMIN });
   route('POST', '/api/payroll/weeks/:start/email', ({ params }) => timeClock.emailWeek(params.start), { roles: ADMIN });
+  // The red bar for admins: clock-ins away from the shop nobody has marked seen yet.
+  route('GET', '/api/clock/alerts', () => timeClock.listAlerts(), { roles: ADMIN });
+  route('POST', '/api/clock/alerts/seen', ({ body, actor }) => timeClock.markAlertsSeen(body?.ids === 'all' ? 'all' : (body?.ids || []), actor), { roles: ADMIN });
   route('GET', '/api/schedules', () => timeClock.listSchedules(), { roles: ADMIN });
   route('PUT', '/api/schedules', ({ body, actor }) => timeClock.saveSchedules(body.schedules, actor), { roles: ADMIN });
   route('PUT', '/api/payroll/settings', ({ body }) => timeClock.saveSettings(body), { roles: ADMIN });

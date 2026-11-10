@@ -356,6 +356,24 @@ CREATE TABLE IF NOT EXISTS payroll_weeks (
   approved_by TEXT,
   approved_at TEXT
 );
+-- Clock-ins (or tries) away from the shop, for the admins: until an admin marks one seen it's on the red bar.
+CREATE TABLE IF NOT EXISTS clock_alerts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_norm  TEXT NOT NULL,
+  user_name  TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  lat        REAL,
+  lng        REAL,
+  accuracy   REAL,
+  distance   REAL,
+  punch_id   INTEGER,
+  attempts   INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  last_at    TEXT NOT NULL,
+  seen_by    TEXT,
+  seen_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS clock_alerts_open ON clock_alerts (seen_at, created_at);
 CREATE TABLE IF NOT EXISTS pay_rates (
   name_norm  TEXT PRIMARY KEY,
   user_name  TEXT NOT NULL,
@@ -494,7 +512,7 @@ function migrate(db) {
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
   if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
   // Where they were when they clocked in (shop logins clock in at the shop), and how far that was from it.
-  for (const [column, type] of [['clock_in_lat', 'REAL'], ['clock_in_lng', 'REAL'], ['clock_in_accuracy', 'REAL'], ['clock_in_distance', 'REAL']]) {
+  for (const [column, type] of [['clock_in_lat', 'REAL'], ['clock_in_lng', 'REAL'], ['clock_in_accuracy', 'REAL'], ['clock_in_distance', 'REAL'], ['clock_in_off_site', 'INTEGER']]) {
     if (!has('time_punches', column)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${column} ${type}`);
   }
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');

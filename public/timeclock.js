@@ -155,6 +155,7 @@ async function doAction(key, btn) {
     h('div', { class: `tc-dlg-check ${a.tone}`, 'aria-hidden': 'true' }, '✓'),
     h('h2', {}, a.done),
     h('p', { class: 'tc-dlg-note' }, a.doneNote(tc.status, before)),
+    tc.status.off_site && h('p', { class: 'tc-dlg-warn' }, `⚠ ${tc.status.off_site_message}`),
     h('div', { class: 'tc-dlg-actions' },
       h('button', { type: 'button', class: 'tc-action go', onclick: () => $('#clockDialog').close() }, 'Done')),
     h('p', { class: 'muted tc-dlg-hint' }, 'Takes you to the calendar.'));
@@ -500,6 +501,7 @@ function tpTile(label, value, sub) {
 const tcMin = (m) => (m < 60 ? `${m} min` : tcHM(m * 60000));
 const t12 = (t) => { const [hh, mm] = t.split(':').map(Number); return new Date(2000, 0, 1, hh, mm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
 const ISSUE_INFO = {
+  off_site: { label: 'Away from the shop', chip: (i) => (i.how_far ? `Clocked in ${i.how_far} away` : 'Clocked in, location off'), detail: (o) => `Clocked in at ${tcClock(o.first_in)} ${o.how_far ? `about ${o.how_far} from the shop` : 'with location turned off'}` },
   late: { label: 'Late arrivals', chip: (i) => `Late ${tcMin(i.minutes)}`, detail: (o) => `In at ${tcClock(o.first_in)}, scheduled ${t12(o.schedule.start)}` },
   early: { label: 'Left early', chip: (i) => `Left ${tcMin(i.minutes)} early`, detail: (o) => `Out at ${tcClock(o.last_out)}, scheduled ${t12(o.schedule.end)}` },
   long_lunch: { label: 'Long lunches', chip: (i) => `Long lunch +${tcMin(i.minutes)}`, detail: (o) => `${tcMin(o.lunch_minutes)} lunch` },
@@ -535,7 +537,68 @@ function attendanceCard(d) {
       issueChip(o),
       h('span', { class: 'muted tp-occ-detail' }, ISSUE_INFO[o.type].detail(o)))))
       : any && h('p', { class: 'tp-ok-line' }, '✓ Everyone was on schedule this period.'),
-    occ.length > 6 && h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.allOcc = !tc.allOcc; renderTimePay(); } }, tc.allOcc ? 'Show fewer' : `Show all ${occ.length}`));
+    occ.length > 6 && h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.allOcc = !tc.allOcc; renderTimePay(); } }, tc.allOcc ? 'Show fewer' : `Show all ${occ.length}`),
+    d.clock_alerts?.length ? h('div', { class: 'tp-away' },
+      h('h4', {}, `⚠ Clock-ins away from the shop (${d.clock_alerts.length})`),
+      h('ul', { class: 'tp-occ' }, ...d.clock_alerts.map((a) => h('li', {},
+        h('span', { class: 'tp-occ-date' }, `${tcDay(a.created_at)} ${tcClock(a.created_at)}`),
+        h('button', { type: 'button', class: 'tp-occ-name', onclick: () => openPerson(a.user_name) }, a.user_name),
+        h('span', { class: 'tp-issue off_site' }, a.kind.startsWith('blocked') ? 'Refused' : 'Let through'),
+        h('span', { class: 'muted tp-occ-detail' }, `${a.kind.endsWith('no_location') ? 'Location turned off' : `About ${a.how_far} from the shop`}${a.attempts > 1 ? ` · ${a.attempts} tries` : ''}${a.seen_by ? ` · seen by ${a.seen_by}` : ''}`))))) : null);
+}
+
+// ---------- the red bar: clock-ins away from the shop (admins, on every page) ----------
+const alarm = { list: [], shop: null, more: false, seen: new Set(), title: null };
+async function loadClockAlarm() {
+  if (!isAdmin()) return;
+  let r;
+  try { r = await api('/api/clock/alerts'); } catch { return; }
+  alarm.list = r.alerts;
+  alarm.shop = r.shop;
+  const keys = alarm.list.map((a) => `${a.id}:${a.attempts}`);
+  const fresh = keys.some((k) => !alarm.seen.has(k));
+  keys.forEach((k) => alarm.seen.add(k));
+  renderClockAlarm(fresh);
+}
+const alarmMap = (a) => {
+  if (a.lat == null) return null;
+  return alarm.shop
+    ? `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${alarm.shop.lat},${alarm.shop.lng}`
+    : `https://www.google.com/maps?q=${a.lat},${a.lng}`;
+};
+function renderClockAlarm(fresh) {
+  const bar = $('#clockAlarm');
+  alarm.title ??= document.title;
+  const n = alarm.list.length;
+  document.title = n ? `⚠ (${n}) ${alarm.title}` : alarm.title;
+  if (!n) { bar.hidden = true; return; }
+  const row = (a) => h('div', { class: 'ca-row' },
+    h('span', { class: 'ca-text' },
+      h('strong', {}, a.user_name), a.kind.startsWith('blocked') ? ' tried to clock in ' : ' clocked in ',
+      h('strong', {}, a.kind.endsWith('no_location') ? 'with location turned off' : `${a.how_far} from the shop`),
+      ` · ${fmtDateTime(a.last_at)}${a.attempts > 1 ? ` · ${a.attempts} tries` : ''}${a.kind.startsWith('blocked') ? ' · refused' : ' · let through'}`),
+    h('span', { class: 'ca-actions' },
+      alarmMap(a) && h('a', { class: 'ca-btn', href: alarmMap(a), target: '_blank', rel: 'noopener' }, 'Where?'),
+      h('button', { type: 'button', class: 'ca-btn solid', onclick: () => alarmSeen([a.id]) }, 'Got it')));
+  fill(bar,
+    h('div', { class: 'ca-head' },
+      h('span', { class: 'ca-icon', 'aria-hidden': 'true' }, '⚠'),
+      h('span', { class: 'ca-title' }, n === 1 ? 'Clock-in away from the shop' : `${n} clock-ins away from the shop`),
+      h('span', { class: 'ca-actions' },
+        n > 1 && h('button', { type: 'button', class: 'ca-btn solid', onclick: () => alarmSeen('all') }, 'Got them all'),
+        h('button', { type: 'button', class: 'ca-btn', onclick: () => { showPanel(null); showSection('time'); } }, 'Time & Pay'))),
+    ...alarm.list.slice(0, alarm.more ? 50 : 3).map(row),
+    n > 3 && h('button', { type: 'button', class: 'ca-more', onclick: () => { alarm.more = !alarm.more; renderClockAlarm(); } }, alarm.more ? 'Show fewer' : `Show ${n - 3} more`));
+  bar.hidden = false;
+  if (fresh) { bar.classList.remove('flash'); void bar.offsetWidth; bar.classList.add('flash'); }
+}
+async function alarmSeen(ids) {
+  try {
+    const r = await api('/api/clock/alerts/seen', { method: 'POST', body: { ids } });
+    alarm.list = r.alerts;
+    renderClockAlarm();
+    if (state.section === 'time') loadTimePay().catch(() => {});
+  } catch (err) { fail(err); }
 }
 
 // Work schedules: the days each person works and their hours (one shift time per person).
@@ -857,7 +920,7 @@ function tpSettings(s) {
         ot_weekly_hours: f.get('ot_weekly_hours'), ot_daily_hours: f.get('daily_on') ? f.get('ot_daily_hours') : null,
         ot_multiplier: f.get('ot_multiplier'), paid_kinds: f.getAll('paid_kinds'),
         review_day: f.get('review_day'), payroll_emails: f.get('payroll_emails'),
-        geofence: { enabled: Boolean(f.get('geo_on')), lat: f.get('geo_lat'), lng: f.get('geo_lng'), radius_m: f.get('geo_radius'), roles: f.getAll('geo_roles') },
+        geofence: { enabled: Boolean(f.get('geo_on')), lat: f.get('geo_lat'), lng: f.get('geo_lng'), radius_m: f.get('geo_radius'), roles: f.getAll('geo_roles'), mode: f.get('geo_mode') },
       } });
       toast('Saved. The numbers are updated.');
       tc.settings = false;
@@ -902,6 +965,10 @@ function geoSettings(g) {
     h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'geo_on', checked: Boolean(g.enabled) }), ' Only let these people clock in (and come back from lunch) at the shop:'),
     h('div', { class: 'tp-geo-roles' }, ...[['shop', 'Shop'], ['sales', 'Sales']].map(([r, label]) => h('label', { class: 'check' },
       h('input', { type: 'checkbox', name: 'geo_roles', value: r, checked: (g.roles || ['shop']).includes(r) }), ` ${label}`))),
+    h('div', { class: 'tp-geo-mode' },
+      h('div', { class: 'tp-geo-mode-label' }, 'When someone isn\'t at the shop:'),
+      h('label', { class: 'check' }, h('input', { type: 'radio', name: 'geo_mode', value: 'block', checked: g.mode !== 'flag' }), ' Don\'t let them clock in, and alert the admins'),
+      h('label', { class: 'check' }, h('input', { type: 'radio', name: 'geo_mode', value: 'flag', checked: g.mode === 'flag' }), ' Let them clock in, but alert the admins and flag it')),
     h('div', { class: 'tp-add-grid' },
       h('label', {}, 'Shop latitude', lat),
       h('label', {}, 'Shop longitude', lng),
@@ -985,6 +1052,8 @@ function initTimeClock() {
   $('#tpExport').addEventListener('click', exportTimePay);
   loadClock().catch(() => {});
   loadTimeOffBadge();
+  // Admins: the red bar for clock-ins away from the shop, checked every 30 seconds.
+  if (isAdmin()) { loadClockAlarm(); setInterval(loadClockAlarm, 30_000); }
   // Keep the running clock on the button current, and pick up a clock-out from another device.
   tc.tick = setInterval(renderClockPill, 30_000);
   setInterval(() => { loadClock().catch(() => {}); loadTimeOffBadge(); }, 5 * 60_000);

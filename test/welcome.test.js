@@ -61,8 +61,10 @@ test('new leads get the welcome text during the day; night leads get it at 8 AM'
 test('the customer\'s answer goes on the lead and they get a short thanks; a rep can set it too', async () => {
   const { leads, messages, texts } = setup();
   const { lead } = leads.ingest({ source: 'website', first_name: 'Hank', phone: '702-555-6623' });
-  messages.queueWelcome(lead);
-  await messages.sendWelcomes();
+  // Sent yesterday at 10 AM (welcome texts only go out in the daytime; answers count for 14 days).
+  const sent = new Date(); sent.setDate(sent.getDate() - 1); sent.setHours(10, 0, 0, 0);
+  messages.queueWelcome(lead, { at: sent });
+  await messages.sendWelcomes(new Date(sent.getTime() + 60000));
   messages.receiveText({ from: '+17025556623', body: 'How much for a 43 ft coach?' });
   assert.equal(leads.getLead(lead.id).best_time, null, 'not an answer');
   messages.receiveText({ from: '+17025556623', body: 'After 3 works best, weekdays' });

@@ -14,7 +14,8 @@ const KINDS = { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid
 // (Friday), and the week's summary is emailed to `payroll_emails`.
 const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'], grace_minutes: 5, lunch_minutes: 30, review_day: 5, payroll_emails: [],
   // Geo-lock: these logins can only clock in (or come back from lunch) within `radius_m` meters of the shop.
-  geofence: { enabled: false, lat: null, lng: null, radius_m: 150, roles: ['shop'] } };
+  // mode 'block': refuse a clock-in away from the shop; 'flag': let it through. Either way the admins are alerted.
+  geofence: { enabled: false, lat: null, lng: null, radius_m: 150, roles: ['shop'], mode: 'block' } };
 // Meters between two points on the earth.
 function distanceM(a, b) {
   const rad = (d) => (d * Math.PI) / 180;
@@ -26,7 +27,7 @@ function distanceM(a, b) {
 const howFar = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1609.34).toFixed(m < 16000 ? 1 : 0)} miles`);
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-const ISSUES = ['late', 'early', 'long_lunch', 'no_show', 'missed_out'];
+const ISSUES = ['off_site', 'late', 'early', 'long_lunch', 'no_show', 'missed_out'];
 const isTime = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || ''));
 const minutesOf = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const HOUR = 3600000;
@@ -38,7 +39,7 @@ const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const dateOf = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
 const keyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-function createTimeService(db, { users, getShopHours, mailer = null, brand = {}, publicUrl = '' }) {
+function createTimeService(db, { users, getShopHours, mailer = null, brand = {}, publicUrl = '', onAlert = null }) {
   const stmt = (sql) => db.prepare(sql);
 
   // ---- settings ----
@@ -87,12 +88,13 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
       g.lng = g.lng === '' || g.lng == null ? null : Number(g.lng);
       g.radius_m = Number(g.radius_m);
       g.roles = (Array.isArray(g.roles) ? g.roles : []).filter((r) => ['shop', 'sales'].includes(r));
+      g.mode = g.mode === 'flag' ? 'flag' : 'block';
       if (g.lat != null && !(g.lat >= -90 && g.lat <= 90)) throw new HttpError(400, 'The shop\'s latitude should be between -90 and 90.');
       if (g.lng != null && !(g.lng >= -180 && g.lng <= 180)) throw new HttpError(400, 'The shop\'s longitude should be between -180 and 180.');
       if (!(g.radius_m >= 25 && g.radius_m <= 5000)) throw new HttpError(400, 'How close counts should be 25 to 5,000 meters.');
       if (g.enabled && (g.lat == null || g.lng == null)) throw new HttpError(400, 'Set the shop\'s location first (stand at the shop and tap Use my current location).');
       if (g.enabled && !g.roles.length) throw new HttpError(400, 'Pick who has to be at the shop to clock in.');
-      next.geofence = { enabled: g.enabled, lat: g.lat, lng: g.lng, radius_m: Math.round(g.radius_m), roles: g.roles };
+      next.geofence = { enabled: g.enabled, lat: g.lat, lng: g.lng, radius_m: Math.round(g.radius_m), roles: g.roles, mode: g.mode };
     }
     if ('paid_kinds' in input) next.paid_kinds = (input.paid_kinds || []).filter((k) => KINDS[k] && k !== 'unpaid');
     stmt("INSERT INTO settings (key, value) VALUES ('payroll', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
@@ -184,35 +186,77 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
     return g.enabled && g.lat != null && g.roles.includes(role) ? g : null;
   };
   const geoError = (status, code, message) => Object.assign(new HttpError(status, message), { code });
-  // Checks where they are. GPS is fuzzy indoors, so its stated accuracy (up to 100 m) counts in their favor.
-  function checkLocation(role, location) {
+  // Where they are against the shop. GPS is fuzzy indoors, so its stated accuracy (up to 100 m) counts in
+  // their favor. problem: null (at the shop), 'far' or 'no_location'.
+  function locate(role, location) {
     const g = geoFor(role);
     const lat = Number(location?.lat);
     const lng = Number(location?.lng);
     const has = location && Number.isFinite(lat) && Number.isFinite(lng);
-    if (!g) return has ? { lat, lng, accuracy: Number(location.accuracy) || null, distance: null } : null;
-    if (!has) throw geoError(400, 'location_required', 'Turn on location for this app to clock in. You need to be at the shop.');
-    const accuracy = Math.max(0, Number(location.accuracy) || 0);
-    const distance = distanceM({ lat, lng }, g);
-    if (distance - Math.min(accuracy, 100) > g.radius_m) {
-      throw geoError(403, 'not_at_shop', `You're about ${howFar(distance)} from the shop. You can clock in when you're there.`);
-    }
-    return { lat, lng, accuracy: accuracy || null, distance: Math.round(distance) };
+    const accuracy = has ? Math.max(0, Number(location.accuracy) || 0) || null : null;
+    if (!g) return { geo: null, lat: has ? lat : null, lng: has ? lng : null, accuracy, distance: null, problem: null };
+    if (!has) return { geo: g, lat: null, lng: null, accuracy: null, distance: null, problem: 'no_location' };
+    const distance = Math.round(distanceM({ lat, lng }, g));
+    return { geo: g, lat, lng, accuracy, distance, problem: distance - Math.min(accuracy || 0, 100) > g.radius_m ? 'far' : null };
   }
+  const checkLocation = (role, location) => locate(role, location);
   const geofenceStatus = (role) => {
     const g = geoFor(role);
-    return g ? { location_required: true, shop_radius_m: g.radius_m } : { location_required: false };
+    return g ? { location_required: true, shop_radius_m: g.radius_m, geofence_mode: g.mode } : { location_required: false };
   };
 
-  // Clocking in again after lunch is coming back from lunch.
+  // ---- alerts for the admins: someone clocked in (or tried to) away from the shop ----
+  const shapeAlert = (a) => a && { ...a, how_far: a.distance != null ? howFar(a.distance) : null };
+  function raiseAlert(name, kind, where, { punchId = null, at = new Date() } = {}) {
+    // Tapping Try again over and over is one alert (with a count), not a new one each time.
+    const recent = !punchId && stmt(`SELECT * FROM clock_alerts WHERE name_norm = ? AND kind = ? AND punch_id IS NULL AND seen_at IS NULL AND last_at > ?
+                                    ORDER BY id DESC LIMIT 1`).get(norm(name), kind, new Date(at.getTime() - 30 * 60000).toISOString());
+    if (recent) {
+      stmt('UPDATE clock_alerts SET attempts = attempts + 1, last_at = ?, lat = COALESCE(?, lat), lng = COALESCE(?, lng), accuracy = COALESCE(?, accuracy), distance = COALESCE(?, distance) WHERE id = ?')
+        .run(at.toISOString(), where.lat, where.lng, where.accuracy, where.distance, recent.id);
+      return shapeAlert(stmt('SELECT * FROM clock_alerts WHERE id = ?').get(recent.id));
+    }
+    const { lastInsertRowid } = stmt(`INSERT INTO clock_alerts (name_norm, user_name, kind, lat, lng, accuracy, distance, punch_id, created_at, last_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(norm(name), name, kind, where.lat, where.lng, where.accuracy, where.distance, punchId, at.toISOString(), at.toISOString());
+    const alert = shapeAlert(stmt('SELECT * FROM clock_alerts WHERE id = ?').get(Number(lastInsertRowid)));
+    if (onAlert) Promise.resolve().then(() => onAlert(alertText(alert), alert)).catch((err) => console.error('Clock-in alert failed:', err.message));
+    return alert;
+  }
+  // "Mike tried to clock in about 3.4 miles from the shop."
+  function alertText(a) {
+    const where = a.kind.endsWith('no_location') ? 'with location turned off' : `about ${a.how_far} from the shop`;
+    const did = a.kind.startsWith('blocked') ? 'tried to clock in' : 'clocked in';
+    return { title: a.kind.startsWith('blocked') ? 'Clock-in away from the shop' : 'Clocked in away from the shop', body: `${a.user_name} ${did} ${where}.` };
+  }
+  const shopOf = () => { const g = getSettings().geofence; return g?.lat != null ? { lat: g.lat, lng: g.lng } : null; };
+  const listAlerts = ({ open = true, from, to } = {}) => {
+    const rows = open
+      ? stmt('SELECT * FROM clock_alerts WHERE seen_at IS NULL ORDER BY last_at DESC LIMIT 50').all()
+      : stmt('SELECT * FROM clock_alerts WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC').all(from, to);
+    return { alerts: rows.map((a) => ({ ...shapeAlert(a), ...alertText(shapeAlert(a)) })), shop: shopOf() };
+  };
+  function markAlertsSeen(ids, { user } = {}) {
+    const list = ids === 'all' ? stmt('SELECT id FROM clock_alerts WHERE seen_at IS NULL').all().map((r) => r.id) : ids.map(Number);
+    for (const id of list) stmt('UPDATE clock_alerts SET seen_by = ?, seen_at = ? WHERE id = ? AND seen_at IS NULL').run(user ?? 'Admin', now(), id);
+    return listAlerts();
+  }
+
+  // Clocking in again after lunch is coming back from lunch. Away from the shop (with the geo-lock on), it's
+  // refused, or let through and flagged, and either way the admins hear about it.
   function clockIn(name, { at = new Date(), role = null, location = null } = {}) {
     if (!name) throw new HttpError(400, 'Sign in to use the time clock.');
     closeForgotten(at); // yesterday's forgotten punch doesn't count as on the clock today
     if (openPunch(name)) return status(name, at);
-    const where = checkLocation(role, location);
-    stmt(`INSERT INTO time_punches (name_norm, user_name, clock_in, clock_in_lat, clock_in_lng, clock_in_accuracy, clock_in_distance, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(norm(name), name, at.toISOString(), where?.lat ?? null, where?.lng ?? null, where?.accuracy ?? null, where?.distance ?? null, now());
-    return status(name, at);
+    const where = locate(role, location);
+    if (where.problem && where.geo.mode !== 'flag') {
+      raiseAlert(name, `blocked_${where.problem}`, where, { at });
+      if (where.problem === 'no_location') throw geoError(400, 'location_required', 'Turn on location for this app to clock in. You need to be at the shop.');
+      throw geoError(403, 'not_at_shop', `You're about ${howFar(where.distance)} from the shop. You can clock in when you're there.`);
+    }
+    const { lastInsertRowid } = stmt(`INSERT INTO time_punches (name_norm, user_name, clock_in, clock_in_lat, clock_in_lng, clock_in_accuracy, clock_in_distance, clock_in_off_site, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(norm(name), name, at.toISOString(), where.lat, where.lng, where.accuracy, where.distance, where.problem ? 1 : null, now());
+    if (where.problem) raiseAlert(name, `off_site${where.problem === 'no_location' ? '_no_location' : ''}`, where, { punchId: Number(lastInsertRowid), at });
+    return { ...status(name, at), ...(where.problem && { off_site: true, off_site_message: where.problem === 'no_location' ? 'Your location was off, so the office was told.' : `You're about ${howFar(where.distance)} from the shop, so the office was told.` }) };
   }
 
   // Clocking out on lunch ends the day where lunch started (lunch isn't paid).
@@ -525,6 +569,8 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
       }
       if (settings.lunch_minutes && lunchMinutes > settings.lunch_minutes + grace) issues.push({ type: 'long_lunch', minutes: lunchMinutes - settings.lunch_minutes });
       if (punches.some((x) => x.auto_closed)) issues.push({ type: 'missed_out' });
+      const away = punches.find((x) => x.clock_in_off_site);
+      if (away) issues.unshift({ type: 'off_site', distance: away.clock_in_distance, how_far: away.clock_in_distance != null ? howFar(away.clock_in_distance) : null });
       days.push({
         date: key, schedule: plan, off: off ? { kind: off.kind, kind_label: off.kind_label } : null,
         punches, first_in: punches[0]?.clock_in || null, last_out: last && !last.open && !onLunch ? last.clock_out : null,
@@ -735,10 +781,12 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
       week: weekInfo(from, to, rows),
       pending_time_off: listOff({ status: 'pending' }),
       pending_corrections: listCorrections({ status: 'pending' }),
+      // Every clock-in (or try) away from the shop in the period, seen or not.
+      clock_alerts: listAlerts({ open: false, from: start.toISOString(), to: end.toISOString() }).alerts,
     };
   }
 
-  return { geofenceStatus, checkLocation, approveWeek, approvePayrollWeek, emailWeek, weekEmail, sendWeeklyDue, listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
+  return { listAlerts, markAlertsSeen, geofenceStatus, checkLocation, approveWeek, approvePayrollWeek, emailWeek, weekEmail, sendWeeklyDue, listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
 }
 
 module.exports = { createTimeService, TIME_OFF_KINDS: KINDS };

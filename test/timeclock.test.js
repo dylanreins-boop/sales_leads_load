@@ -251,7 +251,7 @@ test('work schedules: late, left early, long lunch, no-show and forgotten clock-
 
   const pay = time.payroll({ from: '2026-11-01', to: '2026-11-07', at: t(9, 9) });
   const mike = pay.rows.find((r) => r.name === 'Mike');
-  assert.deepEqual(mike.issues, { late: 1, early: 1, long_lunch: 1, no_show: 1, missed_out: 1 });
+  assert.deepEqual(mike.issues, { off_site: 0, late: 1, early: 1, long_lunch: 1, no_show: 1, missed_out: 1 });
   assert.equal(mike.issue_count, 5);
   const byDay = Object.fromEntries(mike.days.map((d) => [d.date, d.issues]));
   assert.deepEqual(byDay['2026-11-02'], []);
@@ -269,7 +269,7 @@ test('work schedules: late, left early, long lunch, no-show and forgotten clock-
   time.decideOff(time.listOff({ status: 'pending' })[0].id, { status: 'approved' }, { user: 'Dylan' });
   time.saveSettings({ grace_minutes: 30, lunch_minutes: 60 });
   const again = time.payroll({ from: '2026-11-01', to: '2026-11-07', at: t(9, 9) }).rows.find((r) => r.name === 'Mike');
-  assert.deepEqual(again.issues, { late: 0, early: 1, long_lunch: 0, no_show: 0, missed_out: 1 });
+  assert.deepEqual(again.issues, { off_site: 0, late: 0, early: 1, long_lunch: 0, no_show: 0, missed_out: 1 });
 });
 
 test('weekly pay: approve your week before clocking out on Friday; the summary is emailed to admins', async () => {
@@ -334,7 +334,7 @@ test('geo-lock: shop logins clock in only at the shop; their distance is kept', 
   assert.match((await call('PUT', '/api/payroll/settings', { geofence: { enabled: true } })).data.error, /shop's location first/);
   assert.equal((await call('PUT', '/api/payroll/settings', { geofence: { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] } }, MIKE)).status, 403, 'admins set it');
   const g = (await call('PUT', '/api/payroll/settings', { geofence: { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] } })).data.geofence;
-  assert.deepEqual(g, { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] });
+  assert.deepEqual(g, { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'], mode: 'block' });
 
   assert.equal((await call('GET', '/api/clock', undefined, MIKE)).data.location_required, true);
   assert.equal((await call('GET', '/api/clock', undefined, SAM)).data.location_required, false, 'sales can clock in anywhere');
@@ -361,4 +361,46 @@ test('geo-lock: shop logins clock in only at the shop; their distance is kept', 
   await call('POST', '/api/clock/out', {}, MIKE);
   await call('POST', '/api/clock/out', {}, SAM);
   await call('PUT', '/api/payroll/settings', { geofence: { enabled: false } });
+});
+
+test('admins are alerted when someone clocks in (or tries to) away from the shop', async () => {
+  const mem = openDatabase(':memory:');
+  const users = createUserService(mem, { serverUsers: [{ name: 'Mike', role: 'shop' }, { name: 'Dylan', role: 'admin' }] });
+  const pinged = [];
+  const time = createTimeService(mem, { users, getShopHours: () => ShopTime.settingsOf({}), onAlert: (msg, alert) => pinged.push([msg, alert]) });
+  const SHOP = { lat: 36.1069, lng: -115.1981 };
+  const FAR = { lat: 36.1550, lng: -115.1981, accuracy: 20 };
+  time.saveSettings({ geofence: { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] } });
+  const t = (d, h, m = 0) => new Date(2026, 10, d, h, m);
+
+  // Blocked: refused, and the admins hear about it once even if Mike keeps tapping Try again.
+  assert.throws(() => time.clockIn('Mike', { role: 'shop', location: FAR, at: t(10, 8) }), /3\.3 miles/);
+  assert.throws(() => time.clockIn('Mike', { role: 'shop', location: FAR, at: t(10, 8, 1) }), /3\.3 miles/);
+  assert.throws(() => time.clockIn('Mike', { role: 'shop', location: null, at: t(10, 8, 2) }), /Turn on location/);
+  await new Promise((r) => setTimeout(r, 5));
+  let open = time.listAlerts().alerts;
+  assert.deepEqual(open.map((a) => [a.kind, a.attempts]), [['blocked_no_location', 1], ['blocked_far', 2]]);
+  assert.equal(open.find((a) => a.kind === 'blocked_far').body, 'Mike tried to clock in about 3.3 miles from the shop.');
+  assert.equal(pinged.length, 2, 'one ping per alert, not per tap');
+  assert.equal(pinged[0][0].title, 'Clock-in away from the shop');
+  assert.deepEqual(time.listAlerts().shop, SHOP);
+
+  // Flag mode: the clock-in goes through, flagged, and shows in attendance.
+  time.saveSettings({ geofence: { mode: 'flag' } });
+  const s = time.clockIn('Mike', { role: 'shop', location: FAR, at: t(10, 8, 5) });
+  assert.equal(s.on_clock, true);
+  assert.equal(s.off_site, true);
+  assert.match(s.off_site_message, /office was told/);
+  time.clockOut('Mike', { at: t(10, 16) });
+  const day = time.payroll({ from: '2026-11-08', to: '2026-11-14', at: t(10, 17) }).rows.find((r) => r.name === 'Mike').days.find((d) => d.date === '2026-11-10');
+  assert.equal(day.issues[0].type, 'off_site');
+  assert.equal(day.issues[0].how_far, '3.3 miles');
+  assert.equal(time.payroll({ from: '2026-11-08', to: '2026-11-14', at: t(10, 17) }).clock_alerts.length, 3);
+
+  // Marking them seen clears the red bar.
+  open = time.listAlerts().alerts;
+  assert.equal(open.length, 3);
+  time.markAlertsSeen([open[0].id], { user: 'Dylan' });
+  assert.equal(time.listAlerts().alerts.length, 2);
+  assert.equal(time.markAlertsSeen('all', { user: 'Dylan' }).alerts.length, 0);
 });

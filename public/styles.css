@@ -1653,3 +1653,32 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .tp-geo-roles { display: flex; gap: 16px; padding-left: 24px; }
 .tp-geo .tp-form-actions a[hidden] { display: none; }
 .tp-geo-pin { font-size: 11px; cursor: help; }
+
+/* ---------- The red bar: clock-ins away from the shop (admins) ---------- */
+.clock-alarm { --ca: #d32020; background: var(--ca); color: #fff; padding: 10px max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); display: grid; gap: 6px; box-shadow: 0 4px 18px rgba(211, 32, 32, 0.45); position: relative; z-index: 5; border-bottom: 3px solid #ffd400; }
+.clock-alarm[hidden] { display: none; }
+.clock-alarm.flash { animation: ca-flash 0.6s ease-in-out 4; }
+@keyframes ca-flash { 50% { background: #ff3b30; box-shadow: 0 0 0 4px #ffd400, 0 4px 24px rgba(255, 59, 48, 0.7); } }
+.ca-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ca-icon { width: 30px; height: 30px; border-radius: 50%; background: #ffd400; color: #7a0000; display: grid; place-items: center; font-weight: 900; font-size: 18px; animation: ca-pulse 1.4s ease-in-out infinite; flex: none; }
+@keyframes ca-pulse { 50% { transform: scale(1.15); } }
+.ca-title { font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; }
+.ca-actions { display: inline-flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.ca-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.18); font-size: 14px; }
+.ca-text strong { font-weight: 800; }
+.ca-btn { border: 1.5px solid rgba(255, 255, 255, 0.85); background: transparent; color: #fff; border-radius: 8px; padding: 5px 12px; font-weight: 700; font-size: 13px; text-decoration: none; cursor: pointer; }
+.ca-btn.solid { background: #fff; color: #b00000; border-color: #fff; }
+.ca-btn:hover { filter: brightness(1.1); }
+.ca-more { justify-self: start; border: none; background: none; color: #fff; text-decoration: underline; font-weight: 700; cursor: pointer; padding: 0; }
+@media (prefers-reduced-motion: reduce) { .clock-alarm.flash, .ca-icon { animation: none; } }
+@media (max-width: 640px) { .ca-title { font-size: 14px; } .ca-row { font-size: 13px; } .ca-actions { margin-left: 0; } }
+.tc-dlg-warn { margin: -8px 0 16px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-weight: 600; font-size: 14px; }
+.tp-geo-mode { display: grid; gap: 4px; padding-left: 24px; }
+.tp-geo-mode-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.tp-away { display: grid; gap: 8px; }
+.tp-away h4 { margin: 0; color: var(--danger); font-size: 14px; }
+.tp-issue.off_site { background: var(--danger); color: #fff; }
+.tp-att-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.tp-att-tile.has.off_site { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: var(--danger); }
+@media (max-width: 900px) { .tp-att-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .tp-att-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
