@@ -1020,10 +1020,10 @@ function exportTimePay() {
 
 // Admins see how many time-off requests are waiting on the Time & Pay button.
 function setTimeOffBadge(n) {
-  const btn = document.querySelector('.main-nav [data-section="time"]');
-  if (!btn) return;
-  btn.textContent = 'Time & Pay';
-  if (n) btn.append(' ', h('span', { class: 'badge' }, n));
+  const badge = $('#timeBadge');
+  if (!badge) return;
+  badge.textContent = n;
+  badge.hidden = !n;
 }
 async function loadTimeOffBadge() {
   if (!isAdmin()) return;

@@ -41,6 +41,18 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+// One of the menu's icons (drawn once at the top of the page) by name, e.g. icon('i-phone').
+function icon(name, cls = 'ico') {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', cls);
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(NS, 'use');
+  use.setAttribute('href', `#${name}`);
+  svg.append(use);
+  return svg;
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
@@ -221,24 +233,53 @@ function pickPipeline() {
 }
 
 // ---------- sections: Leads / Calendar ----------
+const SECTION_TITLES = {
+  overview: 'Overview', leaderboard: 'Leaderboard', leads: 'Lead Pipeline', calendar: 'Shop Calendar', revenue: 'Revenue',
+  analytics: 'Analytics', commissions: 'Commissions', time: 'Time & Pay',
+};
+
+// The side menu: always there on a computer; on phones it slides out from the menu button.
+function setSideNav(open) {
+  document.body.classList.toggle('side-open', open);
+  $('#sideScrim').hidden = !open;
+  $('#menuBtn').setAttribute('aria-expanded', String(open));
+}
+function initNav() {
+  document.querySelectorAll('[data-section]').forEach((b) => {
+    if (b.closest('#sideNav, .bottom-bar')) b.addEventListener('click', () => showSection(b.dataset.section));
+  });
+  $('#menuBtn').addEventListener('click', () => setSideNav(!document.body.classList.contains('side-open')));
+  $('#sideScrim').addEventListener('click', () => setSideNav(false));
+  // Anything picked in the side menu (a screen or a settings panel) closes it on a phone.
+  $('#sideNav').addEventListener('click', (e) => { if (e.target.closest('button')) setSideNav(false); });
+  document.querySelector('.bottom-bar [data-open="todo"]')?.addEventListener('click', () => $('#remindersBtn').click());
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('side-open')) setSideNav(false); });
+}
+
 function showSection(name) {
   // Shop logins only have the calendar.
   const section = state.meta.currentRole === 'shop' ? 'calendar' : name;
   state.section = section;
   document.body.dataset.section = section;
-  $('#leadsSection').hidden = section !== 'leads';
-  $('#calendarSection').hidden = section !== 'calendar';
-  $('#revenueSection').hidden = section !== 'revenue';
-  $('#analyticsSection').hidden = section !== 'analytics';
-  $('#commissionsSection').hidden = section !== 'commissions';
-  $('#timeSection').hidden = section !== 'time';
-  $('#brandSection').textContent = { calendar: 'Shop Calendar', revenue: 'Revenue', analytics: 'Analytics', commissions: 'Commissions', time: 'Time & Pay' }[section] || 'Lead Pipeline';
-  document.querySelectorAll('.main-nav button').forEach((b) => {
+  for (const [id, name] of [['#overviewSection', 'overview'], ['#leaderboardSection', 'leaderboard'], ['#leadsSection', 'leads'], ['#calendarSection', 'calendar'],
+    ['#revenueSection', 'revenue'], ['#analyticsSection', 'analytics'], ['#commissionsSection', 'commissions'], ['#timeSection', 'time']]) {
+    $(id).hidden = section !== name;
+  }
+  $('#brandSection').textContent = SECTION_TITLES[section] || 'Lead Pipeline';
+  document.querySelectorAll('.side-item[data-section], .bottom-bar [data-section]').forEach((b) => {
     if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
+  setSideNav(false);
   history.replaceState(null, '', `#${section === 'leads' ? state.pipeline : section}`);
-  if (section === 'calendar') loadCalendar().catch(fail);
+  // A short fade so moving between screens feels smooth, not jumpy.
+  const shown = document.querySelector(`#${section}Section`);
+  shown?.classList.remove('section-in');
+  void shown?.offsetWidth;
+  shown?.classList.add('section-in');
+  if (section === 'overview') loadOverview().catch(fail);
+  else if (section === 'leaderboard') loadLeaderboard().catch(fail);
+  else if (section === 'calendar') loadCalendar().catch(fail);
   else if (section === 'revenue') loadRevenue().catch(fail);
   else if (section === 'analytics') loadAnalytics().catch(fail);
   else if (section === 'commissions') loadCommissions().catch(fail);
@@ -356,7 +397,7 @@ function leadCard(lead) {
     reminderPill = h('span', { class: `pill ${status === 'overdue' ? 'due' : status === 'today' ? 'today' : ''}` }, text);
   }
   return h('article', {
-    class: 'lead-card',
+    class: `lead-card${lead.age ? ` age-${lead.age}` : ''}`,
     draggable: 'true',
     tabindex: '0',
     ondragstart: (e) => e.dataTransfer.setData('text/plain', String(lead.id)),
@@ -373,6 +414,10 @@ function leadCard(lead) {
   h('div', { class: 'row' },
     h('span', { class: 'phone' }, lead.phone || lead.email || ''),
     h('span', { class: 'muted' }, timeAgo(lead.received_at))),
+  lead.heat && lead.stage !== 'waste' && h('div', { class: 'row card-score' },
+    lead.stage === 'booked' ? h('span', { class: 'heat booked' }, 'BOOKED') : h('span', { class: `heat ${lead.heat}`, title: lead.score_reasons.map((r) => `${r.points > 0 ? '+' : ''}${r.points} ${r.label}`).join('\n') }, `${lead.heat.toUpperCase()} · ${lead.score}`),
+    lead.value_cents ? h('span', { class: `card-value ${lead.value_kind}`, title: { job: 'The job price', quote: 'The latest quote', typical: 'Estimate: what this kind of vehicle usually comes to' }[lead.value_kind] },
+      `${lead.value_kind === 'typical' ? '~' : ''}${money(lead.value_cents, { cents: false })}${lead.value_kind === 'typical' ? ' est.' : ''}`) : null),
   bestTimeLine(lead),
   vehicleLine(lead) && h('div', { class: 'vehicle' }, vehicleLine(lead)),
   lead.booked_services?.length > 0 && h('div', { class: 'services-line' }, serviceLabels(lead.booked_services)),
@@ -616,7 +661,7 @@ function setLeadFull(on) {
 
 function showPanel(panel) {
   if (panel !== $('#drawer')) setLeadFull(false);
-  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#timePanel'), $('#socialPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
+  for (const p of [$('#drawer'), $('#remindersPanel'), $('#emailPanel'), $('#messagesPanel'), $('#importPanel'), $('#cardImportPanel'), $('#callsPanel'), $('#pipelinesPanel'), $('#timePanel'), $('#socialPanel'), $('#settingsPanel'), $('#winbackPanel'), $('#referralsPanel'), $('#appearancePanel'), $('#jobPanel'), $('#updatesPanel'), $('#teamPanel'), $('#pricesPanel')]) p.hidden = p !== panel;
   $('#scrim').hidden = !panel;
   if (panel !== $('#drawer')) {
     state.openLeadId = null;
@@ -642,6 +687,18 @@ function syncCard(lead) {
   if (i < 0) return;
   for (const k of ['last_opened_at', 'last_opened_by', 'last_contacted_at', 'last_contact_by', 'last_contact_kind', 'last_disposition']) state.leads[i][k] = lead[k];
   renderBoard();
+}
+
+// The lead's score, value and why: each rule that counted, with its points.
+function scoreBox(lead) {
+  if (lead.score == null || ['booked', 'waste'].includes(lead.stage)) return null;
+  const value = lead.value_cents ? `${lead.value_kind === 'typical' ? '~' : ''}${money(lead.value_cents, { cents: false })} ${{ quote: '(quote)', typical: '(estimate)', job: '' }[lead.value_kind] || ''}` : '';
+  return h('details', { class: 'score-box' },
+    h('summary', {}, h('span', { class: `heat ${lead.heat}` }, `${lead.heat.toUpperCase()} · ${lead.score}`),
+      h('span', { class: 'muted' }, ['Lead score', value && `· ${value}`, lead.age_hours != null && lead.age && `· ${lead.last_contacted_at ? 'last contact' : 'came in'} ${lead.age_hours < 1 ? 'under an hour' : lead.age_hours < 48 ? `${lead.age_hours}h` : `${Math.round(lead.age_hours / 24)} days`} ago`].filter(Boolean).join(' '))),
+    h('ul', { class: 'score-reasons' }, ...(lead.score_reasons.length ? lead.score_reasons : [{ label: 'Nothing counted yet', points: 0 }]).map((r) => h('li', { class: r.points < 0 ? 'neg' : '' },
+      h('span', {}, r.label), h('b', {}, `${r.points > 0 ? '+' : ''}${r.points}`)))),
+    isAdmin() && h('button', { type: 'button', class: 'link-btn', onclick: () => openScoring() }, 'Change the points'));
 }
 
 // What's next on this lead, and the last time anyone reached them, right at the top.
@@ -678,6 +735,7 @@ function renderLead(lead) {
 
   $('#leadContact').replaceChildren(...[
     nextStepLine(lead),
+    scoreBox(lead),
     lead.status && lead.status !== 'active' && h('div', { class: 'notice archived-notice' },
       h('span', {}, `${{ dead: 'Dead lead', customer: 'Past customer' }[lead.status] || 'Old lead'} · moved off the board ${shortDate(lead.archived_at)}`),
       h('button', { type: 'button', onclick: () => restoreLead(lead.id) }, lead.status === 'customer' ? 'Book again' : 'Restore to pipeline')),
@@ -1015,8 +1073,14 @@ async function loadReminders() {
   const freshNow = (state.queue?.fresh || []).filter((l) => Date.now() - new Date(l.received_at) < 2 * 86400000);
   const badge = $('#reminderBadge');
   const count = due.length + replies.length + freshNow.length + owedReps.length;
-  badge.hidden = !count;
-  badge.textContent = count;
+  for (const b of [badge, $('#bottomTodoBadge')]) {
+    b.hidden = !count;
+    b.textContent = count;
+  }
+  // The Leads menu item counts new leads nobody has called yet.
+  const fresh = (state.queue?.fresh || []).length;
+  $('#navLeadsBadge').hidden = !fresh;
+  $('#navLeadsBadge').textContent = fresh;
 
   const banner = $('#dueBanner');
   const parts = [];
@@ -1460,6 +1524,8 @@ function applyBrand(brand) {
   document.querySelector('.brand-logo')?.setAttribute('alt', brand.name);
   $('#brandCity').textContent = brand.city;
   $('#brandCity').hidden = !brand.city;
+  $('#sideCity').textContent = brand.city || brand.shortName || '';
+  document.querySelector('.side-logo')?.setAttribute('alt', brand.name);
   document.title = brand.shortName || brand.name;
   document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', brand.shortName || brand.name);
 }
@@ -1588,7 +1654,7 @@ async function init() {
   applyBrand(state.meta.brand);
   pickPipeline();
   initCalendar();
-  document.querySelectorAll('.main-nav button').forEach((b) => b.addEventListener('click', () => showSection(b.dataset.section)));
+  initNav();
 
   initSearch();
   $('#sourceFilter').addEventListener('change', () => loadLeads().catch(fail));
@@ -1656,7 +1722,9 @@ async function init() {
   $('#dispoForm').note.addEventListener('input', (e) => { if (e.target.value.trim()) setNoteError(false); });
   if (state.meta.currentUser) {
     $('#currentUser').hidden = false;
-    $('#currentUser').textContent = `Signed in as ${state.meta.currentUser}`;
+    $('#currentUser').textContent = state.meta.currentUser;
+    $('#userAvatar').textContent = state.meta.currentUser.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+    $('#userAvatar').title = `Signed in as ${state.meta.currentUser}`;
     $('#signOutBtn').hidden = false;
   }
   $('#signOutBtn').addEventListener('click', async () => {
@@ -1678,6 +1746,7 @@ async function init() {
   initPipelines();
   initTimeClock();
   initSocial();
+  initAdminScreens();
   initWinback();
   initAppearance();
   if (shop) return showSection('calendar');
@@ -1687,7 +1756,10 @@ async function init() {
   }
   await Promise.all([loadLeads(), loadReminders()]);
   const linked = location.hash.slice(1);
-  showSection(linked === 'calendar' || (isAdmin() && ['revenue', 'analytics', 'time'].includes(linked)) ? linked : 'leads');
+  // Opens on Overview, or the screen in the address (#calendar, #rv, …).
+  const isPipeline = state.meta.pipelines.some((p) => p.id === linked) || ['customers', 'old'].includes(linked);
+  showSection(['calendar', 'overview', 'leaderboard', 'commissions'].includes(linked) || (isAdmin() && ['revenue', 'analytics', 'time'].includes(linked)) ? linked
+    : isPipeline ? 'leads' : 'overview');
   // Opened from a phone alert: /?lead=12 opens that lead.
   const fromAlert = Number(new URLSearchParams(location.search).get('lead'));
   if (fromAlert) {

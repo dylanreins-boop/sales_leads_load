@@ -23,36 +23,108 @@
   </script>
 </head>
 <body class="app-page">
+  <!-- Icons used in the menu (drawn once, used by name). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+      <symbol id="i-leads" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+      <symbol id="i-todo" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+      <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></symbol>
+      <symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
+      <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+      <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+      <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8S10.5 3 8 4s0 4 4 4zM12 8s1.5-5 4-4 0 4-4 4z"/></symbol>
+      <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></symbol>
+      <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
+      <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="7" rx="1"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a9 9 0 1 1 16 0"/><path d="M12 14l4-5"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+      <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 13a8 8 0 0 0 14.5 4.5L20 16"/><path d="M4 4v4h4M20 20v-4h-4"/></symbol>
+      <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-1 2-2 0-1.5-1.5-2 0-3.5S21 15 21 11c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- The side menu: every screen and setting, grouped. On phones it slides out from the menu button. -->
+  <aside id="sideNav" class="sidenav" aria-label="Menu">
+    <div class="side-brand">
+      <img class="side-logo" src="/brand/logo-white.png" alt="Bob Moses Ceramic Coating" width="81" height="46">
+      <div class="side-brand-text"><span id="sideCity">Las Vegas</span><small>Lead Pipeline · CRM</small></div>
+    </div>
+    <nav class="side-scroll">
+      <div class="side-group staff-only">Workspace</div>
+      <button type="button" class="side-item staff-only" data-section="overview"><svg class="ico"><use href="#i-overview"/></svg><span>Overview</span></button>
+      <button type="button" class="side-item staff-only" data-section="leads"><svg class="ico"><use href="#i-leads"/></svg><span>Leads</span><span id="navLeadsBadge" class="badge" hidden></span></button>
+      <button type="button" class="side-item" data-section="calendar"><svg class="ico"><use href="#i-calendar"/></svg><span>Calendar</span></button>
+      <button type="button" id="callsBtn" class="side-item admin-only dialer-only" hidden><svg class="ico"><use href="#i-phone"/></svg><span>Calls</span></button>
+      <button type="button" id="updatesBtn" class="side-item admin-only"><svg class="ico"><use href="#i-bell"/></svg><span>Updates</span><span id="updatesBadge" class="badge" hidden></span></button>
+
+      <div class="side-group staff-only">Performance</div>
+      <button type="button" class="side-item staff-only" data-section="leaderboard"><svg class="ico"><use href="#i-trophy"/></svg><span>Leaderboard</span></button>
+      <button type="button" class="side-item admin-only" data-section="analytics"><svg class="ico"><use href="#i-chart"/></svg><span>Analytics</span></button>
+      <button type="button" class="side-item staff-only" data-section="commissions"><svg class="ico"><use href="#i-dollar"/></svg><span>Commissions</span></button>
+      <button type="button" class="side-item admin-only" data-section="revenue"><svg class="ico"><use href="#i-trend"/></svg><span>Revenue</span></button>
+
+      <div class="side-group admin-only">Operations</div>
+      <button type="button" class="side-item admin-only" data-section="time"><svg class="ico"><use href="#i-clock"/></svg><span>Time &amp; Pay</span><span id="timeBadge" class="badge" hidden></span></button>
+      <button type="button" id="socialBtn" class="side-item admin-only"><svg class="ico"><use href="#i-camera"/></svg><span>Social</span><span id="socialBadge" class="badge" hidden></span></button>
+
+      <div class="side-group admin-only">Marketing</div>
+      <button type="button" id="messagesBtn" class="side-item admin-only"><svg class="ico"><use href="#i-chat"/></svg><span>Texts &amp; reminders</span></button>
+      <button type="button" id="emailSettingsBtn" class="side-item admin-only"><svg class="ico"><use href="#i-mail"/></svg><span>Emails</span></button>
+      <button type="button" id="winbackBtn" class="side-item admin-only"><svg class="ico"><use href="#i-rotate"/></svg><span>Win-back</span></button>
+      <button type="button" id="referralsBtn" class="side-item admin-only"><svg class="ico"><use href="#i-gift"/></svg><span>Referrals</span></button>
+      <button type="button" id="automationsBtn" class="side-item admin-only"><svg class="ico"><use href="#i-zap"/></svg><span>Automations</span></button>
+
+      <div class="side-group admin-only">Settings</div>
+      <button type="button" id="teamBtn" class="side-item admin-only"><svg class="ico"><use href="#i-users"/></svg><span>Team</span></button>
+      <button type="button" id="pricesBtn" class="side-item admin-only"><svg class="ico"><use href="#i-tag"/></svg><span>Price list</span></button>
+      <button type="button" id="pipelinesBtn" class="side-item admin-only"><svg class="ico"><use href="#i-columns"/></svg><span>Pipelines</span></button>
+      <button type="button" id="scoringBtn" class="side-item admin-only"><svg class="ico"><use href="#i-gauge"/></svg><span>Lead scoring</span></button>
+      <button type="button" id="importBtn" class="side-item admin-only"><svg class="ico"><use href="#i-upload"/></svg><span>Import leads</span></button>
+      <button type="button" id="syncFb" class="side-item admin-only"><svg class="ico"><use href="#i-sync"/></svg><span>Sync Facebook</span></button>
+      <button type="button" id="syncGoogle" class="side-item admin-only" hidden><svg class="ico"><use href="#i-sync"/></svg><span>Sync Google</span></button>
+      <button type="button" id="adminLogBtn" class="side-item admin-only"><svg class="ico"><use href="#i-shield"/></svg><span>Admin log</span></button>
+    </nav>
+    <div class="side-foot">
+      <div class="side-user"><span class="avatar" id="userAvatar" aria-hidden="true"></span><span id="currentUser" hidden></span></div>
+      <button type="button" id="appearanceBtn" class="side-item"><svg class="ico"><use href="#i-palette"/></svg><span>Appearance</span></button>
+      <button type="button" id="signOutBtn" class="side-item" hidden><svg class="ico"><use href="#i-logout"/></svg><span>Sign out</span></button>
+    </div>
+  </aside>
+  <div id="sideScrim" class="side-scrim" hidden></div>
+
   <header class="topbar">
+    <button type="button" id="menuBtn" class="menu-btn" aria-label="Menu" aria-controls="sideNav" aria-expanded="false"><svg class="ico"><use href="#i-menu"/></svg></button>
     <div class="brand">
       <picture>
         <source srcset="/brand/logo-white.png" media="(prefers-color-scheme: dark)">
         <img class="brand-logo" src="/brand/logo.png" alt="Bob Moses Ceramic Coating" width="81" height="46">
       </picture>
       <h1 class="visually-hidden" id="brandName">Bob Moses Ceramic Coating</h1>
-      <div class="brand-sub"><span id="brandCity">Las Vegas</span><br><span id="brandSection">Lead Pipeline</span></div>
+      <div class="crumb"><span id="brandCity">Las Vegas</span><span class="crumb-sep" aria-hidden="true">/</span><b id="brandSection">Overview</b></div>
     </div>
-    <nav class="main-nav" aria-label="Sections">
-      <button type="button" data-section="leads" aria-current="page">Leads</button>
-      <button type="button" data-section="calendar">Calendar</button>
-      <button type="button" data-section="commissions">Commissions</button>
-      <button type="button" data-section="revenue" class="admin-only">Revenue</button>
-      <button type="button" data-section="analytics" class="admin-only">Analytics</button>
-      <button type="button" data-section="time" class="admin-only">Time &amp; Pay</button>
-    </nav>
-    <button type="button" id="clockBtn" class="clock-pill" hidden aria-haspopup="dialog">
-      <span class="clock-dot" aria-hidden="true"></span><span id="clockLabel">Clock in</span>
-    </button>
-    <span id="currentUser" class="muted" hidden></span>
-    <button type="button" id="appearanceBtn" class="link-btn">Appearance</button>
-    <button type="button" id="signOutBtn" class="link-btn" hidden>Sign out</button>
-    <div class="filters lead-only">
+    <div class="filters staff-only">
       <div class="search-box">
-        <input id="search" type="search" placeholder="Search all leads: name, phone, email, vehicle" aria-label="Search all leads" autocomplete="off"
+        <svg class="ico search-ico" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="search" type="search" placeholder="Search leads, customers, phones, vehicles…" aria-label="Search all leads" autocomplete="off"
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="searchResults">
         <div id="searchResults" class="search-pop" role="listbox" aria-label="Matching leads" hidden></div>
       </div>
-      <select id="sourceFilter" aria-label="Filter by source">
+      <select id="sourceFilter" class="lead-only" aria-label="Filter by source">
         <option value="">All sources</option>
         <option value="facebook">Facebook</option>
         <option value="website">Website</option>
@@ -65,42 +137,35 @@
       </select>
     </div>
     <div class="actions">
-      <button id="updatesBtn" type="button" class="admin-only">
-        Updates <span id="updatesBadge" class="badge" hidden></span>
-      </button>
-      <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
-      <!-- Admin tools, grouped so the everyday buttons stand out. -->
-      <details class="menu lead-only admin-only" id="marketingMenu">
-        <summary>Marketing</summary>
-        <div class="menu-list">
-          <button id="messagesBtn" type="button">Texts &amp; reminders</button>
-          <button id="emailSettingsBtn" type="button">Emails</button>
-          <button id="winbackBtn" type="button">Win-back</button>
-          <button id="referralsBtn" type="button">Referrals</button>
-        </div>
-      </details>
-      <details class="menu admin-only" id="setupMenu">
-        <summary>Setup</summary>
-        <div class="menu-list">
-          <button id="teamBtn" type="button">Team</button>
-          <button id="pricesBtn" type="button" class="lead-only">Price list</button>
-          <button id="pipelinesBtn" type="button" class="lead-only">Pipelines</button>
-          <button id="importBtn" type="button" class="lead-only">Import leads</button>
-          <button id="syncFb" type="button" class="lead-only">Sync Facebook</button>
-          <button id="syncGoogle" type="button" class="lead-only" hidden>Sync Google</button>
-        </div>
-      </details>
-      <button id="socialBtn" type="button" class="admin-only">Social <span id="socialBadge" class="badge" hidden></span></button>
-      <button id="dialerBtn" type="button" class="lead-only dialer-only" hidden>Start calling</button>
-      <button id="callsBtn" type="button" class="admin-only dialer-only" hidden>Calls</button>
-      <button id="remindersBtn" type="button" class="primary">
-        To do <span id="reminderBadge" class="badge" hidden></span>
+      <button id="dialerBtn" type="button" class="staff-only dialer-only" hidden><svg class="ico"><use href="#i-phone"/></svg><span>Start calling</span></button>
+      <button id="addLeadBtn" type="button" class="primary staff-only"><svg class="ico"><use href="#i-plus"/></svg><span>Add lead</span></button>
+      <button id="remindersBtn" type="button" class="todo-btn staff-only"><svg class="ico"><use href="#i-todo"/></svg><span>To do</span><span id="reminderBadge" class="badge" hidden></span></button>
+      <button type="button" id="clockBtn" class="clock-pill" hidden aria-haspopup="dialog">
+        <span class="clock-dot" aria-hidden="true"></span><span id="clockLabel">Clock in</span>
       </button>
     </div>
   </header>
 
+  <!-- Phones: the four screens used most, always at the bottom. -->
+  <nav class="bottom-bar staff-only" aria-label="Quick menu">
+    <button type="button" data-section="overview"><svg class="ico"><use href="#i-overview"/></svg><span>Overview</span></button>
+    <button type="button" data-section="leads"><svg class="ico"><use href="#i-leads"/></svg><span>Leads</span></button>
+    <button type="button" data-section="calendar"><svg class="ico"><use href="#i-calendar"/></svg><span>Calendar</span></button>
+    <button type="button" data-open="todo"><svg class="ico"><use href="#i-todo"/></svg><span>To do</span><span id="bottomTodoBadge" class="badge" hidden></span></button>
+  </nav>
+
   <!-- Admins: someone clocked in (or tried to) away from the shop. Stays until an admin taps Got it. -->
   <div id="clockAlarm" class="clock-alarm" role="alert" hidden></div>
+
+  <!-- Overview: the home screen (admins and sales). -->
+  <section id="overviewSection" class="section overview" aria-label="Overview" hidden>
+    <div id="overviewBody" class="ov"></div>
+  </section>
+
+  <!-- Leaderboard: each rep's calls, appointments and sales for a week or month. -->
+  <section id="leaderboardSection" class="section leaderboard" aria-label="Leaderboard" hidden>
+    <div id="leaderboardBody" class="lb"></div>
+  </section>
 
   <div id="leadsSection" class="section">
   <nav id="pipelineTabs" class="pipeline-tabs" role="tablist" aria-label="Pipelines"></nav>
@@ -818,6 +883,18 @@
     <div class="drawer-body" id="pipelinesBody"></div>
   </aside>
 
+  <!-- Settings screens opened from the side menu: Lead scoring, Automations, Admin log, a rep's profile. -->
+  <aside id="settingsPanel" class="drawer wide" aria-labelledby="settingsTitle" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2 id="settingsTitle"></h2>
+        <div class="muted" id="settingsSub"></div>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="drawer-body" id="settingsBody"></div>
+  </aside>
+
   <aside id="socialPanel" class="drawer wide" aria-label="Social posts" hidden>
     <div class="drawer-head">
       <div>
@@ -1204,5 +1281,8 @@
   <script src="pipelines.js"></script>
   <script src="timeclock.js"></script>
   <script src="social.js"></script>
+  <script src="overview.js"></script>
+  <script src="leaderboard.js"></script>
+  <script src="admin.js"></script>
 </body>
 </html>

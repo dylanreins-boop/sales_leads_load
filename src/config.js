@@ -17,6 +17,14 @@ function loadDotEnv(file) {
 loadDotEnv(path.join(__dirname, '..', '.env'));
 
 const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
+// "https://bobmosescc.com" -> "https://bobmosescc.com,https://www.bobmosescc.com" (a site answers on both).
+function siteOrigins(site) {
+  try {
+    const u = new URL(/^https?:\/\//.test(site) ? site : `https://${site}`);
+    const bare = u.hostname.replace(/^www\./, '');
+    return [`${u.protocol}//${bare}`, `${u.protocol}//www.${bare}`].join(',');
+  } catch { return '*'; }
+}
 
 module.exports = {
   port: Number(process.env.PORT) || 3000,
@@ -73,9 +81,12 @@ module.exports = {
   // Past customers show as "Due for maintenance" this many months after pick-up.
   recoatMonths: Number(process.env.RECOAT_MONTHS ?? 11),
 
+  // The website form. On the live server the form has to send WEBSITE_API_KEY, and only the company's
+  // own website may post to it from a browser (CORS_ORIGINS, or the brand website and its www. address).
   website: {
     apiKey: process.env.WEBSITE_API_KEY || '',
-    corsOrigins: list(process.env.CORS_ORIGINS || '*'),
+    requireKey: process.env.NODE_ENV === 'production',
+    corsOrigins: list(process.env.CORS_ORIGINS || (process.env.NODE_ENV === 'production' ? siteOrigins(process.env.BRAND_WEBSITE || 'https://bobmosescc.com') : '*')),
   },
 
   // The address people reach the app at, e.g. https://leads.bobmosescc.com. Used in booking links

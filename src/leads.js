@@ -163,6 +163,11 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
         input.raw ? JSON.stringify(input.raw) : null, toIso(input.received_at, ts), ts, ts,
       );
       const id = Number(lastInsertRowid);
+      // Where a website lead came from: the ad tags in the link, the page with the form, the site before it.
+      const from = ['utm_source', 'utm_medium', 'utm_content', 'utm_term', 'landing_page', 'referrer_url'];
+      if (from.some((k) => input[k])) {
+        stmt(`UPDATE leads SET ${from.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...from.map((k) => (input[k] ? String(input[k]).slice(0, 300) : null)), id);
+      }
       logActivity(id, 'created', { to_stage: 'new', note: `Lead received from ${lead.source}`, user });
       return { lead: getLead(id), created: true, duplicate: false };
     });
@@ -208,7 +213,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                         l.campaign, l.form_name, l.message, l.heard_about, l.last_disposition, l.last_contacted_at,
                         l.last_contact_by, l.last_contact_kind, l.last_opened_at, l.last_opened_by,
                         l.welcome_due_at, l.welcome_sent_at, l.best_time, l.best_time_note, l.best_time_by,
-                        l.received_at, l.updated_at, l.archived_at,
+                        l.received_at, l.updated_at, l.archived_at, l.first_contacted_at, l.referrer_id,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at,
                         ${LAST_REPLY_SQL} AS last_reply_at,
                         (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS jobs_done,
@@ -282,7 +287,8 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
 
   // A rep reached out some other way than a logged call (a text they sent).
   function markContacted(id, { user, kind }) {
-    stmt('UPDATE leads SET last_contacted_at = ?, last_contact_by = ?, last_contact_kind = ? WHERE id = ?').run(now(), user ?? null, kind, id);
+    const ts = now();
+    stmt('UPDATE leads SET last_contacted_at = ?, last_contact_by = ?, last_contact_kind = ?, first_contacted_at = COALESCE(first_contacted_at, ?) WHERE id = ?').run(ts, user ?? null, kind, ts, id);
   }
 
   function getLead(id) {
@@ -413,8 +419,9 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
         bringBack(lead, { stage: lead.stage, note: 'Back on the board: call logged', user });
       }
       const call = def.call !== false;
-      stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, last_contact_by = ?, last_contact_kind = ?, updated_at = ? WHERE id = ?`)
-        .run(toStage, def.id, call ? ts : lead.last_contacted_at, call ? user ?? null : lead.last_contact_by, call ? 'call' : lead.last_contact_kind, ts, id);
+      stmt(`UPDATE leads SET stage = ?, last_disposition = ?, last_contacted_at = ?, last_contact_by = ?, last_contact_kind = ?,
+            first_contacted_at = COALESCE(first_contacted_at, ?), updated_at = ? WHERE id = ?`)
+        .run(toStage, def.id, call ? ts : lead.last_contacted_at, call ? user ?? null : lead.last_contact_by, call ? 'call' : lead.last_contact_kind, call ? ts : null, ts, id);
       if (booked) stmt('UPDATE leads SET booked_services = ? WHERE id = ?').run(JSON.stringify(booked), id);
       const fullNote = booked ? `Services booked: ${serviceLabels(booked)}\n${clean(note)}` : clean(note);
       logActivity(id, 'disposition', {

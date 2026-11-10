@@ -77,6 +77,12 @@ function applyLogo() {
   if (!look.standardLogos) look.standardLogos = { light: img.getAttribute('src'), dark: source?.getAttribute('srcset') || img.getAttribute('src') };
   source?.remove();
   img.src = onDark ? a.logo_dark || a.logo || look.standardLogos.dark : a.logo || look.standardLogos.light;
+  // The side menu is always dark: it uses the dark-background logo.
+  const side = document.querySelector('.side-logo');
+  if (side) {
+    if (!look.standardSide) look.standardSide = side.getAttribute('src');
+    side.src = a.logo_dark || look.standardSide;
+  }
 }
 
 async function applyBackground(a) {

@@ -27,6 +27,7 @@ const { createJobService, JOB_STATUSES, PHOTO_PHASES, parseAmount, hideAmount } 
 const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
 const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 const { createQuoteService } = require('./src/quotes');
+const { createInsightService } = require('./src/insights');
 const { createReviewService } = require('./src/reviews');
 const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
 const { createTexter, toE164 } = require('./src/sms');
@@ -120,10 +121,22 @@ function sessionCookie(req, value, maxAge) {
 const loginFailures = new Map();
 const LOGIN_WINDOW = 15 * 60000;
 const LOGIN_MAX_TRIES = 8;
-function loginKey(req, name) {
+function clientIp(req) {
   const forwarded = config.trustProxy ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() : '';
-  const ip = String(req.headers['fly-client-ip'] || forwarded || req.socket?.remoteAddress || '');
-  return `${ip}|${String(name || '').trim().toLowerCase()}`;
+  return String(req.headers['fly-client-ip'] || forwarded || req.socket?.remoteAddress || '');
+}
+function loginKey(req, name) {
+  return `${clientIp(req)}|${String(name || '').trim().toLowerCase()}`;
+}
+// The website form: at most 20 submissions per address in 10 minutes (no person sends that many).
+const intakes = new Map();
+function tooManyIntakes(ip) {
+  const recent = (intakes.get(ip) || []).filter((t) => Date.now() - t < 10 * 60000);
+  if (recent.length >= 20) { intakes.set(ip, recent); return true; }
+  recent.push(Date.now());
+  intakes.set(ip, recent);
+  if (intakes.size > 5000) intakes.clear(); // never grows without bound
+  return false;
 }
 function tooManyTries(key) {
   const recent = (loginFailures.get(key) || []).filter((t) => Date.now() - t < LOGIN_WINDOW);
@@ -187,6 +200,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const pipelines = createPipelineService(db);
   pipelines.load();
   const quotes = createQuoteService(db, { leads, brand: config.brand });
+  const insights = createInsightService(db, { quotes, leads, roleOf: (name) => users.lookup(name)?.role || null });
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
   const commissions = createCommissionService(db, { leads, jobs });
   const payments = createPaymentService(db, { leads, jobs });
@@ -322,8 +336,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/leads/search', ({ query }) => leads.searchLeads(query.get('q')));
   route('GET', '/api/leads', ({ query }) => {
     leads.archiveOldLeads();
-    return leads.listLeads(leadFilters(query));
+    return insights.decorate(leads.listLeads(leadFilters(query)));
   });
+  // ---- Overview (the home screen) and lead scoring ----
+  route('GET', '/api/overview', () => insights.overview());
+  route('GET', '/api/settings/lead-score', () => insights.getScoring());
+  route('PUT', '/api/settings/lead-score', ({ body }) => insights.saveScoring(body), { roles: ADMIN });
   // ---- Shop calendar ----
   route('GET', '/api/jobs', ({ query }) => jobs.listJobs({ from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
   route('GET', '/api/jobs/unscheduled', () => jobs.listUnscheduled(), { roles: ADMIN });
@@ -506,7 +524,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/leads/:id', ({ params, query, actor }) => {
     // Opening the lead (not a quiet refresh after a save) is recorded for the card's "Opened" line.
     if (query.get('open') === '1') leads.markOpened(Number(params.id), actor);
-    return leads.getLead(Number(params.id));
+    return insights.decorate([leads.getLead(Number(params.id))])[0];
   });
   route('PATCH', '/api/leads/:id', ({ params, body, actor }) => leads.updateLead(Number(params.id), body, actor));
   route('POST', '/api/leads/:id/disposition', async ({ params, body, actor }) => {
@@ -1001,16 +1019,22 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
 
   route('POST', '/api/intake/website', ({ req, res, body }) => {
     const cors = corsHeaders(req);
+    // On the live server the form must send the key; with no key set there, the form is off.
+    if (config.website.requireKey && !config.website.apiKey) {
+      return send(res, 503, { error: 'The website form isn\'t set up yet (WEBSITE_API_KEY).' }, cors);
+    }
     const key = req.headers['x-api-key'] || body.api_key;
     if (config.website.apiKey && !safeEqual(key || '', config.website.apiKey)) {
       return send(res, 401, { error: 'Invalid API key' }, cors);
     }
+    // More than 20 submissions from one address in 10 minutes is a bot.
+    if (tooManyIntakes(clientIp(req))) return send(res, 429, { error: 'Too many submissions. Please call us instead.' }, cors);
     const redirect = /^https?:\/\//.test(body._redirect || '') ? body._redirect : null;
     if (!isSpam(body)) leads.ingest(mapWebsiteLead(body));
     // Plain HTML forms can post here directly and land on a thank-you page.
     if (redirect) return send(res, 303, '', { ...cors, Location: redirect });
     send(res, 201, { ok: true }, cors);
-  }, { isPublic: true });
+  }, { isPublic: true, bodyLimit: 64_000 });
 
   // Move two-week-old leads off the boards now and every hour.
   leads.archiveOldLeads();

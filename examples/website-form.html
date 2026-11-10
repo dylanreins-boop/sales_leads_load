@@ -14,6 +14,8 @@
 -->
 <form action="https://leads.yourcompany.com/api/intake/website" method="POST">
   <input type="hidden" name="form_name" value="Contact page">
+  <!-- The app's WEBSITE_API_KEY (required on the live server). -->
+  <input type="hidden" name="api_key" value="YOUR_WEBSITE_API_KEY">
   <input type="hidden" name="_redirect" value="https://www.yourcompany.com/thank-you">
 
   <!-- Spam trap: hidden from people, bots fill it in -->
@@ -47,17 +49,21 @@
 </form>
 
 <script>
-  // Copies UTM tags from the page URL so you can see which campaign a lead came from.
+  // Sends where the visitor came from: the ad tags in the page address (utm_...), the page with the
+  // form, and the site they were on before, so each lead shows which ad or page brought it in.
   (function () {
     var params = new URLSearchParams(location.search);
     var form = document.currentScript.previousElementSibling;
-    ['utm_source', 'utm_campaign'].forEach(function (key) {
-      if (!params.get(key)) return;
+    var add = function (name, value) {
+      if (!value) return;
       var input = document.createElement('input');
       input.type = 'hidden';
-      input.name = key;
-      input.value = params.get(key);
+      input.name = name;
+      input.value = value;
       form.appendChild(input);
-    });
+    };
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach(function (key) { add(key, params.get(key)); });
+    add('page_url', location.href.split('#')[0]);
+    add('referrer', document.referrer);
   })();
 </script>

@@ -529,6 +529,15 @@ function migrate(db) {
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
   // The customer said photos of their vehicle may be posted on social media (at the drop-off sign-off).
   if (!has('jobs', 'social_ok')) db.exec('ALTER TABLE jobs ADD COLUMN social_ok INTEGER');
+  // The first time anyone reached the lead (a logged call or a rep's own text), for speed to first contact.
+  if (!has('leads', 'first_contacted_at')) {
+    db.exec('ALTER TABLE leads ADD COLUMN first_contacted_at TEXT');
+    db.exec(`UPDATE leads SET first_contacted_at = (SELECT MIN(created_at) FROM activities a WHERE a.lead_id = leads.id AND a.type = 'disposition'
+               AND a.disposition != 'updated_notes' AND a.user_name IS NOT NULL) WHERE last_contacted_at IS NOT NULL`);
+    db.exec('UPDATE leads SET first_contacted_at = last_contacted_at WHERE first_contacted_at IS NULL AND last_contacted_at IS NOT NULL');
+  }
+  // Where a website lead came from (the ad tags in the link, the page, the site before).
+  for (const column of ['utm_source', 'utm_medium', 'utm_content', 'utm_term', 'landing_page', 'referrer_url']) if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   // Who recorded the customer's OK (or that they took it back), when, and how (signoff | staff).
   for (const column of ['social_ok_by', 'social_ok_at', 'social_ok_how']) if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
