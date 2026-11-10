@@ -2111,3 +2111,16 @@ button:active:not(:disabled) { transform: scale(0.98); }
 .audit-time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .audit-meta { color: var(--muted); font-size: 11.5px; text-align: right; }
 @media (max-width: 640px) { .audit-row { grid-template-columns: 60px 1fr; } .audit-meta { grid-column: 2; text-align: left; } }
+
+/* Overview mini cards: always fit the column. Long names shorten with "…", the score tag drops under the
+   name when there's no room, and the next step and amount share the bottom line or stack. */
+.ov-col { min-width: 0; }
+.ov-lead { width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box; }
+.ov-lead-top { flex-wrap: wrap; min-width: 0; }
+.ov-lead-top { gap: 3px 6px; }
+.ov-lead-top b { flex: 1 1 auto; min-width: 0; }
+.ov-lead-top .heat { flex: none; }
+.ov-lead small { display: block; min-width: 0; }
+.ov-lead-foot { min-width: 0; align-items: baseline; }
+.ov-lead-foot span { flex: 1 1 auto; min-width: 0; }
+.ov-lead-foot b { flex: none; margin-left: auto; }
