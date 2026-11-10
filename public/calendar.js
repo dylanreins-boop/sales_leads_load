@@ -483,7 +483,7 @@ function renderList(body) {
   body.replaceChildren(h('div', { class: 'cal-list' }, ...days.map(({ day, entries }) => h('section', { class: `list-day ${sameDay(day, today) ? 'today' : ''}`, id: sameDay(day, today) ? 'calToday' : null },
     h('h3', { class: 'list-day-head' }, longDate(day), sameDay(day, today) && h('span', { class: 'today-tag' }, 'Today'), loadTag(day, entries)),
     offTags(day, { long: true }),
-    entries.length ? h('div', { class: 'list-jobs' }, ...entries.map((e) => jobCard(e))) : h('p', { class: 'muted' }, 'No jobs today.')))));
+    entries.length ? h('div', { class: 'list-jobs' }, ...entries.map((e) => jobCard(e))) : h('p', { class: 'muted' }, sameDay(day, today) ? 'No jobs today.' : 'No jobs.')))));
   // Jump to today inside the calendar. On phones the whole page scrolls instead, and jumping would push
   // the header and month buttons off the top, so it starts from the top there.
   const ownScroll = getComputedStyle($('#calendarSection')).overflowY !== 'visible';
