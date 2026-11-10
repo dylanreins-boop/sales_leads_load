@@ -12,7 +12,18 @@ const KINDS = { vacation: 'Vacation', sick: 'Sick', personal: 'Personal', unpaid
 // Attendance: late or early by more than `grace_minutes` counts; lunch over `lunch_minutes` (plus grace) is long.
 // Paid weekly, Sunday to Saturday: everyone approves their week when they clock out on `review_day`
 // (Friday), and the week's summary is emailed to `payroll_emails`.
-const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'], grace_minutes: 5, lunch_minutes: 30, review_day: 5, payroll_emails: [] };
+const DEFAULTS = { ot_weekly_hours: 40, ot_daily_hours: null, ot_multiplier: 1.5, paid_kinds: ['vacation', 'sick'], grace_minutes: 5, lunch_minutes: 30, review_day: 5, payroll_emails: [],
+  // Geo-lock: these logins can only clock in (or come back from lunch) within `radius_m` meters of the shop.
+  geofence: { enabled: false, lat: null, lng: null, radius_m: 150, roles: ['shop'] } };
+// Meters between two points on the earth.
+function distanceM(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}
+const howFar = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1609.34).toFixed(m < 16000 ? 1 : 0)} miles`);
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const ISSUES = ['late', 'early', 'long_lunch', 'no_show', 'missed_out'];
@@ -68,6 +79,20 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
       const bad = list.find((e) => !isEmail(e));
       if (bad) throw new HttpError(400, `${bad} isn't an email address.`);
       next.payroll_emails = [...new Set(list)].slice(0, 10);
+    }
+    if ('geofence' in input) {
+      const g = { ...DEFAULTS.geofence, ...next.geofence, ...(input.geofence || {}) };
+      g.enabled = Boolean(g.enabled);
+      g.lat = g.lat === '' || g.lat == null ? null : Number(g.lat);
+      g.lng = g.lng === '' || g.lng == null ? null : Number(g.lng);
+      g.radius_m = Number(g.radius_m);
+      g.roles = (Array.isArray(g.roles) ? g.roles : []).filter((r) => ['shop', 'sales'].includes(r));
+      if (g.lat != null && !(g.lat >= -90 && g.lat <= 90)) throw new HttpError(400, 'The shop\'s latitude should be between -90 and 90.');
+      if (g.lng != null && !(g.lng >= -180 && g.lng <= 180)) throw new HttpError(400, 'The shop\'s longitude should be between -180 and 180.');
+      if (!(g.radius_m >= 25 && g.radius_m <= 5000)) throw new HttpError(400, 'How close counts should be 25 to 5,000 meters.');
+      if (g.enabled && (g.lat == null || g.lng == null)) throw new HttpError(400, 'Set the shop\'s location first (stand at the shop and tap Use my current location).');
+      if (g.enabled && !g.roles.length) throw new HttpError(400, 'Pick who has to be at the shop to clock in.');
+      next.geofence = { enabled: g.enabled, lat: g.lat, lng: g.lng, radius_m: Math.round(g.radius_m), roles: g.roles };
     }
     if ('paid_kinds' in input) next.paid_kinds = (input.paid_kinds || []).filter((k) => KINDS[k] && k !== 'unpaid');
     stmt("INSERT INTO settings (key, value) VALUES ('payroll', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
@@ -153,11 +178,40 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
   }
 
   // Clocking in again after lunch is coming back from lunch.
-  function clockIn(name, { at = new Date() } = {}) {
+  // Does this login have to be at the shop to clock in?
+  const geoFor = (role) => {
+    const g = getSettings().geofence || DEFAULTS.geofence;
+    return g.enabled && g.lat != null && g.roles.includes(role) ? g : null;
+  };
+  const geoError = (status, code, message) => Object.assign(new HttpError(status, message), { code });
+  // Checks where they are. GPS is fuzzy indoors, so its stated accuracy (up to 100 m) counts in their favor.
+  function checkLocation(role, location) {
+    const g = geoFor(role);
+    const lat = Number(location?.lat);
+    const lng = Number(location?.lng);
+    const has = location && Number.isFinite(lat) && Number.isFinite(lng);
+    if (!g) return has ? { lat, lng, accuracy: Number(location.accuracy) || null, distance: null } : null;
+    if (!has) throw geoError(400, 'location_required', 'Turn on location for this app to clock in. You need to be at the shop.');
+    const accuracy = Math.max(0, Number(location.accuracy) || 0);
+    const distance = distanceM({ lat, lng }, g);
+    if (distance - Math.min(accuracy, 100) > g.radius_m) {
+      throw geoError(403, 'not_at_shop', `You're about ${howFar(distance)} from the shop. You can clock in when you're there.`);
+    }
+    return { lat, lng, accuracy: accuracy || null, distance: Math.round(distance) };
+  }
+  const geofenceStatus = (role) => {
+    const g = geoFor(role);
+    return g ? { location_required: true, shop_radius_m: g.radius_m } : { location_required: false };
+  };
+
+  // Clocking in again after lunch is coming back from lunch.
+  function clockIn(name, { at = new Date(), role = null, location = null } = {}) {
     if (!name) throw new HttpError(400, 'Sign in to use the time clock.');
     closeForgotten(at); // yesterday's forgotten punch doesn't count as on the clock today
     if (openPunch(name)) return status(name, at);
-    stmt('INSERT INTO time_punches (name_norm, user_name, clock_in, created_at) VALUES (?, ?, ?, ?)').run(norm(name), name, at.toISOString(), now());
+    const where = checkLocation(role, location);
+    stmt(`INSERT INTO time_punches (name_norm, user_name, clock_in, clock_in_lat, clock_in_lng, clock_in_accuracy, clock_in_distance, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(norm(name), name, at.toISOString(), where?.lat ?? null, where?.lng ?? null, where?.accuracy ?? null, where?.distance ?? null, now());
     return status(name, at);
   }
 
@@ -684,7 +738,7 @@ function createTimeService(db, { users, getShopHours, mailer = null, brand = {},
     };
   }
 
-  return { approveWeek, approvePayrollWeek, emailWeek, weekEmail, sendWeeklyDue, listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
+  return { geofenceStatus, checkLocation, approveWeek, approvePayrollWeek, emailWeek, weekEmail, sendWeeklyDue, listSchedules, saveSchedules, status, clockIn, clockOut, startLunch, timecard, requestCorrection, cancelCorrection, decideCorrection, listCorrections, closeForgotten, addPunch, editPunch, removePunch, requestOff, cancelOff, decideOff, listOff, calendarOff, setRate, rateOf, getSettings, saveSettings, payroll, KINDS };
 }
 
 module.exports = { createTimeService, TIME_OFF_KINDS: KINDS };

@@ -517,6 +517,15 @@ Tapping it opens **My time**, full screen on every device:
   around a missing tech by surprise. Only days the shop is open count toward the hours. Admins click the
   bar to see the request: their note, when they asked, who approved it, and a button to cancel it.
 
+**Clock in at the shop (geo-lock).** In Time & Pay → **Payroll rules**, an admin stands at the shop, taps **Use my
+current location** (or types the latitude and longitude), picks how close counts (about 500 ft by default) and who
+it applies to (Shop logins by default; Sales too if you like). From then on, **Clock in** and **End lunch** ask the
+phone where it is and the server refuses anyone farther away ("You're about 3.4 miles from the shop") or with
+location turned off, with **Try again**. Going to lunch and clocking out work anywhere. GPS is fuzzy indoors, so up
+to 100 m of the phone's stated accuracy counts in their favor. Each clock-in keeps how far from the shop it was
+(📍 on the day in Time & Pay; Edit shows the distance). Admins can still add or fix time by hand. Phones only share
+location with sites on HTTPS, which the deploy guides set up.
+
 **Paid weekly (Sunday to Saturday).** On Friday (or their last scheduled day that week, if they're off
 Friday), **Clock out** first shows the week's time, day by day with the total. They tick **My hours are right**
 and **Approve my week & clock out**, or tap **Something's wrong** to ask for a fix first. They can also approve
@@ -859,7 +868,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/estimate?lead_id=&services=` or `?job_id=` | Suggested work time and why |
 | POST | `/api/leads/:id/calls` | Dialer: start a call (CALLS_ENABLED) |
 | GET / PUT | `/api/pipelines` | The pipelines (admins) |
-| GET / POST | `/api/clock`, `/api/clock/in`, `/api/clock/out`, `/api/clock/lunch` | The time clock for whoever is signed in (clock in again to end lunch) |
+| GET / POST | `/api/clock`, `/api/clock/in { location: { lat, lng, accuracy } }`, `/api/clock/out`, `/api/clock/lunch` | The time clock for whoever is signed in (clock in again to end lunch; the location is needed when the geo-lock applies) |
 | GET | `/api/timecard?from=&to=` | Your own punches and correction requests |
 | POST / DELETE | `/api/timecard/corrections[/:id]` | Ask for a correction `{ action: change\|add\|remove, punch_id, clock_in, clock_out, reason }` / cancel it |
 | GET / PATCH | `/api/timecard/corrections?status=pending`, `/api/timecard/corrections/:id` | Admins: corrections, `{ status: approved\|denied, note }` |

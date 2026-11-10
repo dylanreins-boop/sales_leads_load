@@ -834,11 +834,13 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // ---- Time clock, time off and pay ----
   // Everyone clocks in and out and asks for time off; admins approve it, set hourly rates and see the
   // hours and pay for a period on the Time & Pay page.
-  route('GET', '/api/clock', ({ actor }) => timeClock.status(actor.user), { roles: ANY_LOGIN });
-  route('POST', '/api/clock/in', ({ actor }) => timeClock.clockIn(actor.user), { roles: ANY_LOGIN });
-  route('POST', '/api/clock/out', ({ actor, body }) => timeClock.clockOut(actor.user, { approveWeek: Boolean(body?.approve_week) }), { roles: ANY_LOGIN });
-  route('POST', '/api/timecard/approve-week', ({ actor }) => timeClock.approveWeek(actor.user), { roles: ANY_LOGIN });
-  route('POST', '/api/clock/lunch', ({ actor }) => timeClock.startLunch(actor.user), { roles: ANY_LOGIN });
+  // Each answer says whether this login has to be at the shop to clock in (the geo-lock).
+  const clockView = (actor, s) => ({ ...s, ...timeClock.geofenceStatus(actor.role) });
+  route('GET', '/api/clock', ({ actor }) => clockView(actor, timeClock.status(actor.user)), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/in', ({ actor, body }) => clockView(actor, timeClock.clockIn(actor.user, { role: actor.role, location: body?.location })), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/out', ({ actor, body }) => clockView(actor, timeClock.clockOut(actor.user, { approveWeek: Boolean(body?.approve_week) })), { roles: ANY_LOGIN });
+  route('POST', '/api/timecard/approve-week', ({ actor }) => clockView(actor, timeClock.approveWeek(actor.user)), { roles: ANY_LOGIN });
+  route('POST', '/api/clock/lunch', ({ actor }) => clockView(actor, timeClock.startLunch(actor.user)), { roles: ANY_LOGIN });
   route('GET', '/api/timecard', ({ query, actor }) => timeClock.timecard(actor.user, { from: query.get('from'), to: query.get('to') }), { roles: ANY_LOGIN });
   route('POST', '/api/timecard/corrections', ({ body, actor }) => timeClock.requestCorrection(actor.user, body), { roles: ANY_LOGIN });
   route('DELETE', '/api/timecard/corrections/:id', ({ params, actor }) => timeClock.cancelCorrection(Number(params.id), actor), { roles: ANY_LOGIN });

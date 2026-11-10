@@ -53,7 +53,7 @@ async function loadClock() {
 const TC_ACTIONS = {
   in: {
     label: 'Clock in', ask: 'Clock in now?', yes: 'Yes, clock me in', tone: 'go', path: '/api/clock/in', done: 'You\'re clocked in',
-    askNote: () => 'Your shift starts when you tap Yes.',
+    askNote: (s) => (s.location_required ? 'Your shift starts when you tap Yes. Your phone checks that you\'re at the shop.' : 'Your shift starts when you tap Yes.'),
     doneNote: (s) => `Clocked in at ${tcClock(s.clock_in)}. Have a good shift!`,
   },
   lunch: {
@@ -96,17 +96,52 @@ function confirmAction(key) {
   $('#clockDialogBody .tc-action').focus();
 }
 
+// ---------- geo-lock: shop logins clock in at the shop ----------
+// The phone's location, or a plain-English reason it couldn't be had.
+function getLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('This browser can\'t share your location, so you can\'t clock in from it. Try your phone\'s browser.'));
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) }),
+      (e) => reject(new Error(e.code === 1
+        ? 'Location is turned off for this app. Turn it on (your phone\'s Settings, then your browser, then Location) and try again.'
+        : 'Couldn\'t find where you are. Step near a door or window and try again.')),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
+  });
+}
+
+// Couldn't clock in (not at the shop, location off): say why, and let them try again.
+function locationProblem(key, message) {
+  tc.done = false;
+  fill($('#clockDialogBody'),
+    h('div', { class: 'tc-dlg-check stop', 'aria-hidden': 'true' }, '!'),
+    h('h2', {}, 'Can\'t clock in here'),
+    h('p', { class: 'tc-dlg-note' }, message),
+    h('div', { class: 'tc-dlg-actions' },
+      h('button', { type: 'button', class: 'tc-action go', onclick: (e) => doAction(key, e.currentTarget) }, 'Try again'),
+      h('button', { type: 'button', class: 'tc-action ghost', onclick: () => $('#clockDialog').close() }, 'Close')));
+  $('#clockDialogBody .tc-action').focus();
+}
+
 async function doAction(key, btn) {
   const a = TC_ACTIONS[key];
   const before = tc.status;
   btn.disabled = true;
+  const geo = ['in', 'back'].includes(key) && tc.status?.location_required;
+  let body;
+  if (geo) {
+    btn.textContent = 'Checking you\'re at the shop…';
+    try { body = { location: await getLocation() }; } catch (err) { return locationProblem(key, err.message); }
+  }
   try {
-    tc.status = await api(a.path, { method: 'POST' });
+    tc.status = await api(a.path, { method: 'POST', body });
   } catch (err) {
     if (/approve your week/.test(err.message)) {
       await loadClock().catch(() => {});
       return openWeekReview();
     }
+    if (geo) return locationProblem(key, err.message);
     $('#clockDialog').close();
     fail(err);
     return loadClock().catch(() => {});
@@ -231,6 +266,7 @@ function renderMyTime() {
       h('div', { class: 'tc-state' }, h('span', { class: 'clock-dot', 'aria-hidden': 'true' }), stateText),
       h('div', { class: 'tc-big', 'data-big': '' }, st === 'lunch' ? tcHM(tcSince(s.lunch_started_at)) : tcHM(tcWorkedMs(s))),
       h('div', { class: 'tc-big-label' }, st === 'lunch' ? 'on lunch' : 'worked today'),
+      s.location_required && st !== 'on' && h('div', { class: 'tc-geo-note' }, '📍 You clock in at the shop. Your phone checks your location when you tap the button.'),
       h('div', { class: 'tc-actions' }, ...TC_BUTTONS[st].map(([key, tone, label]) => h('button', {
         type: 'button', class: `tc-action ${tone}`, onclick: () => confirmAction(key),
       }, label || TC_ACTIONS[key].label)))),
@@ -722,7 +758,8 @@ function personDetail(p) {
       h('td', { class: 'muted' }, d.schedule ? `${t12(d.schedule.start)} – ${t12(d.schedule.end)}` : 'Not scheduled'),
       offOnly
         ? h('td', { colspan: '4', class: 'tp-day-off' }, `Off · ${d.off.kind_label}`)
-        : [h('td', {}, d.first_in ? tcClock(d.first_in) : h('span', { class: 'muted' }, '–')),
+        : [h('td', {}, d.first_in ? tcClock(d.first_in) : h('span', { class: 'muted' }, '–'),
+          d.punches[0]?.clock_in_distance != null && h('span', { class: 'tp-geo-pin', title: `Clocked in ${d.punches[0].clock_in_distance} m from the shop` }, ' 📍')),
           h('td', { class: 'tp-lunch' }, lunchCell(d)),
           h('td', {}, outCell(d)),
           h('td', { class: 'num' }, d.punches.length ? tcHM(d.hours * 3600000) : '–')],
@@ -754,7 +791,9 @@ function dayEditor(p, d) {
         h('div', { class: 'tp-edit-actions' },
           h('button', { type: 'button', class: 'primary', onclick: () => savePunch(x.id, { clock_in: new Date(inp.value).toISOString(), clock_out: out.value ? new Date(out.value).toISOString() : undefined, note: note.value }) }, 'Save'),
           h('button', { type: 'button', class: 'link-btn danger', onclick: () => removePunch(x) }, 'Delete')),
-        (x.auto_closed || x.edited_by) && h('div', { class: 'tp-edit-meta muted' }, [x.auto_closed && 'Forgot to clock out: closed at the end of the day', x.edited_by && `Last fixed by ${x.edited_by}`].filter(Boolean).join(' · ')));
+        (x.auto_closed || x.edited_by || x.clock_in_distance != null) && h('div', { class: 'tp-edit-meta muted' }, [
+          x.clock_in_distance != null && `Clocked in ${x.clock_in_distance < 1000 ? `${x.clock_in_distance} m` : `${(x.clock_in_distance / 1609.34).toFixed(1)} miles`} from the shop`,
+          x.auto_closed && 'Forgot to clock out: closed at the end of the day', x.edited_by && `Last fixed by ${x.edited_by}`].filter(Boolean).join(' · ')));
     }));
 }
 
@@ -818,6 +857,7 @@ function tpSettings(s) {
         ot_weekly_hours: f.get('ot_weekly_hours'), ot_daily_hours: f.get('daily_on') ? f.get('ot_daily_hours') : null,
         ot_multiplier: f.get('ot_multiplier'), paid_kinds: f.getAll('paid_kinds'),
         review_day: f.get('review_day'), payroll_emails: f.get('payroll_emails'),
+        geofence: { enabled: Boolean(f.get('geo_on')), lat: f.get('geo_lat'), lng: f.get('geo_lng'), radius_m: f.get('geo_radius'), roles: f.getAll('geo_roles') },
       } });
       toast('Saved. The numbers are updated.');
       tc.settings = false;
@@ -830,6 +870,7 @@ function tpSettings(s) {
       h('select', { name: 'review_day' }, ...['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((n, i) => h('option', { value: i, selected: i === s.review_day }, n)))),
     h('label', { class: 'tp-wide' }, 'Email the weekly summary to (admins, separated by commas)',
       h('input', { name: 'payroll_emails', value: (s.payroll_emails || []).join(', '), placeholder: 'owner@example.com, office@example.com' }))),
+  geoSettings(s.geofence || {}),
   h('p', { class: 'hint' }, 'The pay week is Sunday to Saturday. The summary (hours, overtime, gross pay and a CSV of every punch) is emailed once everyone has approved their time, or the morning after if someone hasn\'t. Anyone who isn\'t scheduled that day approves on their last scheduled day.'),
   h('div', { class: 'tp-add-grid' },
     h('label', {}, 'Overtime after (hours a week)', h('input', { type: 'number', name: 'ot_weekly_hours', min: '1', max: '80', step: '0.5', value: s.ot_weekly_hours })),
@@ -843,6 +884,46 @@ function tpSettings(s) {
   h('div', { class: 'tp-form-actions' },
     h('button', { type: 'submit', class: 'primary' }, 'Save rules'),
     h('button', { type: 'button', class: 'link-btn', onclick: () => { tc.settings = false; renderTimePay(); } }, 'Cancel')));
+}
+
+// Geo-lock settings: where the shop is, how close counts, and who it applies to.
+function geoSettings(g) {
+  const lat = h('input', { name: 'geo_lat', inputmode: 'decimal', value: g.lat ?? '', placeholder: 'e.g. 36.10690', 'aria-label': 'Shop latitude' });
+  const lng = h('input', { name: 'geo_lng', inputmode: 'decimal', value: g.lng ?? '', placeholder: 'e.g. -115.19810', 'aria-label': 'Shop longitude' });
+  const map = h('a', { class: 'link-btn', target: '_blank', rel: 'noopener', hidden: g.lat == null }, 'See it on a map');
+  const syncMap = () => { map.hidden = !lat.value || !lng.value; map.href = `https://www.google.com/maps?q=${encodeURIComponent(lat.value)},${encodeURIComponent(lng.value)}`; };
+  syncMap();
+  lat.addEventListener('input', syncMap);
+  lng.addEventListener('input', syncMap);
+  const RADII = [[75, 'About 250 ft (75 m)'], [150, 'About 500 ft (150 m)'], [300, 'About 1,000 ft (300 m)'], [500, 'About a third of a mile (500 m)'], [1000, 'About half a mile (1 km)']];
+  const radius = g.radius_m || 150;
+  return h('fieldset', { class: 'tp-geo' },
+    h('legend', {}, 'Clock in at the shop (geo-lock)'),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'geo_on', checked: Boolean(g.enabled) }), ' Only let these people clock in (and come back from lunch) at the shop:'),
+    h('div', { class: 'tp-geo-roles' }, ...[['shop', 'Shop'], ['sales', 'Sales']].map(([r, label]) => h('label', { class: 'check' },
+      h('input', { type: 'checkbox', name: 'geo_roles', value: r, checked: (g.roles || ['shop']).includes(r) }), ` ${label}`))),
+    h('div', { class: 'tp-add-grid' },
+      h('label', {}, 'Shop latitude', lat),
+      h('label', {}, 'Shop longitude', lng),
+      h('label', {}, 'How close counts', h('select', { name: 'geo_radius' }, ...(RADII.some(([m]) => m === radius) ? RADII : [[radius, `${radius} m`], ...RADII])
+        .map(([m, label]) => h('option', { value: m, selected: m === radius }, label))))),
+    h('div', { class: 'tp-form-actions' },
+      h('button', { type: 'button', onclick: async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        b.textContent = 'Finding you…';
+        try {
+          const here = await getLocation();
+          lat.value = here.lat.toFixed(6);
+          lng.value = here.lng.toFixed(6);
+          syncMap();
+          toast(`Got it (accurate to about ${here.accuracy} m). Save the rules to use it.`);
+        } catch (err) { fail(err); }
+        b.disabled = false;
+        b.textContent = 'Use my current location';
+      } }, 'Use my current location'),
+      map),
+    h('p', { class: 'hint' }, 'Stand at the shop and tap Use my current location. Going to lunch and clocking out work anywhere. Phones are less exact indoors, so a little extra distance is allowed when the phone says its location is fuzzy. Each clock-in keeps how far from the shop it was.'));
 }
 
 function exportTimePay() {

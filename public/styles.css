@@ -1646,3 +1646,10 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .search-more { border-top: 1px solid var(--border); margin-top: 4px; }
 @media (max-width: 640px) { .search-pop { min-width: 0; max-height: 65vh; } .si-tag { font-size: 10px; } }
 @media (max-width: 640px) { .filters { position: relative; } .search-box { position: static; } }
+/* Geo-lock */
+.tc-geo-note { margin-top: 8px; font-size: 13px; color: var(--muted); max-width: 420px; }
+.tp-geo { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 4px; margin: 6px 0; display: grid; gap: 8px; }
+.tp-geo legend { font-weight: 700; font-size: 13px; padding: 0 4px; }
+.tp-geo-roles { display: flex; gap: 16px; padding-left: 24px; }
+.tp-geo .tp-form-actions a[hidden] { display: none; }
+.tp-geo-pin { font-size: 11px; cursor: help; }

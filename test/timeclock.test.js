@@ -328,3 +328,37 @@ test('weekly pay: approve your week before clocking out on Friday; the summary i
   assert.equal(approved.week.approved_by, 'Dylan');
 });
 
+
+test('geo-lock: shop logins clock in only at the shop; their distance is kept', async () => {
+  const SHOP = { lat: 36.1069, lng: -115.1981 };
+  assert.match((await call('PUT', '/api/payroll/settings', { geofence: { enabled: true } })).data.error, /shop's location first/);
+  assert.equal((await call('PUT', '/api/payroll/settings', { geofence: { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] } }, MIKE)).status, 403, 'admins set it');
+  const g = (await call('PUT', '/api/payroll/settings', { geofence: { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] } })).data.geofence;
+  assert.deepEqual(g, { enabled: true, ...SHOP, radius_m: 150, roles: ['shop'] });
+
+  assert.equal((await call('GET', '/api/clock', undefined, MIKE)).data.location_required, true);
+  assert.equal((await call('GET', '/api/clock', undefined, SAM)).data.location_required, false, 'sales can clock in anywhere');
+
+  const none = await call('POST', '/api/clock/in', {}, MIKE);
+  assert.equal(none.status, 400);
+  assert.equal(none.data.code, 'location_required');
+  const far = await call('POST', '/api/clock/in', { location: { lat: 36.1550, lng: -115.1981, accuracy: 20 } }, MIKE); // about 3.3 miles north
+  assert.equal(far.status, 403);
+  assert.equal(far.data.code, 'not_at_shop');
+  assert.match(far.data.error, /about 3\.3 miles from the shop/);
+  // 180 m away with 50 m GPS accuracy is close enough; the distance is kept on the punch.
+  const near = await call('POST', '/api/clock/in', { location: { lat: 36.1069 + 0.00162, lng: -115.1981, accuracy: 50 } }, MIKE);
+  assert.equal(near.data.on_clock, true);
+  const p = db.prepare("SELECT * FROM time_punches WHERE user_name = 'Mike' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(p.clock_in_distance, 180);
+  assert.equal(p.clock_in_accuracy, 50);
+  // Lunch: going is fine anywhere; coming back is at the shop.
+  await call('POST', '/api/clock/lunch', undefined, MIKE);
+  assert.equal((await call('POST', '/api/clock/in', { location: { lat: 36.2, lng: -115.1981, accuracy: 10 } }, MIKE)).data.code, 'not_at_shop');
+  assert.equal((await call('POST', '/api/clock/in', { location: { ...SHOP, accuracy: 10 } }, MIKE)).data.on_clock, true);
+  assert.equal((await call('POST', '/api/clock/in', {}, SAM)).data.on_clock, true, 'sales still clock in without a location');
+  await call('PUT', '/api/payroll/settings', { review_day: (new Date().getDay() + 3) % 7 });
+  await call('POST', '/api/clock/out', {}, MIKE);
+  await call('POST', '/api/clock/out', {}, SAM);
+  await call('PUT', '/api/payroll/settings', { geofence: { enabled: false } });
+});

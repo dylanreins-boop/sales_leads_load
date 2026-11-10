@@ -493,6 +493,10 @@ function migrate(db) {
   if (!has('user_prefs', 'call_phone')) db.exec('ALTER TABLE user_prefs ADD COLUMN call_phone TEXT');
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
   if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
+  // Where they were when they clocked in (shop logins clock in at the shop), and how far that was from it.
+  for (const [column, type] of [['clock_in_lat', 'REAL'], ['clock_in_lng', 'REAL'], ['clock_in_accuracy', 'REAL'], ['clock_in_distance', 'REAL']]) {
+    if (!has('time_punches', column)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${column} ${type}`);
+  }
   if (!has('leads', 'import_batch')) db.exec('ALTER TABLE leads ADD COLUMN import_batch TEXT');
   // Who last opened the lead and when, and who last reached out (a call logged or a text) and how.
   // The welcome text ("what time of day is best to reach you?") and the customer's answer.
