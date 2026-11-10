@@ -4,9 +4,10 @@
 
 const msg = { templates: [], notices: null };
 const TEXT_PLACEHOLDERS = ['first_name', 'last_name', 'vehicle', 'rep', 'company', 'company_phone', 'address', 'quote_total', 'drop_off', 'pick_up', 'services'];
-const NOTICE_PLACEHOLDERS = ['first_name', 'vehicle', 'company', 'company_phone', 'address', 'drop_off', 'pick_up', 'services', 'balance_due'];
-const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'welcome_enabled', 'welcome_reply_enabled', 'by_text', 'by_email'];
-const NOTICE_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text', 'welcome_text', 'welcome_reply_text'];
+const NOTICE_PLACEHOLDERS = ['first_name', 'vehicle', 'company', 'company_phone', 'address', 'drop_off', 'pick_up', 'services', 'balance_due', 'months'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'welcome_enabled', 'welcome_reply_enabled', 'checkin_enabled', 'maintenance_enabled', 'by_text', 'by_email'];
+const NOTICE_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text', 'welcome_text', 'welcome_reply_text',
+  'checkin_text', 'checkin_subject', 'checkin_email', 'maintenance_text', 'maintenance_subject', 'maintenance_email', 'checkin_days', 'maintenance_months'];
 
 // ---------- texts on a lead ----------
 function renderTexts(lead) {
@@ -136,6 +137,8 @@ async function saveNotices(e) {
   const body = { reminder_hour: Number(f.reminder_hour.value) };
   for (const key of NOTICE_FLAGS) body[key] = f[key].checked;
   for (const key of NOTICE_FIELDS) body[key] = f[key].value;
+  body.checkin_days = Number(f.checkin_days.value);
+  body.maintenance_months = Number(f.maintenance_months.value);
   try {
     msg.notices = { ...msg.notices, ...await api('/api/settings/notices', { method: 'PUT', body }) };
     toast('Automatic messages saved');

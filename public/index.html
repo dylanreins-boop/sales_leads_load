@@ -942,6 +942,7 @@
         <label class="check"><input type="checkbox" name="unreviewed"> Not reviewed yet</label>
         <label class="check"><input type="checkbox" name="flagged"> Flagged only</label>
       </form>
+      <div id="callsCoach"></div>
       <div id="callsList" class="calls-list"></div>
     </div>
   </aside>
@@ -1047,6 +1048,21 @@
           <label>Email subject <input name="ready_subject" maxlength="200"></label>
           <label>Email <textarea name="ready_email" rows="6"></textarea></label>
           <p class="hint">{{balance_due}} becomes "Balance due at pickup: $X." or "Your balance is paid in full."</p>
+        </section>
+        <section class="card-section">
+          <h3>Check-in after pickup</h3>
+          <label class="check"><input type="checkbox" name="checkin_enabled"> Ask how it's holding up <input name="checkin_days" type="number" min="7" max="120" class="inline-num" aria-label="Days after pickup"> days after pickup</label>
+          <label>Text <textarea name="checkin_text" rows="3"></textarea></label>
+          <label>Email subject <input name="checkin_subject" maxlength="200"></label>
+          <label>Email <textarea name="checkin_email" rows="5"></textarea></label>
+        </section>
+        <section class="card-section">
+          <h3>Maintenance reminder</h3>
+          <label class="check"><input type="checkbox" name="maintenance_enabled"> Suggest a maintenance wash <input name="maintenance_months" type="number" min="1" max="24" class="inline-num" aria-label="Months after pickup"> months after pickup</label>
+          <label>Text <textarea name="maintenance_text" rows="3"></textarea></label>
+          <label>Email subject <input name="maintenance_subject" maxlength="200"></label>
+          <label>Email <textarea name="maintenance_email" rows="5"></textarea></label>
+          <p class="hint">{{months}} becomes the number of months. Once per job, in the daytime. Skipped for a customer who already booked again, and for pickups more than 2 weeks past the date (so turning it on doesn't message old customers all at once). The 11-month recoat reminder stays on Past Customers and Win-back.</p>
         </section>
         <section class="card-section">
           <h3>Welcome text for new leads</h3>

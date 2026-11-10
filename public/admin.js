@@ -44,7 +44,44 @@ async function openScoring() {
   } catch (err) { fail(err); }
 }
 
+// ---- Automations: everything the app does on its own, grouped, with a switch and where to change it ----
+async function openAutomations() {
+  try {
+    const list = await api('/api/automations');
+    const groups = [...new Set(list.map((a) => a.group))];
+    const goTo = (target) => {
+      showPanel(null);
+      if (target === 'reviewSettings') return $('#emailSettingsBtn').click();
+      if (target === 'daySheet') { showSection('calendar'); setTimeout(() => { setView('sheet'); toggleSheetEmail(); }, 300); return; }
+      if (target === 'payrollRules') { showSection('time'); setTimeout(() => $('#tpSettingsBtn').click(), 400); return; }
+      document.getElementById(target)?.click();
+    };
+    const row = (a) => {
+      const sw = a.can_switch && h('label', { class: 'switch', title: a.on ? 'On' : 'Off' },
+        h('input', { type: 'checkbox', checked: a.on, 'aria-label': `${a.name} on or off`, onchange: async (e) => {
+          const box = e.target;
+          try {
+            const saved = await api(`/api/automations/${a.id}`, { method: 'PATCH', body: { on: box.checked } });
+            toast(`${a.name}: ${saved.on ? 'on' : 'off'}`);
+            openAutomations();
+          } catch (err) { box.checked = !box.checked; fail(err); }
+        } }), h('span', { class: 'slider' }));
+      return h('li', { class: `auto-row ${a.on ? 'on' : 'off'}` },
+        h('div', { class: 'auto-main' },
+          h('div', { class: 'auto-name' }, h('b', {}, a.name),
+            a.manual ? h('span', { class: 'auto-tag' }, 'Started by hand') : !a.can_switch ? h('span', { class: 'auto-tag' }, a.on ? 'On' : 'Off') : null),
+          h('div', { class: 'auto-when' }, a.when),
+          a.on && a.needs.length > 0 && h('div', { class: 'auto-needs' }, `Won't go out until it has: ${a.needs.join(', ')}`)),
+        h('div', { class: 'auto-side' }, sw, a.open && h('button', { type: 'button', class: 'link-btn', onclick: () => goTo(a.open) }, 'Change')));
+    };
+    openSettings('Automations', 'Everything the app does on its own. Switch each one on or off here; Change opens its wording and timing.',
+      ...groups.map((g) => h('section', { class: 'card-section' }, h('h3', {}, g), h('ul', { class: 'auto-list' }, ...list.filter((a) => a.group === g).map(row)))),
+      h('p', { class: 'hint' }, 'Texts only go to customers who haven\'t replied STOP, and only in the daytime. Every message sent shows on the lead.'));
+  } catch (err) { fail(err); }
+}
+
 function initAdminScreens() {
   if (!isAdmin()) return;
   $('#scoringBtn').addEventListener('click', openScoring);
+  $('#automationsBtn').addEventListener('click', openAutomations);
 }

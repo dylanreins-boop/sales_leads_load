@@ -33,7 +33,9 @@ const summarizer = {
     return {
       source: 'ai',
       error: null,
-      notes: { summary: 'Ana wants her Model Y coated; $1,300 quoted; she will check with her husband.', customer_wants: '2024 Tesla Model Y, full coat', price_quoted: '$1,300', objections: ['Checking with husband'], next_step: '', outcome: 'follow_up', flags: ['no_next_step'], coaching_tip: 'Set a time to follow up before hanging up.' },
+      notes: { summary: 'Ana wants her Model Y coated; $1,300 quoted; she will check with her husband.', customer_wants: '2024 Tesla Model Y, full coat', price_quoted: '$1,300', objections: ['Checking with husband'], next_step: '', outcome: 'follow_up', flags: ['no_next_step'], coaching_tip: 'Set a time to follow up before hanging up.',
+        scored: true, scores: { opening: 5, discovery: 4, value: 3, objections: 2, close: 2 }, not_a_missed_chance: false,
+        objection_types: ['partner', 'price'], suggested_action: 'schedule_callback', suggested_reason: 'She is checking with her husband', callback_at: '' },
     };
   },
 };
@@ -142,4 +144,34 @@ test('the call list puts due call-backs first, then new leads; the rep missing t
   const c = (await call('GET', `/api/calls/${id}`)).data;
   assert.deepEqual([c.status, c.summary], ['rep_missed', null]);
   assert.equal((await call('GET', '/api/calls/me')).data.active, null, 'free to call again');
+});
+
+test('AI call scores: admins see them first; reps only if turned on; what was said can be admins-only and deleted after N days', async () => {
+  const mine = (await call('GET', '/api/calls', undefined, ADMIN)).data.find((c) => c.lead_name === 'Ana Cruz' && c.summary_source === 'ai');
+  const id = mine.id;
+  const leadId = mine.lead_id;
+  // 5+4+3+2+2 = 16 of 25 -> 64
+  assert.equal((await call('GET', `/api/calls/${id}`, undefined, ADMIN)).data.score, 64);
+  assert.equal((await call('GET', `/api/calls/${id}`)).data.score, null, 'reps don\'t see it by default');
+  assert.equal((await call('GET', `/api/calls/${id}`)).data.summary.scores, undefined);
+  assert.equal((await call('GET', `/api/calls/${id}`)).data.summary.suggested_action, 'schedule_callback', 'the next step still shows');
+  assert.equal((await call('PUT', '/api/settings/calls', { scores: 'everyone' })).status, 403);
+  assert.match((await call('PUT', '/api/settings/calls', { scores: 'sometimes' }, ADMIN)).data.error, /admins, everyone or off/);
+  await call('PUT', '/api/settings/calls', { scores: 'everyone' }, ADMIN);
+  assert.equal((await call('GET', `/api/leads/${leadId}/calls`)).data[0].score, 64);
+  assert.equal((await call('GET', '/api/meta')).data.callScores, 'everyone');
+
+  // The team's patterns.
+  const coach = (await call('GET', '/api/calls/coaching', undefined, ADMIN)).data;
+  assert.deepEqual(coach.objections.map((o) => o.type).sort(), ['partner', 'price']);
+  assert.equal(coach.rubric.find((r) => r.id === 'close').avg, 2);
+
+  // What was said: admins only, then deleted after a day (the notes stay).
+  await call('PUT', '/api/settings/calls', { transcripts: 'admins' }, ADMIN);
+  assert.deepEqual((await call('GET', `/api/calls/${id}`)).data.lines, []);
+  assert.equal((await call('GET', `/api/calls/${id}`, undefined, ADMIN)).data.lines.length, 4);
+  assert.equal((await call('PUT', '/api/settings/calls', { transcript_days: 1 }, ADMIN)).status, 200);
+  assert.equal((await call('GET', `/api/calls/${id}`, undefined, ADMIN)).data.lines.length, 4, 'today\'s call is kept');
+  assert.match((await call('PUT', '/api/settings/calls', { transcript_days: -2 }, ADMIN)).data.error, /0 \(always\)/);
+  await call('PUT', '/api/settings/calls', { scores: 'admins', transcripts: 'everyone', transcript_days: 0 }, ADMIN);
 });

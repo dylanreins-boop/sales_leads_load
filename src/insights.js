@@ -201,7 +201,7 @@ function createInsightService(db, { quotes, leads, roleOf = () => null, extraSug
   }
 
   // ---- Overview: the home screen ----
-  function overview() {
+  function overview({ role } = {}) {
     const now = new Date();
     const today = startOfDay(now);
     const weekAgo = new Date(today.getTime() - 7 * DAY);
@@ -274,7 +274,7 @@ function createInsightService(db, { quotes, leads, roleOf = () => null, extraSug
     const noDeposit = count("SELECT COUNT(*) AS n FROM jobs WHERE status = 'scheduled' AND deposit_cents IS NULL AND start_at >= ? AND start_at < ?",
       iso(now), iso(new Date(now.getTime() + 3 * DAY)));
     if (noDeposit) suggestions.push({ kind: 'deposit', title: `${noDeposit} drop-off${noDeposit === 1 ? '' : 's'} in the next 3 days without a deposit`, detail: 'Collect it at drop-off, or mark it waived.', open: 'commissions' });
-    suggestions.push(...extraSuggestions());
+    suggestions.push(...extraSuggestions({ role }));
 
     // The call queue: what's due, and who to call next.
     const reminders = leads.listReminders();

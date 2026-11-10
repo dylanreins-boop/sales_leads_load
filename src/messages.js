@@ -39,14 +39,28 @@ const DEFAULT_NOTICES = {
   welcome_text: 'Hi {{first_name}}, thanks for your interest in {{company}}! What time of day is best to reach you: morning, afternoon or evening? Just reply here.',
   welcome_reply_enabled: true,
   welcome_reply_text: 'Thanks {{first_name}}! We will reach out {{best_time}}.',
+  // After pickup: a check-in a month later, and a maintenance reminder months later (once per job).
+  checkin_enabled: true,
+  checkin_days: 30,
+  checkin_text: "Hi {{first_name}}, it's {{company}}. It's been about a month since we coated your {{vehicle}}. How's it holding up? Any questions about washing or care, just reply here.",
+  checkin_subject: 'How is your {{vehicle}} holding up?',
+  checkin_email: "Hi {{first_name}},\n\nIt's been about a month since we coated your {{vehicle}}. How's it holding up?\n\nIf you have any questions about washing or caring for the coating, just reply to this email or call {{company_phone}}.\n\n{{company}}",
+  maintenance_enabled: true,
+  maintenance_months: 6,
+  maintenance_text: "Hi {{first_name}}, {{company}} here. Your {{vehicle}}'s coating is about {{months}} months in, a good time for a maintenance wash to keep it slick. Want us to set one up? Reply here or call {{company_phone}}.",
+  maintenance_subject: 'Time for a maintenance wash on your {{vehicle}}',
+  maintenance_email: "Hi {{first_name}},\n\nYour {{vehicle}}'s coating is about {{months}} months in. A maintenance wash now keeps it slick and protected.\n\nWant us to set one up? Reply to this email or call {{company_phone}}.\n\n{{company}}",
 };
-const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text', 'welcome_text', 'welcome_reply_text'];
-const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'welcome_enabled', 'welcome_reply_enabled', 'by_text', 'by_email'];
+const NOTICE_TEXT_FIELDS = ['confirm_text', 'confirm_subject', 'confirm_email', 'reminder_text', 'reminder_subject', 'reminder_email', 'ready_text', 'ready_subject', 'ready_email', 'missed_call_text', 'welcome_text', 'welcome_reply_text',
+  'checkin_text', 'checkin_subject', 'checkin_email', 'maintenance_text', 'maintenance_subject', 'maintenance_email'];
+const NOTICE_FLAGS = ['confirm_enabled', 'reminder_enabled', 'ready_enabled', 'missed_call_enabled', 'welcome_enabled', 'welcome_reply_enabled', 'checkin_enabled', 'maintenance_enabled', 'by_text', 'by_email'];
 // Each automatic message: the job column that marks it sent, and how it's logged.
 const KINDS = {
   confirm: { sentColumn: 'confirm_sent_at', trigger: 'confirmation', email: 'Booking confirmation', name: 'Booking confirmation' },
   reminder: { sentColumn: 'reminder_sent_at', trigger: 'reminder', email: 'Reminder email', name: 'Day-before reminder' },
   ready: { sentColumn: 'ready_sent_at', trigger: 'ready', email: 'Ready-for-pickup email', name: 'Ready-for-pickup message' },
+  checkin: { sentColumn: 'checkin_sent_at', trigger: 'checkin', email: 'Check-in email', name: 'Check-in after pickup' },
+  maintenance: { sentColumn: 'maintenance_sent_at', trigger: 'maintenance', email: 'Maintenance reminder email', name: 'Maintenance reminder' },
 };
 
 const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];
@@ -125,6 +139,16 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
   function saveNotices(input = {}) {
     const next = getNotices();
     for (const key of NOTICE_FLAGS) if (key in input) next[key] = Boolean(input[key]);
+    if ('checkin_days' in input) {
+      const days = Number(input.checkin_days);
+      if (!Number.isInteger(days) || days < 7 || days > 120) throw new HttpError(400, 'Send the check-in 7 to 120 days after pickup.');
+      next.checkin_days = days;
+    }
+    if ('maintenance_months' in input) {
+      const months = Number(input.maintenance_months);
+      if (!Number.isInteger(months) || months < 1 || months > 24) throw new HttpError(400, 'Send the maintenance reminder 1 to 24 months after pickup.');
+      next.maintenance_months = months;
+    }
     if ('reminder_hour' in input) {
       const hour = Number(input.reminder_hour);
       if (!Number.isInteger(hour) || hour < 6 || hour > 20) throw new HttpError(400, 'Pick a reminder time between 6 AM and 8 PM.');
@@ -390,6 +414,34 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     return count;
   }
 
+  // After pickup: the check-in (days later) and the maintenance reminder (months later), once per job,
+  // in the daytime. Only jobs picked up recently enough count, so turning it on doesn't message years of
+  // old customers at once; a customer who already came back for another job gets no maintenance nudge.
+  async function sendCareMessages(at = new Date()) {
+    const s = getNotices();
+    if (at.getHours() < s.reminder_hour || at.getHours() >= 19) return 0;
+    const DAY = 86400000;
+    let count = 0;
+    const plans = [
+      s.checkin_enabled && { kind: 'checkin', dueAt: (p) => new Date(p.getTime() + s.checkin_days * DAY) },
+      s.maintenance_enabled && { kind: 'maintenance', dueAt: (p) => { const d = new Date(p); d.setMonth(d.getMonth() + s.maintenance_months); return d; } },
+    ].filter(Boolean);
+    for (const plan of plans) {
+      const col = KINDS[plan.kind].sentColumn;
+      const rows = stmt(`SELECT j.id, j.lead_id, j.picked_up_at FROM jobs j WHERE j.status = 'picked_up' AND j.picked_up_at IS NOT NULL AND j.${col} IS NULL`).all();
+      for (const job of rows) {
+        const due = plan.dueAt(new Date(job.picked_up_at));
+        if (at < due) continue;
+        const late = at - due > 14 * DAY;
+        const cameBack = plan.kind === 'maintenance' && stmt("SELECT 1 FROM jobs WHERE lead_id = ? AND id != ? AND status != 'cancelled' AND start_at > ?").get(job.lead_id, job.id, job.picked_up_at);
+        if (late || cameBack) { stmt(`UPDATE jobs SET ${col} = 'skipped' WHERE id = ?`).run(job.id); continue; }
+        await notify(job.id, plan.kind, { extra: { months: String(s.maintenance_months) } });
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   // A moved job gets a fresh day-before reminder for its new date.
   function jobMoved(jobId) {
     stmt('UPDATE jobs SET reminder_sent_at = NULL WHERE id = ?').run(jobId);
@@ -397,7 +449,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
 
   return {
     getTemplates, saveTemplates, getNotices, saveNotices, render, valuesFor,
-    sendText, receiveText, missedCall, answeredCall, sendConfirmation, sendReady, sendDueReminders, jobMoved,
+    sendText, receiveText, missedCall, answeredCall, sendConfirmation, sendReady, sendDueReminders, sendCareMessages, jobMoved,
     queueWelcome, sendWelcomes,
   };
 }

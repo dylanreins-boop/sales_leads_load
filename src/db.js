@@ -529,6 +529,7 @@ function migrate(db) {
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
   // The customer said photos of their vehicle may be posted on social media (at the drop-off sign-off).
   if (!has('jobs', 'social_ok')) db.exec('ALTER TABLE jobs ADD COLUMN social_ok INTEGER');
+  for (const column of ['checkin_sent_at', 'maintenance_sent_at']) if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   // The first time anyone reached the lead (a logged call or a rep's own text), for speed to first contact.
   if (!has('leads', 'first_contacted_at')) {
     db.exec('ALTER TABLE leads ADD COLUMN first_contacted_at TEXT');

@@ -218,3 +218,56 @@ test('a call nobody answers gets a text back and becomes a lead; answered calls 
   const forged = await fetch(`${base}/webhooks/twilio/voice`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Twilio-Signature': 'forged' }, body: 'From=%2B17025558800' });
   assert.equal(forged.status, 401);
 });
+
+test('after pickup: a check-in 30 days later and a maintenance reminder 6 months later, once, in the daytime', async () => {
+  const { createLeadService } = require('../src/leads');
+  const { createJobService } = require('../src/jobs');
+  const { createMessageService } = require('../src/messages');
+  const leads = createLeadService(db);
+  const jobs = createJobService(db, { leads, photosDir: '/tmp' });
+  const sentTexts = [];
+  const texter = { configured: true, send: async (m) => { sentTexts.push(m); return { id: 'x' }; } };
+  const messages = createMessageService(db, { leads, jobs, texter, mailer: { configured: false }, brand: { name: 'Bob Moses Ceramic Coating' } });
+  await call('PUT', '/api/settings/notices', { reminder_hour: 10 }, ADMIN); // an earlier test moved it to 5 PM
+  // Older pickups in this test database are out of the way.
+  db.prepare("UPDATE jobs SET checkin_sent_at = 'old', maintenance_sent_at = 'old'").run();
+
+  const lead = await newLead();
+  const job = jobs.scheduleLead(lead.id, { start: at('2027-03-01', 8), end: at('2027-03-01', 16), hours: 6 }, { user: 'Sam' });
+  db.prepare("UPDATE jobs SET status = 'picked_up', picked_up_at = ? WHERE id = ?").run(at('2027-03-02', 15), job.id);
+
+  assert.equal(await messages.sendCareMessages(new Date(at('2027-03-31', 12))), 0, 'not 30 days yet');
+  assert.equal(await messages.sendCareMessages(new Date(at('2027-04-01', 7))), 0, 'not before the morning hour');
+  assert.equal(await messages.sendCareMessages(new Date(at('2027-04-01', 16))), 1);
+  assert.match(sentTexts.at(-1).body, /^Hi Ana, it's Bob Moses Ceramic Coating\. It's been about a month since we coated your 2023 Tesla Model 3\. How's it holding up\?/);
+  assert.equal(await messages.sendCareMessages(new Date(at('2027-04-02', 12))), 0, 'once');
+  assert.equal(await messages.sendCareMessages(new Date(at('2027-09-02', 15))), 1, '6 months after pickup');
+  assert.match(sentTexts.at(-1).body, /coating is about 6 months in, a good time for a maintenance wash/);
+
+  // A pickup far past its check-in date (turning it on for the first time) is skipped, not sent late.
+  const old = jobs.scheduleLead((await newLead()).id, { start: at('2026-12-01', 8), end: at('2026-12-01', 16), hours: 6 }, { user: 'Sam' });
+  db.prepare("UPDATE jobs SET status = 'picked_up', picked_up_at = ? WHERE id = ?").run(at('2026-12-02', 15), old.id);
+  const before = sentTexts.length;
+  await messages.sendCareMessages(new Date(at('2027-04-02', 12)));
+  assert.equal(db.prepare('SELECT checkin_sent_at FROM jobs WHERE id = ?').get(old.id).checkin_sent_at, 'skipped');
+  assert.equal(sentTexts.length, before);
+
+  // Admins change the timing; out-of-range values are refused.
+  assert.match((await call('PUT', '/api/settings/notices', { checkin_days: 2 }, ADMIN)).data.error, /7 to 120 days/);
+  assert.equal((await call('PUT', '/api/settings/notices', { checkin_days: 14, maintenance_months: 4 }, ADMIN)).data.maintenance_months, 4);
+});
+
+test('Automations: one list of what the app does on its own, with switches', async () => {
+  assert.equal((await call('GET', '/api/automations')).status, 403, 'admins only');
+  const list = (await call('GET', '/api/automations', undefined, ADMIN)).data;
+  const ids = list.map((a) => a.id);
+  for (const id of ['welcome', 'speed_alert', 'missed_call', 'quote_followups', 'confirm', 'reminder', 'ready', 'review', 'checkin', 'maintenance', 'social_drafts', 'winback', 'day_sheet', 'payroll_email', 'archive']) assert.ok(ids.includes(id), id);
+  assert.equal(list.find((a) => a.id === 'checkin').when, '14 days after pickup', 'the timing from Texts & reminders');
+  const off = (await call('PATCH', '/api/automations/checkin', { on: false }, ADMIN)).data;
+  assert.equal(off.on, false);
+  assert.equal((await call('GET', '/api/settings/notices', undefined, ADMIN)).data.checkin_enabled, false, 'the same setting as Texts & reminders');
+  assert.match((await call('PATCH', '/api/automations/day_sheet', { on: true }, ADMIN)).data.error, /Add at least one email address/, 'its own checks still apply');
+  assert.equal((await call('GET', '/api/automations', undefined, ADMIN)).data.find((a) => a.id === 'day_sheet').on, false);
+  assert.match((await call('PATCH', '/api/automations/speed_alert', { on: false }, ADMIN)).data.error, /set elsewhere/);
+  assert.equal((await call('PATCH', '/api/automations/nope', { on: true }, ADMIN)).status, 404);
+});

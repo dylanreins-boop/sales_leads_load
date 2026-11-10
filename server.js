@@ -28,6 +28,7 @@ const { DISPOSITIONS_BY_ID } = require('./src/pipeline');
 const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 const { createQuoteService } = require('./src/quotes');
 const { createInsightService } = require('./src/insights');
+const { createAutomations } = require('./src/automations');
 const { createReviewService } = require('./src/reviews');
 const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
 const { createTexter, toE164 } = require('./src/sms');
@@ -200,7 +201,24 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const pipelines = createPipelineService(db);
   pipelines.load();
   const quotes = createQuoteService(db, { leads, brand: config.brand });
-  const insights = createInsightService(db, { quotes, leads, roleOf: (name) => users.lookup(name)?.role || null });
+  const insights = createInsightService(db, {
+    quotes, leads, roleOf: (name) => users.lookup(name)?.role || null,
+    // From the dialer's AI call notes (the dialer build): this month's most common concern, and for admins the
+    // part of the call the team scores lowest.
+    extraSuggestions: ({ role } = {}) => {
+      if (!calls) return [];
+      const start = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const c = calls.coaching({ start, end: new Date(Date.now() + 60000).toISOString() });
+      const out = [];
+      const top = c.objections[0];
+      if (top && top.n >= 2) out.push({ kind: 'objection', title: `Top concern this month: ${top.label.toLowerCase()}`, detail: `Came up on ${top.n} calls${c.objections[1] ? `; next is ${c.objections[1].label.toLowerCase()} (${c.objections[1].n})` : ''}. Worth a ready answer.`, open: role === 'admin' ? 'calls' : null });
+      const scoresOn = calls.getAiSettings().scores;
+      if (c.weakest && (role === 'admin' ? scoresOn !== 'off' : scoresOn === 'everyone')) {
+        out.push({ kind: 'coach', title: `Coaching: ${c.weakest.label.toLowerCase()}`, detail: `The lowest-scoring part of ${c.scored_calls} calls this month (${c.weakest.avg} of 5). Calls where the customer was never going to buy don't count.`, open: role === 'admin' ? 'calls' : null });
+      }
+      return out;
+    },
+  });
   const reviews = createReviewService(db, { leads, mailer, brand: config.brand });
   const commissions = createCommissionService(db, { leads, jobs });
   const payments = createPaymentService(db, { leads, jobs });
@@ -246,6 +264,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     }),
   });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
+  const automations = createAutomations({ messages, campaigns, reviews, daySheets, social, timeClock, leads, calls, texter, mailer, config });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
     .catch((err) => ({ sent: [], problems: [err.message] }));
@@ -313,6 +332,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     googleLsaConfigured: googleLsa.configured,
     emailConfigured: mailer.configured,
     callsEnabled: Boolean(calls),
+    callScores: calls ? calls.getAiSettings().scores : 'off',
     callsReady: calls ? { phone: calls.configured, publicUrl: Boolean(config.publicUrl), ai: Boolean((summarizer || createCallSummarizer()).configured) } : null,
     emailPlaceholders: PLACEHOLDERS,
     vehicleFields: VEHICLE_FIELDS,
@@ -339,7 +359,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     return insights.decorate(leads.listLeads(leadFilters(query)));
   });
   // ---- Overview (the home screen) and lead scoring ----
-  route('GET', '/api/overview', () => insights.overview());
+  route('GET', '/api/overview', ({ actor }) => insights.overview({ role: actor.role }));
+  // ---- Automations: everything the app does on its own, with a switch ----
+  route('GET', '/api/automations', () => automations.list(), { roles: ADMIN });
+  route('PATCH', '/api/automations/:id', ({ params, body }) => automations.set(params.id, body.on), { roles: ADMIN });
   // ---- Leaderboard and each rep's page ----
   route('GET', '/api/leaderboard', ({ query }) => insights.leaderboard(query.get('period') || 'month'));
   route('GET', '/api/reps/:name', ({ params, actor }) => {
@@ -861,9 +884,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     route('PUT', '/api/calls/me', ({ body, actor }) => calls.setRepPhone(actor.user, body.call_phone));
     route('GET', '/api/calls/queue', () => calls.queue());
     route('GET', '/api/calls', ({ query }) => calls.list({ rep: query.get('rep'), flagged: query.get('flagged'), reviewed: query.get('reviewed'), from: query.get('from'), to: query.get('to') }), { roles: ADMIN });
-    route('GET', '/api/calls/:id', ({ params }) => calls.get(Number(params.id)));
+    route('GET', '/api/calls/coaching', ({ query }) => calls.coaching({ start: query.get('from') || new Date(Date.now() - 30 * 86400000).toISOString(), end: query.get('to') || new Date(Date.now() + 60000).toISOString() }), { roles: ADMIN });
+    route('GET', '/api/calls/:id', ({ params, actor }) => calls.forViewer(calls.get(Number(params.id)), actor));
+    route('GET', '/api/settings/calls', () => calls.getAiSettings(), { roles: ADMIN });
+    route('PUT', '/api/settings/calls', ({ body }) => calls.saveAiSettings(body), { roles: ADMIN });
     route('PATCH', '/api/calls/:id/review', ({ params, body, actor }) => calls.review(Number(params.id), body, actor), { roles: ADMIN });
-    route('GET', '/api/leads/:id/calls', ({ params }) => calls.forLead(Number(params.id)));
+    route('GET', '/api/leads/:id/calls', ({ params, actor }) => calls.forLead(Number(params.id)).map((c) => calls.forViewer(c, actor)));
     route('POST', '/api/leads/:id/calls', ({ params, actor }) => calls.start(Number(params.id), actor));
     // Twilio's side of a call. Each is signed by Twilio.
     const signed = (req, body) => {
@@ -1058,7 +1084,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // Move two-week-old leads off the boards now and every hour.
   leads.archiveOldLeads();
   workTime.stopForgotten();
-  const sweep = setInterval(() => { leads.archiveOldLeads(); workTime.stopForgotten(); timeClock.closeForgotten(); }, 3600000);
+  const sweep = setInterval(() => { leads.archiveOldLeads(); workTime.stopForgotten(); timeClock.closeForgotten(); calls?.purgeTranscripts(); }, 3600000);
   sweep.unref();
   // Review-request emails go out every 15 minutes once they're due.
   const sendReviews = () => reviews.sendDue().catch((err) => console.error('Review requests failed:', err.message));
@@ -1076,6 +1102,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // Day-before reminders to customers and the shop's morning day sheet, checked every 5 minutes.
   const sendReminders = () => {
     messages.sendDueReminders().catch((err) => console.error('Customer reminders failed:', err.message));
+    messages.sendCareMessages().catch((err) => console.error('Check-in and maintenance messages failed:', err.message));
     daySheets.sendDue().catch((err) => console.error('Day sheet email failed:', err.message));
     campaigns.sendQuoteFollowups().catch((err) => console.error('Quote follow-ups failed:', err.message));
     if (googleLsa.configured) googleLsa.sync().catch((err) => console.error('Google Local Services sync failed:', err.message));

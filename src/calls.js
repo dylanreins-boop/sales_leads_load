@@ -5,7 +5,7 @@
 // call ends, the app writes call notes (see callsummary.js) for the rep and for admins to review.
 const { HttpError } = require('./leads');
 const { toE164, prettyPhone } = require('./sms');
-const { FLAGS, DISPOSITION_FOR } = require('./callsummary');
+const { FLAGS, DISPOSITION_FOR, callScore, RUBRIC, OBJECTION_TYPES, ACTIONS } = require('./callsummary');
 
 const ACTIVE = ['calling_rep', 'calling_customer', 'connected'];
 const now = () => new Date().toISOString();
@@ -25,8 +25,58 @@ function createCallService(db, { leads, sms, summarizer, publicUrl, notice, hour
     flags: c.flags ? JSON.parse(c.flags) : [],
     flag_labels: (c.flags ? JSON.parse(c.flags) : []).map((f) => FLAGS[f] || f),
     suggested_disposition: c.summary ? DISPOSITION_FOR[JSON.parse(c.summary).outcome] || null : null,
+    score: c.summary ? callScore(JSON.parse(c.summary)) : null,
     ...(lines ? { lines: stmt('SELECT speaker, text, at FROM call_lines WHERE call_id = ? ORDER BY id').all(c.id) } : {}),
   });
+
+  // ---- AI call settings: who sees the call scores, who reads what was said, how long it's kept ----
+  const AI_DEFAULTS = { scores: 'admins', transcripts: 'everyone', transcript_days: 0 };
+  function getAiSettings() {
+    const row = stmt("SELECT value FROM settings WHERE key = 'ai_calls'").get();
+    let saved = {};
+    try { saved = row ? JSON.parse(row.value) : {}; } catch { /* defaults */ }
+    return { ...AI_DEFAULTS, ...saved, rubric: RUBRIC, objection_types: OBJECTION_TYPES, actions: ACTIONS };
+  }
+  function saveAiSettings(input = {}) {
+    const next = { ...getAiSettings() };
+    if ('scores' in input) {
+      if (!['admins', 'everyone', 'off'].includes(input.scores)) throw new HttpError(400, 'Call scores: admins, everyone or off.');
+      next.scores = input.scores;
+    }
+    if ('transcripts' in input) {
+      if (!['admins', 'everyone'].includes(input.transcripts)) throw new HttpError(400, 'What was said: admins or everyone.');
+      next.transcripts = input.transcripts;
+    }
+    if ('transcript_days' in input) {
+      const days = Number(input.transcript_days);
+      if (!Number.isInteger(days) || days < 0 || days > 3650) throw new HttpError(400, 'Keep what was said for 0 (always) to 3650 days.');
+      next.transcript_days = days;
+    }
+    const { scores, transcripts, transcript_days: transcriptDays } = next;
+    stmt("INSERT INTO settings (key, value) VALUES ('ai_calls', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify({ scores, transcripts, transcript_days: transcriptDays }));
+    purgeTranscripts();
+    return getAiSettings();
+  }
+  // What a person may see of a call: the score (per the setting) and what was said (per the setting).
+  function forViewer(call, actor = {}) {
+    const ai = getAiSettings();
+    const admin = actor.role === 'admin';
+    const out = { ...call };
+    if (ai.scores === 'off' || (!admin && ai.scores !== 'everyone')) {
+      out.score = null;
+      if (out.summary) out.summary = { ...out.summary, scores: undefined, scored: false };
+    }
+    if (!admin && ai.transcripts === 'admins' && out.lines) out.lines = [];
+    return out;
+  }
+  // What was said is deleted after the set number of days (the notes and the score stay).
+  function purgeTranscripts(now = new Date()) {
+    const days = getAiSettings().transcript_days;
+    if (!days) return 0;
+    const cutoff = new Date(now.getTime() - days * 86400000).toISOString();
+    return Number(stmt('DELETE FROM call_lines WHERE call_id IN (SELECT id FROM calls WHERE started_at < ?)').run(cutoff).changes);
+  }
 
   // ---- each rep's phone for the dialer ----
   const norm = (name) => String(name || '').trim().toLowerCase();
@@ -155,11 +205,13 @@ function createCallService(db, { leads, sms, summarizer, publicUrl, notice, hour
     const lines = stmt('SELECT speaker, text FROM call_lines WHERE call_id = ? ORDER BY id').all(id);
     const lead = leads.getLead(c.lead_id);
     const vehicle = [lead.vehicle_year, lead.vehicle_make, lead.vehicle_model].filter(Boolean).join(' ') || lead.vehicle_type || '';
-    const { notes, source, error } = await summarizer.summarize({ lines, lead: { vehicle, services: (lead.booked_services || []).join(', ') }, rep: c.user_name });
+    const { notes, source, error } = await summarizer.summarize({ lines, lead: { vehicle, services: (lead.booked_services || []).join(', ') }, rep: c.user_name, now: new Date() });
     if (!c.talk_seconds && c.customer_status && c.customer_status !== 'completed') {
       notes.outcome = 'no_conversation';
       notes.summary = c.customer_status === 'no-answer' ? 'The customer didn\'t answer.' : c.customer_status === 'busy' ? 'The line was busy.' : notes.summary;
       notes.flags = [];
+      notes.scored = false;
+      notes.suggested_action = 'call_again';
     }
     stmt('UPDATE calls SET summary = ?, summary_source = ?, summary_error = ?, flags = ? WHERE id = ?')
       .run(JSON.stringify(notes), source, error, JSON.stringify(notes.flags || []), id);
@@ -226,7 +278,9 @@ function createCallService(db, { leads, sms, summarizer, publicUrl, notice, hour
     const rows = stmt("SELECT * FROM calls WHERE started_at >= ? AND started_at < ? AND status != 'failed'").all(start, end);
     const reps = new Map();
     for (const c of rows) {
-      const r = reps.get(c.user_name) || { name: c.user_name, calls: 0, connected: 0, talk_seconds: 0, scores: [], flagged: 0, booked: 0 };
+      const r = reps.get(c.user_name) || { name: c.user_name, calls: 0, connected: 0, talk_seconds: 0, scores: [], ai: [], flagged: 0, booked: 0 };
+      const ai = c.summary ? callScore(JSON.parse(c.summary)) : null;
+      if (ai != null) r.ai.push(ai);
       r.calls++;
       if (c.talk_seconds > 0) r.connected++;
       r.talk_seconds += c.talk_seconds || 0;
@@ -242,12 +296,31 @@ function createCallService(db, { leads, sms, summarizer, publicUrl, notice, hour
       connected: rows.filter((c) => c.talk_seconds > 0).length,
       talk_seconds: rows.reduce((n, c) => n + (c.talk_seconds || 0), 0),
       reviewed: rows.filter((c) => c.reviewed_at).length,
-      reps: [...reps.values()].map((r) => ({ ...r, avg_score: r.scores.length ? r.scores.reduce((a, b) => a + b, 0) / r.scores.length : null, scores: undefined })).sort((a, b) => b.calls - a.calls),
+      reps: [...reps.values()].map((r) => ({
+        ...r, avg_score: r.scores.length ? r.scores.reduce((a, b) => a + b, 0) / r.scores.length : null, scores: undefined,
+        avg_ai_score: r.ai.length ? Math.round(r.ai.reduce((a, b) => a + b, 0) / r.ai.length) : null, ai: undefined,
+      })).sort((a, b) => b.calls - a.calls),
+      ...coaching({ start, end }),
       flags: Object.entries(flagCounts).map(([flag, n]) => ({ flag, label: FLAGS[flag] || flag, n })).sort((a, b) => b.n - a.n),
     };
   }
 
-  return { configured, start, answerTwiml, noticeTwiml, transcript, dialed, ended, writeNotes, get, forLead, active, list, review, queue, stats, repPhone, setRepPhone, brand };
+  // The team's patterns over a period: the concerns that come up most, and the part of the call that scores
+  // lowest (calls where the customer was never going to buy aren't counted against the rep).
+  function coaching({ start, end }) {
+    const notes = stmt("SELECT summary FROM calls WHERE started_at >= ? AND started_at < ? AND summary IS NOT NULL").all(start, end).map((c) => JSON.parse(c.summary));
+    const counts = {};
+    for (const n of notes) for (const t of n.objection_types || []) counts[t] = (counts[t] || 0) + 1;
+    const scored = notes.filter((n) => n.scored && n.scores && !n.not_a_missed_chance);
+    const parts = RUBRIC.map((r) => ({ id: r.id, label: r.label, avg: scored.length ? Math.round((scored.reduce((x, n) => x + (n.scores[r.id] || 3), 0) / scored.length) * 10) / 10 : null }));
+    return {
+      objections: Object.entries(counts).map(([type, n]) => ({ type, label: OBJECTION_TYPES[type] || type, n })).sort((a, b) => b.n - a.n),
+      rubric: parts, scored_calls: scored.length,
+      weakest: scored.length >= 3 ? [...parts].sort((a, b) => a.avg - b.avg)[0] : null,
+    };
+  }
+
+  return { getAiSettings, saveAiSettings, forViewer, purgeTranscripts, coaching, configured, start, answerTwiml, noticeTwiml, transcript, dialed, ended, writeNotes, get, forLead, active, list, review, queue, stats, repPhone, setRepPhone, brand };
 }
 
 const fmtHour = (h) => new Date(2026, 0, 1, h).toLocaleTimeString('en-US', { hour: 'numeric' });
