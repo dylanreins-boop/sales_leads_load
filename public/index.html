@@ -1102,6 +1102,19 @@
     <div id="clockDialogBody"></div>
   </dialog>
 
+  <!-- "Are you sure?" and "Add a note" boxes (the browser's own pop-ups are blocked in some places, like previews). -->
+  <dialog id="askDialog" class="ask-dialog">
+    <form id="askForm">
+      <h2 id="askTitle"></h2>
+      <p id="askText" class="ask-text"></p>
+      <textarea id="askInput" rows="3" hidden></textarea>
+      <div class="dialog-actions">
+        <button type="button" id="askCancel">Cancel</button>
+        <button type="submit" id="askOk" class="primary">OK</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="offDialog" class="off-dialog" aria-label="Time off">
     <div id="offBody"></div>
   </dialog>

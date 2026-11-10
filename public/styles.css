@@ -1682,3 +1682,12 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .tp-att-tile.has.off_site { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: var(--danger); }
 @media (max-width: 900px) { .tp-att-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .tp-att-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* The app's own "Are you sure?" box */
+.ask-dialog { width: min(440px, calc(100vw - 32px)); }
+.ask-dialog h2 { margin: 0 0 8px; font-size: 19px; }
+.ask-text { margin: 0 0 14px; color: var(--text); }
+.ask-dialog textarea { width: 100%; margin-bottom: 12px; }
+.ask-dialog .dialog-actions button { min-width: 96px; }
+.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+.danger-solid:hover { filter: brightness(1.08); }

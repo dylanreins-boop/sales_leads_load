@@ -750,7 +750,7 @@ function correctionRow(c) {
 async function decideCorrection(c, status) {
   let note = '';
   if (status === 'denied') {
-    note = prompt(`Deny ${c.user_name}'s correction? Add a note for them (optional):`, '');
+    note = await ask({ title: `Deny ${c.user_name}'s correction?`, text: 'Add a note for them (optional).', input: { placeholder: 'e.g. The camera shows you left at 4:00' }, ok: 'Deny', danger: true });
     if (note === null) return;
   }
   try {
@@ -764,7 +764,7 @@ async function decideCorrection(c, status) {
 async function decide(r, status) {
   let note = '';
   if (status === 'denied') {
-    note = prompt(`Deny ${r.user_name}'s time off? Add a note for them (optional):`, '');
+    note = await ask({ title: `Deny ${r.user_name}'s time off?`, text: 'Add a note for them (optional).', input: { placeholder: 'e.g. We\'re short-staffed that week' }, ok: 'Deny', danger: true });
     if (note === null) return;
   }
   try {
@@ -877,7 +877,7 @@ async function savePunch(id, body) {
 }
 
 async function removePunch(x) {
-  if (!confirm(`Delete ${tcDay(x.clock_in)}, ${tcClock(x.clock_in)} to ${x.clock_out ? tcClock(x.clock_out) : 'now'}?`)) return;
+  if (!await askConfirm('Delete this time?', `${tcDay(x.clock_in)}, ${tcClock(x.clock_in)} to ${x.clock_out ? tcClock(x.clock_out) : 'now'}.`, { ok: 'Delete', danger: true })) return;
   try {
     await api(`/api/time/punches/${x.id}`, { method: 'DELETE' });
     await loadTimePay();

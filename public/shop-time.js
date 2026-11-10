@@ -110,7 +110,8 @@
     const mine = allocate(start, end, need, set);
     const load = loadByDay([job, ...others.filter((o) => o.id !== job.id)], set);
     const days = mine.days.map((d) => {
-      const entry = load.get(d.date);
+      // A cancelled job isn't in the day's load, so its own day may have nothing booked.
+      const entry = load.get(d.date) || { hours: 0, jobs: [] };
       return { date: d.date, hours: d.hours, booked: entry.hours, over: entry.hours > set.hours_per_day, jobs: entry.jobs };
     });
     const warnings = [];

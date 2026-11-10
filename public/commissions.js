@@ -294,7 +294,7 @@ function paymentsBox(job, { onSaved } = {}) {
     } catch (err) { fail(err); }
   };
   const removePayment = async (p) => {
-    if (!window.confirm(`Remove the ${money(p.cents)} ${p.kind} entered on ${shortDate(p.paid_at)}?`)) return;
+    if (!await askConfirm(`Remove this ${p.kind}?`, `${money(p.cents)}, entered on ${shortDate(p.paid_at)}.`, { ok: 'Remove', danger: true })) return;
     try {
       Object.assign(job, await api(`/api/payments/${p.id}`, { method: 'DELETE' }));
       show();

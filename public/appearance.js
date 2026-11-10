@@ -271,9 +271,9 @@ async function saveDim(e) {
 
 async function resetAppearance() {
   const company = look.scope === 'company';
-  if (!window.confirm(company
-    ? 'Go back to the standard colors and logo, and remove the background picture, for everyone?'
-    : 'Clear your own colors and background picture and use the company look again?')) return;
+  if (!await askConfirm(company ? 'Reset the look for everyone?' : 'Use the company look again?', company
+    ? 'Go back to the standard colors and logo, and remove the background picture, for everyone.'
+    : 'Clear your own colors and background picture and use the company look again.', { ok: 'Reset' })) return;
   try {
     applyAppearance(await api(scopeUrl('/reset'), { method: 'POST' }));
     look.draft = {};

@@ -438,9 +438,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     res.end(data);
   }, { roles: ANY_LOGIN });
   // Customer sign-off at drop-off (signature drawn on the tablet or phone).
-  route('POST', '/api/jobs/:id/signoff', ({ params, body, actor }) =>
-    payments.decorate(commissions.figures(jobs.signOff(Number(params.id), body, { ...actor, company: config.brand.name }))), { roles: CALENDAR, bodyLimit: 1_000_000 });
-  route('DELETE', '/api/jobs/:id/signoff', ({ params, actor }) => payments.decorate(commissions.figures(jobs.clearSignOff(Number(params.id), actor))), { roles: ADMIN });
+  // Both answer with the whole job (work time and shop time too), as the job panel redraws from it.
+  route('POST', '/api/jobs/:id/signoff', ({ params, body, actor }) => {
+    jobs.signOff(Number(params.id), body, { ...actor, company: config.brand.name });
+    return jobView(Number(params.id));
+  }, { roles: CALENDAR, bodyLimit: 1_000_000 });
+  route('DELETE', '/api/jobs/:id/signoff', ({ params, actor }) => { jobs.clearSignOff(Number(params.id), actor); return jobView(Number(params.id)); }, { roles: ADMIN });
   route('GET', '/api/jobs/:id/signoff.png', ({ params, res }) => {
     const data = fs.readFileSync(jobs.signOffImage(Number(params.id)));
     res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': data.length, 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' });

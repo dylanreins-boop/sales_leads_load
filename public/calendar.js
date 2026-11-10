@@ -92,7 +92,7 @@ function openOff(r) {
       r.decision_note && row('Admin note', r.decision_note)),
     h('div', { class: 'dialog-actions' },
       h('button', { type: 'button', class: 'danger-btn', onclick: async () => {
-        if (!confirm(`Cancel ${r.user_name}'s time off (${when})? It comes off the calendar and out of their pay.`)) return;
+        if (!await askConfirm(`Cancel ${r.user_name}'s time off?`, `${when}. It comes off the calendar and out of their pay.`, { ok: 'Cancel time off', cancel: 'Keep it', danger: true })) return;
         try {
           await api(`/api/time-off/${r.id}`, { method: 'DELETE' });
           dlg.close();
@@ -823,7 +823,7 @@ function workSection(job, edit) {
         h('label', {}, 'Started', h('input', { type: 'datetime-local', name: 'started_at', value: local(s.started_at), required: true })),
         h('label', {}, 'Stopped', h('input', { type: 'datetime-local', name: 'stopped_at', value: local(s.stopped_at) })),
         h('button', { type: 'submit' }, 'Save'),
-        h('button', { type: 'button', class: 'danger-btn', onclick: () => confirm(`Remove ${s.user_name}'s ${durText(sessionMs(s))}?`) && workEdit('DELETE', `/api/work/${s.id}`, undefined, 'Work time removed') }, 'Remove'))));
+        h('button', { type: 'button', class: 'danger-btn', onclick: async () => (await askConfirm(`Remove ${s.user_name}'s ${durText(sessionMs(s))}?`, 'This work time comes off the job.', { ok: 'Remove', danger: true })) && workEdit('DELETE', `/api/work/${s.id}`, undefined, 'Work time removed') }, 'Remove'))));
   };
 
   return h('section', { class: 'card-section work-timer' },
@@ -839,9 +839,9 @@ function workSection(job, edit) {
     canRun && h('div', { class: 'work-actions' },
       mine
         ? [h('button', { type: 'button', onclick: () => workAction('work/pause', null, 'Paused') }, 'Pause'),
-          h('button', { type: 'button', class: 'primary', onclick: () => confirm('Is the work on this vehicle done? This stops every clock on the job.') && workAction('work/finish', null, 'Work finished') }, 'Finished')]
+          h('button', { type: 'button', class: 'primary', onclick: finishWork }, 'Finished')]
         : [h('button', { type: 'button', class: 'primary work-start', onclick: () => workAction('work/start', null, w.finished_at ? 'Started again' : 'Clock started') }, w.finished_at ? 'Start again' : w.sessions.length ? 'Start working' : 'Start work'),
-          w.sessions.length > 0 && !w.finished_at && h('button', { type: 'button', onclick: () => confirm('Is the work on this vehicle done? This stops every clock on the job.') && workAction('work/finish', null, 'Work finished') }, 'Finished')]),
+          w.sessions.length > 0 && !w.finished_at && h('button', { type: 'button', onclick: finishWork }, 'Finished')]),
     canRun && !w.sessions.length && h('p', { class: 'muted small' }, 'Tap Start work when you begin on this vehicle, Pause when you step away, and Finished when it\'s done.'),
     (w.sessions.length > 0 || admin) && h('details', { class: 'work-log' },
       h('summary', {}, `Time log${w.sessions.length ? ` (${w.sessions.length})` : ''}${w.by_person.length > 1 ? ` · ${w.by_person.map((p) => `${p.name} ${durText(p.hours * 3600000)}`).join(', ')}` : ''}`),
@@ -952,8 +952,13 @@ async function saveSignOff(e) {
   } catch (err) { fail(err); }
 }
 
+async function finishWork() {
+  if (!await askConfirm('Is the work on this vehicle done?', 'This stops every clock on the job.', { ok: 'Yes, it\'s done' })) return;
+  workAction('work/finish', null, 'Work finished');
+}
+
 async function clearSignOff() {
-  if (!window.confirm('Clear this sign-off? The customer will need to sign again.')) return;
+  if (!await askConfirm('Clear this sign-off?', 'The customer will need to sign again.', { ok: 'Clear sign-off', danger: true })) return;
   try {
     cal.job = await api(`/api/jobs/${cal.job.id}/signoff`, { method: 'DELETE' });
     renderJob();

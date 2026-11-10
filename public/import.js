@@ -105,7 +105,7 @@ async function runImport() {
 }
 
 async function undoImport(batch, count) {
-  if (!window.confirm(`Remove the ${count} lead${count === 1 ? '' : 's'} this import added, and anything done to them since?`)) return;
+  if (!await askConfirm(`Undo this import?`, `This removes the ${count} lead${count === 1 ? '' : 's'} it added, and anything done to them since.`, { ok: 'Remove them', danger: true })) return;
   try {
     const { removed } = await api(`/api/import/batches/${batch}/undo`, { method: 'POST' });
     toast(`Removed ${removed} imported lead${removed === 1 ? '' : 's'}`);

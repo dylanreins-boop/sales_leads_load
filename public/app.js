@@ -65,6 +65,43 @@ function toast(message, kind = '') {
 
 const fail = (err) => toast(err.message, 'error');
 
+// The app's own "Are you sure?" box. Resolves true or false; with `input`, resolves the text typed (or
+// null if cancelled). Used instead of the browser's confirm() and prompt(), which some places block.
+function ask({ title, text = '', ok = 'OK', cancel = 'Cancel', danger = false, input = null }) {
+  return new Promise((resolve) => {
+    const d = $('#askDialog');
+    const box = $('#askInput');
+    $('#askTitle').textContent = title;
+    $('#askText').textContent = text;
+    $('#askText').hidden = !text;
+    box.hidden = !input;
+    box.value = input?.value || '';
+    box.placeholder = input?.placeholder || '';
+    box.readOnly = Boolean(input?.readOnly);
+    $('#askOk').textContent = ok;
+    $('#askOk').className = danger ? 'danger-solid' : 'primary';
+    $('#askCancel').textContent = cancel;
+    $('#askCancel').hidden = cancel === null;
+    let answer = input ? null : false;
+    $('#askForm').onsubmit = (e) => { e.preventDefault(); answer = input ? box.value.trim() : true; d.close(); };
+    $('#askCancel').onclick = () => d.close();
+    d.onclose = () => resolve(answer);
+    d.showModal();
+    if (input) { box.focus(); if (input.readOnly) box.select(); } else $('#askOk').focus();
+  });
+}
+const askConfirm = (title, text, opts = {}) => ask({ title, text, ...opts });
+
+// Copy text; where the browser won't allow it, show it ready to copy by hand.
+async function copyText(text, done = 'Copied.') {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(done);
+  } catch {
+    await ask({ title: 'Copy this', text: 'Press and hold (or Ctrl+C) to copy it.', input: { value: text, readOnly: true }, ok: 'Done', cancel: null });
+  }
+}
+
 // ---------- formatting ----------
 const stageLabel = (id) => state.meta.stages.find((s) => s.id === id)?.label ?? id;
 const dispoLabel = (id) => state.meta.dispositions.find((d) => d.id === id)?.label ?? id;

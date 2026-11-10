@@ -82,8 +82,8 @@ function renderPipelines() {
           h('input', { type: 'checkbox', checked: p.visible_to.includes(person.name), onchange: (e) => {
             p.visible_to = e.target.checked ? [...p.visible_to, person.name] : p.visible_to.filter((n) => n !== person.name);
           } }), ` ${person.name}`, person.role === 'admin' ? h('small', { class: 'muted' }, ' (admin: always sees every pipeline)') : null)))),
-      !other && p.id !== 'rv' && h('button', { type: 'button', class: 'danger-btn pipe-remove', onclick: () => {
-        if (!confirm(`Remove ${p.label}? Its leads go to ${pipe.list.at(-1).label}.`)) return;
+      !other && p.id !== 'rv' && h('button', { type: 'button', class: 'danger-btn pipe-remove', onclick: async () => {
+        if (!await askConfirm(`Remove ${p.label}?`, `Its leads go to ${pipe.list.at(-1).label} when you save.`, { ok: 'Remove', danger: true })) return;
         pipe.list.splice(i, 1);
         renderPipelines();
       } }, 'Remove this pipeline'));

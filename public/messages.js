@@ -256,14 +256,7 @@ function linkStatus(l) {
   return [`Waiting for the customer · works until ${new Date(l.expires_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}`, ''];
 }
 
-async function copyLink(url) {
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('Link copied. Paste it into a text or message.');
-  } catch {
-    window.prompt('Copy this link:', url);
-  }
-}
+const copyLink = (url) => copyText(url, 'Link copied. Paste it into a text or message.');
 
 function renderBookingLinks(lead) {
   const links = lead.booking_links || [];
@@ -425,7 +418,7 @@ async function startCampaign(e) {
   e.preventDefault();
   const body = winbackBody();
   if (!body.name.trim()) return toast('Give the campaign a name', 'error');
-  if (!window.confirm(`Send "${body.name}" to ${winback.count} lead${winback.count === 1 ? '' : 's'}? It can be stopped while it's sending.`)) return;
+  if (!await askConfirm(`Send "${body.name}"?`, `It goes to ${winback.count} lead${winback.count === 1 ? '' : 's'}. It can be stopped while it's sending.`, { ok: 'Send it' })) return;
   try {
     const c = await api('/api/campaigns', { method: 'POST', body });
     toast(`"${c.name}" is going out to ${c.pending} leads`);
