@@ -11,6 +11,7 @@ const { parseAmount } = require('./jobs');
 const OWED_WHEN = ['in_shop', 'picked_up', 'deposit', 'booked'];
 const IN_THE_BUILDING = ['in_shop', 'ready', 'picked_up'];
 const DEPOSIT_METHODS = ['Cash', 'Card', 'Check', 'Zelle', 'Venmo', 'Other'];
+const WAIVED = 'Waived'; // deposit_method when no deposit is taken on purpose
 // Commission is owed once the vehicle is booked and in the building.
 const DEFAULTS = { rate_pct: 10, deposit_pct: 10, owed_when: 'in_shop' };
 
@@ -86,12 +87,21 @@ function createCommissionService(db, { leads, jobs }) {
   }
 
   // Sales and admins record the deposit when the customer pays it.
-  function setDeposit(id, { taken, amount, method } = {}, { user } = {}) {
+  // Taken (amount and how they paid), not taken, or waived (no deposit for this job, with the reason).
+  function setDeposit(id, { taken, amount, method, waived, reason } = {}, { user } = {}) {
     const job = jobs.getJob(id);
     if (taken === false) {
       if (job.deposit_cents == null) return forJob(id);
-      stmt('UPDATE jobs SET deposit_cents = NULL, deposit_method = NULL, deposit_by = NULL, deposit_at = NULL, updated_at = ? WHERE id = ?').run(now(), id);
-      leads.logActivity(job.lead_id, 'deposit', { note: `Deposit marked not taken (was ${money(job.deposit_cents)})`, user });
+      stmt('UPDATE jobs SET deposit_cents = NULL, deposit_method = NULL, deposit_by = NULL, deposit_at = NULL, deposit_note = NULL, updated_at = ? WHERE id = ?').run(now(), id);
+      leads.logActivity(job.lead_id, 'deposit', { note: job.deposit_method === WAIVED ? 'Deposit no longer waived' : `Deposit marked not taken (was ${money(job.deposit_cents)})`, user });
+      return forJob(id);
+    }
+    if (waived) {
+      const why = String(reason ?? '').trim().slice(0, 200);
+      if (!why) throw new HttpError(400, 'Say why the deposit is waived (a regular customer, the owner OK\'d it, …).');
+      stmt('UPDATE jobs SET deposit_cents = 0, deposit_method = ?, deposit_by = ?, deposit_at = ?, deposit_note = ?, updated_at = ? WHERE id = ?')
+        .run(WAIVED, user ?? null, now(), why, now(), id);
+      leads.logActivity(job.lead_id, 'deposit', { note: `Deposit waived: ${why}`, user });
       return forJob(id);
     }
     const settings = getSettings();
@@ -100,7 +110,7 @@ function createCommissionService(db, { leads, jobs }) {
     if (cents <= 0) throw new HttpError(400, 'The deposit has to be more than $0.');
     const how = method ? String(method).trim().slice(0, 30) : null;
     if (how && !DEPOSIT_METHODS.includes(how)) throw new HttpError(400, `Pick how they paid: ${DEPOSIT_METHODS.join(', ')}.`);
-    stmt('UPDATE jobs SET deposit_cents = ?, deposit_method = ?, deposit_by = ?, deposit_at = ?, updated_at = ? WHERE id = ?')
+    stmt('UPDATE jobs SET deposit_cents = ?, deposit_method = ?, deposit_by = ?, deposit_at = ?, deposit_note = NULL, updated_at = ? WHERE id = ?')
       .run(cents, how, user ?? null, now(), now(), id);
     leads.logActivity(job.lead_id, 'deposit', { note: `Deposit taken: ${money(cents)}${how ? ` (${how})` : ''}`, user });
     return forJob(id);

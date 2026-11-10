@@ -482,8 +482,9 @@ function createJobService(db, { leads, photosDir }) {
     fs.mkdirSync(photosDir, { recursive: true });
     const file = `signoff-${jobId}-${crypto.randomUUID()}.png`;
     fs.writeFileSync(path.join(photosDir, file), image);
-    stmt('UPDATE jobs SET signoff_name = ?, signoff_at = ?, signoff_by = ?, signoff_file = ?, signoff_terms = ?, social_ok = ?, updated_at = ? WHERE id = ?')
-      .run(who, ts, user ?? null, file, terms, socialOk ? 1 : 0, ts, jobId);
+    stmt(`UPDATE jobs SET signoff_name = ?, signoff_at = ?, signoff_by = ?, signoff_file = ?, signoff_terms = ?, social_ok = ?,
+          social_ok_by = ?, social_ok_at = ?, social_ok_how = ?, updated_at = ? WHERE id = ?`)
+      .run(who, ts, user ?? null, file, terms, socialOk ? 1 : 0, user ?? null, ts, 'signoff', ts, jobId);
     leads.logActivity(job.lead_id, 'signoff', { note: `${who} signed off on the vehicle's condition at drop-off${condition ? `: ${condition}` : ''}`, user });
     return getJob(jobId);
   }
@@ -497,8 +498,10 @@ function createJobService(db, { leads, photosDir }) {
   // The customer's OK to post photos of their vehicle, changed later (they said so on the phone, say).
   function setSocialOk(jobId, ok, { user } = {}) {
     const job = getJob(jobId);
-    stmt('UPDATE jobs SET social_ok = ?, updated_at = ? WHERE id = ?').run(ok ? 1 : 0, now(), jobId);
-    leads.logActivity(job.lead_id, 'note', { note: ok ? 'Customer OK\'d posting photos of the vehicle' : 'Customer did not OK posting photos', user });
+    if ((job.social_ok === 1) === Boolean(ok)) return job;
+    const ts = now();
+    stmt('UPDATE jobs SET social_ok = ?, social_ok_by = ?, social_ok_at = ?, social_ok_how = ?, updated_at = ? WHERE id = ?').run(ok ? 1 : 0, user ?? null, ts, 'staff', ts, jobId);
+    leads.logActivity(job.lead_id, 'note', { note: ok ? 'Customer OK\'d posting photos of the vehicle (told staff)' : 'Customer took back their OK to post photos of the vehicle', user });
     return getJob(jobId);
   }
 

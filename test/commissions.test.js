@@ -72,6 +72,13 @@ test('deposits can be marked later, changed and undone; the shop never sees mone
   const shopView = (await call('GET', `/api/jobs/${job.id}`, undefined, SHOP)).data;
   assert.ok(!Object.keys(shopView).some((k) => /^(amount|deposit|commission)_/.test(k)), 'no money fields for the shop');
   assert.equal((await call('PATCH', `/api/jobs/${job.id}/deposit`, { taken: false })).data.deposit_cents, null);
+
+  // Waived on purpose: needs a reason, and shows who and why.
+  assert.match((await call('PATCH', `/api/jobs/${job.id}/deposit`, { waived: true, reason: ' ' })).data.error, /why/);
+  const waived = (await call('PATCH', `/api/jobs/${job.id}/deposit`, { waived: true, reason: 'Regular customer' })).data;
+  assert.deepEqual([waived.deposit_cents, waived.deposit_method, waived.deposit_note, waived.deposit_by], [0, 'Waived', 'Regular customer', 'Sam']);
+  const undone = (await call('PATCH', `/api/jobs/${job.id}/deposit`, { taken: false })).data;
+  assert.deepEqual([undone.deposit_cents, undone.deposit_note], [null, null]);
 });
 
 test('commission is owed once the job is done, and admins mark it paid', async () => {

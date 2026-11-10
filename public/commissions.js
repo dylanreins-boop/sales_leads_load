@@ -24,19 +24,25 @@ function depositEditor(job, { onSaved }) {
   const methods = state.meta.depositMethods || [];
   const show = () => {
     const taken = job.deposit_cents != null;
+    const waived = taken && job.deposit_method === 'Waived';
     fill(box,
       h('span', { class: 'amount-label' }, 'Deposit'),
-      taken
-        ? h('span', { class: 'amount-value' }, money(job.deposit_cents))
-        : h('span', { class: 'amount-missing' }, job.deposit_due_cents != null ? `Not taken · ${money(job.deposit_due_cents)} due` : 'Not taken'),
-      taken && h('span', { class: 'muted' }, [job.deposit_method, job.deposit_by && `by ${job.deposit_by}`, job.deposit_at && shortDate(job.deposit_at)].filter(Boolean).join(' · ')),
-      h('button', { type: 'button', class: 'amount-edit', onclick: taken ? undo : edit }, taken ? 'Not taken' : 'Mark taken'));
+      waived ? h('span', { class: 'dep-pill waived' }, 'Waived')
+        : taken ? [h('span', { class: 'dep-pill taken' }, 'Collected'), h('span', { class: 'amount-value' }, money(job.deposit_cents))]
+          : h('span', { class: 'dep-pill missing' }, job.deposit_due_cents != null ? `Not collected · ${money(job.deposit_due_cents)} due` : 'Not collected'),
+      taken && h('span', { class: 'muted' }, [waived ? job.deposit_note : job.deposit_method, job.deposit_by && `by ${job.deposit_by}`, job.deposit_at && shortDate(job.deposit_at)].filter(Boolean).join(' · ')),
+      h('button', { type: 'button', class: 'amount-edit', onclick: taken ? undo : edit }, waived ? 'Undo waive' : taken ? 'Not collected' : 'Mark collected'),
+      !taken && h('button', { type: 'button', class: 'amount-edit link-btn', onclick: waive }, 'Waive'));
+  };
+  const waive = async () => {
+    const reason = await ask({ title: 'Waive the deposit?', text: 'No deposit for this job. Say why, so everyone knows it wasn\'t missed.', input: { placeholder: 'Regular customer, owner OK\'d it, …' }, ok: 'Waive it' });
+    if (reason) save({ waived: true, reason });
   };
   const save = async (body) => {
     try {
       const saved = await api(`/api/jobs/${job.id}/deposit`, { method: 'PATCH', body });
       Object.assign(job, saved);
-      toast(saved.deposit_cents != null ? `Deposit recorded: ${money(saved.deposit_cents)}` : 'Deposit marked not taken');
+      toast(saved.deposit_method === 'Waived' ? 'Deposit waived' : saved.deposit_cents != null ? `Deposit recorded: ${money(saved.deposit_cents)}` : 'Deposit marked not collected');
       show();
       onSaved?.(saved);
     } catch (err) { fail(err); }
@@ -106,7 +112,7 @@ function renderCommissions() {
     tile(isAdmin() ? 'Owed to reps' : 'Owed to you', money(sum(owed), { cents: false }), `${owed.length} job${owed.length === 1 ? '' : 's'}`),
     tile('Pending', money(sum(pending), { cents: false }), `${pending.length} job${pending.length === 1 ? '' : 's'} not earned yet`),
     tile('Paid this year', money(sum(paidYtd), { cents: false }), `${paidYtd.length} job${paidYtd.length === 1 ? '' : 's'}`),
-    tile('Deposits not taken', String(noDeposit.length), 'upcoming and in-shop jobs',
+    tile('Deposits not collected', String(noDeposit.length), 'upcoming and in-shop jobs',
       [toCollect > 0 && `${money(toCollect, { cents: false })} to collect`, noAmount > 0 && `${noAmount} without a job amount`].filter(Boolean).join(' · ') || null));
 
   if (isAdmin()) renderRepTable(jobs, yearStart);
@@ -140,10 +146,12 @@ function renderComTable(jobs) {
   const shown = jobs.filter((j) => !com.status || j.commission_status === com.status);
   const admin = isAdmin();
   const vehicle = (j) => [j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(' ') || j.vehicle_type || '';
-  const deposit = (j) => (j.deposit_cents != null
-    ? h('span', {}, h('span', { class: 'com-pill paid' }, 'Taken'), ` ${money(j.deposit_cents, { cents: false })}${j.deposit_method ? ` · ${j.deposit_method}` : ''}`)
-    : j.status === 'cancelled' ? h('span', { class: 'muted' }, '–')
-      : h('span', {}, h('span', { class: 'com-pill pending' }, 'Not taken'), j.deposit_due_cents != null ? ` ${money(j.deposit_due_cents, { cents: false })} due` : ''));
+  const deposit = (j) => (j.deposit_method === 'Waived'
+    ? h('span', { title: j.deposit_note || '' }, h('span', { class: 'com-pill' }, 'Waived'), j.deposit_note ? ` ${j.deposit_note}` : '')
+    : j.deposit_cents != null
+      ? h('span', {}, h('span', { class: 'com-pill paid' }, 'Collected'), ` ${money(j.deposit_cents, { cents: false })}${j.deposit_method ? ` · ${j.deposit_method}` : ''}`)
+      : j.status === 'cancelled' ? h('span', { class: 'muted' }, '–')
+        : h('span', {}, h('span', { class: 'com-pill pending' }, 'Not collected'), j.deposit_due_cents != null ? ` ${money(j.deposit_due_cents, { cents: false })} due` : ''));
   const actions = (j) => {
     if (!admin) return null;
     if (j.commission_status === 'paid') return h('button', { type: 'button', class: 'link-btn', onclick: () => unpay(j) }, 'Undo paid');

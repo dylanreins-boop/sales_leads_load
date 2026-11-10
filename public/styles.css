@@ -1688,6 +1688,7 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .ask-dialog h2 { margin: 0 0 8px; font-size: 19px; }
 .ask-text { margin: 0 0 14px; color: var(--text); }
 .ask-dialog textarea { width: 100%; margin-bottom: 12px; }
+.ask-checks { display: grid; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; background: var(--bg); }
 .ask-dialog .dialog-actions button { min-width: 96px; }
 .danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
 .danger-solid:hover { filter: brightness(1.08); }
@@ -1725,3 +1726,44 @@ body.has-bg .board, body.has-bg .calendar, body.has-bg .section { background: tr
 .soc-panel-settings > summary h3 { display: inline; }
 .soc-panel-settings > summary::after { content: " ▾"; color: var(--muted); }
 .soc-panel-settings[open] > summary::after { content: " ▴"; }
+.soc-order { position: absolute; top: 4px; right: 4px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--link); color: #fff; font: 800 12px/22px var(--font-body, sans-serif); text-align: center; }
+.soc-order:empty { display: none; }
+.soc-two { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 14px; align-items: start; }
+.soc-fields { display: grid; gap: 10px; }
+@media (max-width: 640px) { .soc-two { grid-template-columns: 1fr; } .soc-preview { max-width: 260px; } }
+.soc-preview { margin: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); }
+.soc-pv-frame { position: relative; aspect-ratio: 4 / 5; background: #000; }
+.soc-pv-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.soc-pv-count { position: absolute; top: 6px; right: 6px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; }
+.soc-preview figcaption { padding: 8px 10px 0; font-size: 12px; line-height: 1.4; }
+.soc-pv-caption { margin: 2px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+.soc-preview .hint { margin: 6px 10px 8px; font-size: 11px; }
+.soc-saved { font-size: 12px; margin-left: auto; }
+.soc-saved.soc-unsaved { color: var(--danger); }
+.soc-posting-note { margin: 0; }
+.soc-live { display: grid; gap: 4px; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--bg); }
+.soc-live.warn { border-left: 3px solid var(--warn); }
+.pill.nostep { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.next-step-box { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border-left: 4px solid var(--link); }
+.next-step.urgent { color: var(--danger); }
+.next-step.warn { color: var(--warn); }
+.next-step .link-btn { padding: 0; }
+.last-contact { font-size: 13px; }
+.queue-hint { margin: 0 0 6px; }
+.dep-pill { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+.dep-pill.taken { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.dep-pill.missing { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.dep-pill.waived { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+/* Marketing and Setup menus in the toolbar */
+details.menu { position: relative; flex: 0 0 auto; }
+details.menu > summary { list-style: none; cursor: pointer; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); white-space: nowrap; user-select: none; }
+details.menu > summary::-webkit-details-marker { display: none; }
+details.menu > summary::after { content: " ▾"; color: var(--muted); }
+details.menu[open] > summary { border-color: var(--accent); }
+details.menu > summary:hover { border-color: var(--accent); }
+.menu-list { display: none; }
+.menu-list.floating { display: grid; position: fixed; z-index: 60; min-width: 190px; padding: 6px; gap: 2px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: 0 10px 30px rgba(0, 20, 43, 0.22); }
+.menu-list.floating button { text-align: left; border: 0; background: transparent; padding: 9px 12px; border-radius: 6px; width: 100%; }
+.menu-list.floating button:hover, .menu-list.floating button:focus-visible { background: var(--bg); }
+body:not([data-role="admin"]) .menu-list.floating { display: none; }
+body[data-section]:not([data-section="leads"]) .menu-list.floating .lead-only { display: none !important; }

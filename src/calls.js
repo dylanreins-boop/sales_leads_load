@@ -63,7 +63,7 @@ function createCallService(db, { leads, sms, summarizer, publicUrl, notice, hour
     if (!customer) throw new HttpError(400, 'This lead has no phone number to call.');
     if (['do_not_call', 'wrong_number'].includes(lead.last_disposition)) throw new HttpError(400, 'This lead is marked do not call / wrong number.');
     const rep = toE164(repPhone(user));
-    if (!rep) throw new HttpError(400, 'Add your phone number for the dialer first (Reminders → My phone).');
+    if (!rep) throw new HttpError(400, 'Add your phone number for the dialer first (To do → My phone).');
     const hour = at.getHours();
     if (hour < openHour || hour >= closeHour) throw new HttpError(400, `Calls go out between ${fmtHour(openHour)} and ${fmtHour(closeHour)}.`);
     if (stmt(`SELECT 1 FROM calls WHERE user_name = ? AND status IN (${ACTIVE.map(() => '?').join(',')}) AND started_at > ?`)

@@ -107,3 +107,12 @@ test('reps can turn a link off', async () => {
   assert.deepEqual([view.status, view.days], ['cancelled', []]);
   assert.equal((await call('POST', `/api/public/booking/${link.token}/pay`, {}, null)).status, 404, 'no online payment route');
 });
+
+test('a booking sent twice at once (a double tap) makes one job', async () => {
+  const lead = await leadWithQuote();
+  const { link } = (await call('POST', `/api/leads/${lead.id}/booking-links`, {})).data;
+  const day = (await call('GET', `/api/public/booking/${link.token}`, undefined, null)).data.days[0];
+  const tries = await Promise.all([1, 2, 3].map(() => call('POST', `/api/public/booking/${link.token}`, { date: day.date }, null)));
+  assert.deepEqual(tries.map((t) => t.status).sort(), [201, 400, 400]);
+  assert.equal((await call('GET', `/api/leads/${lead.id}`)).data.jobs.length, 1);
+});

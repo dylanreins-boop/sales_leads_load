@@ -65,6 +65,16 @@ function displayName(lead) {
 
 // active: on a board. old: aged out without booking. dead: aged out after being marked Waste.
 // customer: booked, and their job was picked up a while ago (Past Customers).
+// Stages where a lead is still being worked (not booked, not waste).
+const OPEN_STAGES = ['new', 'voicemail', 'follow_up_1', 'follow_up_2', 'follow_up_3', 'contacted'];
+// The newest text from the customer, not counting STOP / START (those change texting, they need no answer).
+const LAST_REPLY_SQL = `(SELECT MAX(t.created_at) FROM texts t WHERE t.lead_id = l.id AND t.direction = 'in'
+  AND lower(trim(t.body, ' .!')) NOT IN ('stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'start', 'unstop'))`;
+// A customer texted and nobody has called or texted them back since (a rep's own text counts as contact).
+const needsReply = (l) => Boolean(l.last_reply_at) && !l.archived_at && !(l.last_contacted_at >= l.last_reply_at);
+// Being worked, talked to, and nothing planned next (no call reminder).
+const noNextStep = (l) => !l.archived_at && OPEN_STAGES.includes(l.stage) && Boolean(l.last_contacted_at) && !l.next_reminder_at;
+
 function statusOf(lead) {
   if (!lead.archived_at) return 'active';
   if (lead.stage === 'booked') return 'customer';
@@ -200,12 +210,44 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                         l.welcome_due_at, l.welcome_sent_at, l.best_time, l.best_time_note, l.best_time_by,
                         l.received_at, l.updated_at, l.archived_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at,
+                        ${LAST_REPLY_SQL} AS last_reply_at,
                         (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS jobs_done,
                         (SELECT MAX(j.picked_up_at) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS last_pickup_at,
                         (SELECT SUM(j.amount_cents) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS spent_cents
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY l.received_at DESC`).all(...params)
-      .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row) }));
+      .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row),
+        needs_reply: needsReply(row), no_next_step: noNextStep(row) }));
+  }
+
+  // The to-do list: what needs someone now, most urgent first. Customer replies nobody has answered,
+  // new leads not called yet, quotes with no answer, and leads being worked with nothing planned next.
+  // (Call reminders come from listReminders.)
+  function workQueue({ quoteDays = 2 } = {}) {
+    const active = listLeads({ view: 'active' }).filter((l) => l.stage !== 'booked' || l.needs_reply);
+    const pick = (l) => ({
+      id: l.id, full_name: l.full_name, first_name: l.first_name, last_name: l.last_name, phone: l.phone, email: l.email, stage: l.stage, pipeline: l.pipeline,
+      vehicle_year: l.vehicle_year, vehicle_make: l.vehicle_make, vehicle_model: l.vehicle_model, vehicle_type: l.vehicle_type,
+      received_at: l.received_at, last_disposition: l.last_disposition, last_contacted_at: l.last_contacted_at, last_contact_by: l.last_contact_by,
+      last_contact_kind: l.last_contact_kind, next_reminder_at: l.next_reminder_at, best_time: l.best_time, last_reply_at: l.last_reply_at,
+    });
+    const replies = active.filter((l) => l.needs_reply)
+      .map((l) => ({ ...pick(l), reply: stmt("SELECT body FROM texts WHERE lead_id = ? AND direction = 'in' ORDER BY created_at DESC, id DESC LIMIT 1").get(l.id)?.body ?? '' }))
+      .sort((a, b) => a.last_reply_at.localeCompare(b.last_reply_at));
+    const seen = new Set(replies.map((l) => l.id));
+    const fresh = active.filter((l) => !seen.has(l.id) && l.stage === 'new' && !l.last_contacted_at)
+      .sort((a, b) => a.received_at.localeCompare(b.received_at)).map(pick);
+    fresh.forEach((l) => seen.add(l.id));
+    const cutoff = new Date(Date.now() - quoteDays * 86400000).toISOString();
+    const quotes = active.filter((l) => !seen.has(l.id) && OPEN_STAGES.includes(l.stage) && !l.next_reminder_at)
+      .map((l) => ({ l, q: stmt('SELECT id, total_cents, created_at, emailed_at FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id) }))
+      .filter(({ l, q }) => q && (q.emailed_at || q.created_at) < cutoff && !(l.last_contacted_at > (q.emailed_at || q.created_at)))
+      .map(({ l, q }) => ({ ...pick(l), quote: { total_cents: q.total_cents, sent_at: q.emailed_at || q.created_at } }))
+      .sort((a, b) => a.quote.sent_at.localeCompare(b.quote.sent_at));
+    quotes.forEach((l) => seen.add(l.id));
+    const stuck = active.filter((l) => !seen.has(l.id) && l.no_next_step)
+      .sort((a, b) => a.last_contacted_at.localeCompare(b.last_contacted_at)).map(pick);
+    return { replies, fresh, quotes, stuck };
   }
 
   // The search box: every lead, working, past customers, old and dead, best matches first (names
@@ -259,6 +301,10 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     lead.booking_links = stmt('SELECT id, token, amount_cents, deposit_cents, work_hours, created_by, created_at, expires_at, cancelled_at, job_id, booked_at, deposit_paid_at FROM booking_links WHERE lead_id = ? ORDER BY id DESC').all(id);
     lead.quotes = stmt('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(id).map((q) => ({ ...q, lines: JSON.parse(q.lines) }));
     lead.jobs = stmt('SELECT * FROM jobs WHERE lead_id = ? ORDER BY start_at DESC').all(id).map((j) => decorateJob(j));
+    lead.last_reply_at = stmt(`SELECT ${LAST_REPLY_SQL} AS at FROM leads l WHERE l.id = ?`).get(id).at;
+    lead.next_reminder_at = lead.reminders.filter((r) => !r.done_at).map((r) => r.due_at).sort()[0] ?? null;
+    lead.needs_reply = needsReply(lead);
+    lead.no_next_step = noNextStep(lead);
     return lead;
   }
 
@@ -576,7 +622,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   return {
-    searchLeads, ingest, listLeads, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
+    searchLeads, ingest, listLeads, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
     archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,

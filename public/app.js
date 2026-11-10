@@ -53,7 +53,11 @@ async function api(path, options = {}) {
     throw new Error('Sign in to continue.');
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status; // set when the server answered (no status = the connection dropped)
+    throw err;
+  }
   return data;
 }
 
@@ -67,13 +71,17 @@ const fail = (err) => toast(err.message, 'error');
 
 // The app's own "Are you sure?" box. Resolves true or false; with `input`, resolves the text typed (or
 // null if cancelled). Used instead of the browser's confirm() and prompt(), which some places block.
-function ask({ title, text = '', ok = 'OK', cancel = 'Cancel', danger = false, input = null }) {
+// `checks`: boxes that all have to be ticked before OK works (a last look before something goes out).
+function ask({ title, text = '', ok = 'OK', cancel = 'Cancel', danger = false, input = null, checks = null }) {
   return new Promise((resolve) => {
     const d = $('#askDialog');
     const box = $('#askInput');
     $('#askTitle').textContent = title;
     $('#askText').textContent = text;
     $('#askText').hidden = !text;
+    const boxes = (checks || []).map((label) => h('input', { type: 'checkbox', required: true }));
+    fill($('#askChecks'), ...boxes.map((b, i) => h('label', { class: 'check' }, b, ` ${checks[i]}`)));
+    $('#askChecks').hidden = !boxes.length;
     box.hidden = !input;
     box.value = input?.value || '';
     box.placeholder = input?.placeholder || '';
@@ -87,7 +95,7 @@ function ask({ title, text = '', ok = 'OK', cancel = 'Cancel', danger = false, i
     $('#askCancel').onclick = () => d.close();
     d.onclose = () => resolve(answer);
     d.showModal();
-    if (input) { box.focus(); if (input.readOnly) box.select(); } else $('#askOk').focus();
+    if (input) { box.focus(); if (input.readOnly) box.select(); } else if (boxes.length) boxes[0].focus(); else $('#askOk').focus();
   });
 }
 const askConfirm = (title, text, opts = {}) => ask({ title, text, ...opts });
@@ -368,9 +376,10 @@ function leadCard(lead) {
   bestTimeLine(lead),
   vehicleLine(lead) && h('div', { class: 'vehicle' }, vehicleLine(lead)),
   lead.booked_services?.length > 0 && h('div', { class: 'services-line' }, serviceLabels(lead.booked_services)),
-  (lead.last_disposition || reminderPill || promisePill(lead)) && h('div', { class: 'row' },
+  lead.needs_reply && h('div', { class: 'row' }, h('span', { class: 'pill due', title: 'They texted and nobody has answered yet' }, 'Texted back · answer them')),
+  (lead.last_disposition || reminderPill || promisePill(lead) || lead.no_next_step) && h('div', { class: 'row' },
     h('span', { class: 'muted' }, lead.last_disposition ? dispoLabel(lead.last_disposition) : ''),
-    reminderPill || promisePill(lead)),
+    reminderPill || promisePill(lead) || (lead.no_next_step && h('span', { class: 'pill nostep', title: 'No call reminder set' }, 'No next step'))),
   h('div', { class: 'card-times' },
     h('span', { class: lead.last_opened_at ? null : 'never' },
       h('b', {}, 'Opened '), lead.last_opened_at ? `${exactTime(lead.last_opened_at)}${lead.last_opened_by ? ` · ${lead.last_opened_by}` : ''}` : 'not yet'),
@@ -635,6 +644,28 @@ function syncCard(lead) {
   renderBoard();
 }
 
+// What's next on this lead, and the last time anyone reached them, right at the top.
+function nextStepLine(lead) {
+  if (lead.status && lead.status !== 'active') return null;
+  const open = lead.reminders.filter((r) => !r.done_at).sort((a, b) => a.due_at.localeCompare(b.due_at))[0];
+  const reply = lead.needs_reply && [...lead.texts].reverse().find((t) => t.direction === 'in');
+  const goTo = () => $('#dispoForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  let next;
+  if (reply) next = h('div', { class: 'next-step urgent' }, h('b', {}, 'They texted back '), `${exactTime(reply.created_at)}: "${reply.body}" Answer them.`);
+  else if (open) {
+    const st = dueStatus(open.due_at);
+    next = h('div', { class: `next-step ${st === 'overdue' ? 'urgent' : ''}` }, h('b', {}, 'Next: '), `call ${st === 'overdue' ? `now (was due ${fmtDateTime(open.due_at)})` : fmtDateTime(open.due_at)}`, open.note && h('span', { class: 'muted' }, ` · ${open.note}`));
+  } else if (lead.stage === 'booked') next = null;
+  else if (lead.stage === 'new' && !lead.last_contacted_at) next = h('div', { class: 'next-step' }, h('b', {}, 'Next: '), 'first call (we promise a call back within 24 hours)');
+  else if (lead.no_next_step) {
+    next = h('div', { class: 'next-step warn' }, h('b', {}, 'No next step. '), 'Log the outcome with a call reminder, or move it to Waste. ',
+      h('button', { type: 'button', class: 'link-btn', onclick: goTo }, 'Log it'));
+  }
+  const last = lead.last_contacted_at && h('div', { class: 'last-contact muted' }, h('b', {}, 'Last contact: '),
+    `${lead.last_disposition ? dispoLabel(lead.last_disposition) : lead.last_contact_kind === 'text' ? 'Texted' : 'Contacted'} · ${exactTime(lead.last_contacted_at)}${lead.last_contact_by ? ` by ${lead.last_contact_by}` : ''}`);
+  return next || last ? h('div', { class: 'next-step-box' }, next, last) : null;
+}
+
 function renderLead(lead) {
   state.openLead = lead;
   $('#leadName').textContent = leadName(lead);
@@ -646,6 +677,7 @@ function renderLead(lead) {
   ].filter(Boolean).join(' · ');
 
   $('#leadContact').replaceChildren(...[
+    nextStepLine(lead),
     lead.status && lead.status !== 'active' && h('div', { class: 'notice archived-notice' },
       h('span', {}, `${{ dead: 'Dead lead', customer: 'Past customer' }[lead.status] || 'Old lead'} · moved off the board ${shortDate(lead.archived_at)}`),
       h('button', { type: 'button', onclick: () => restoreLead(lead.id) }, lead.status === 'customer' ? 'Book again' : 'Restore to pipeline')),
@@ -973,21 +1005,26 @@ async function addNote(e) {
 
 // ---------- reminders ----------
 async function loadReminders() {
-  state.reminders = await api('/api/reminders');
+  [state.reminders, state.queue] = await Promise.all([api('/api/reminders'), api('/api/queue').catch(() => null)]);
   // Admins are also reminded about commissions owed to reps (vehicle booked and in the shop).
   state.commissionsOwed = isAdmin() ? await api('/api/commissions/owed').catch(() => null) : null;
   const owedReps = state.commissionsOwed?.reps || [];
   const due = state.reminders.filter((r) => dueStatus(r.due_at) === 'overdue');
+  const replies = state.queue?.replies || [];
+  // New leads count toward the badge for their first two days (the 24-hour call-back promise and a bit).
+  const freshNow = (state.queue?.fresh || []).filter((l) => Date.now() - new Date(l.received_at) < 2 * 86400000);
   const badge = $('#reminderBadge');
-  badge.hidden = !due.length && !owedReps.length;
-  badge.textContent = due.length + owedReps.length;
+  const count = due.length + replies.length + freshNow.length + owedReps.length;
+  badge.hidden = !count;
+  badge.textContent = count;
 
   const banner = $('#dueBanner');
   const parts = [];
+  if (replies.length) parts.push(replies.length === 1 ? `${leadName(replies[0])} texted back.` : `${replies.length} customers texted back.`);
   if (due.length) parts.push(due.length === 1 ? `Time to call ${leadName(due[0])}.` : `${due.length} leads are due for a call.`);
   if (owedReps.length) parts.push(`${money(state.commissionsOwed.owed_cents, { cents: false })} in commissions to pay (${owedReps.map((r) => r.rep).join(', ')}).`);
   banner.hidden = !parts.length;
-  banner.textContent = `${parts.join(' ')} Click to see your reminders.`;
+  banner.textContent = `${parts.join(' ')} Click to see your to-do list.`;
 
   notifyDue(due);
   if (!$('#remindersPanel').hidden) renderReminders();
@@ -996,34 +1033,77 @@ async function loadReminders() {
 function renderReminders() {
   const groups = { overdue: [], today: [], later: [] };
   for (const r of state.reminders) groups[dueStatus(r.due_at)].push(r);
-  const titles = { overdue: 'Due now', today: 'Later today', later: 'Upcoming' };
+  const q = state.queue || { replies: [], fresh: [], quotes: [], stuck: [] };
   const list = $('#remindersList');
   const owed = state.commissionsOwed?.reps || [];
-  const payGroup = owed.length ? [
-    h('div', { class: 'reminder-group' }, 'Commissions to pay'),
-    ...owed.map((r) => h('div', { class: 'reminder-item overdue', onclick: () => openCommissionsFor(r.rep) },
-      h('div', {},
-        h('div', { class: 'name' }, r.rep),
-        h('div', { class: 'when' }, `${money(r.owed_cents)} owed · ${r.jobs} job${r.jobs === 1 ? '' : 's'} in the shop`),
-        r.oldest_at && h('div', { class: 'muted' }, `Oldest since ${shortDate(r.oldest_at)}`)),
-      h('div', { class: 'small-btns' }, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); openCommissionsFor(r.rep); } }, 'Pay')))),
-  ] : [];
-  if (!state.reminders.length) {
-    list.replaceChildren(...payGroup, h('p', { class: 'muted' }, 'No open call reminders. Disposition a lead to schedule a call.'));
+  const MAX = 25;
+  const callBtn = (phone) => phone && h('a', { class: 'btn-link', href: `tel:${phone.replace(/[^\d+]/g, '')}`, onclick: (e) => e.stopPropagation() }, 'Call');
+  const item = (lead, kind, lines, buttons = []) => h('div', { class: `reminder-item ${kind}`, onclick: () => openLead(lead.lead_id ?? lead.id) },
+    h('div', {},
+      h('div', { class: 'name' }, leadName(lead), lead.pipeline === 'rv' && ' ', lead.pipeline === 'rv' && h('span', { class: 'tag rv' }, 'RV')),
+      ...lines.filter(Boolean).map((t, i) => h('div', { class: i ? 'muted' : 'when' }, t))),
+    h('div', { class: 'small-btns' }, callBtn(lead.phone), ...buttons));
+  const group = (title, items, render, hint) => (items.length ? [
+    h('div', { class: 'reminder-group' }, `${title} (${items.length})`),
+    hint && h('p', { class: 'hint queue-hint' }, hint),
+    ...items.slice(0, MAX).map(render),
+    items.length > MAX && h('p', { class: 'muted queue-hint' }, `And ${items.length - MAX} more on the board.`),
+  ] : []);
+  const lastTouch = (l) => l.last_contacted_at && `Last: ${l.last_disposition ? dispoLabel(l.last_disposition) : l.last_contact_kind === 'text' ? 'Texted' : 'Contacted'} ${exactTime(l.last_contacted_at)}${l.last_contact_by ? ` by ${l.last_contact_by}` : ''}`;
+  const reminderRow = (key) => (r) => item(r, key, [`${fmtDateTime(r.due_at)} · ${stageLabel(r.stage)}`, r.note && `"${r.note}"`, r.phone], [
+    h('button', { type: 'button', title: 'Snooze 1 hour', onclick: (e) => { e.stopPropagation(); snooze(r.id); } }, '+1h'),
+    h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); completeReminder(r.id); } }, 'Done')]);
+
+  const blocks = [
+    ...(owed.length ? [
+      h('div', { class: 'reminder-group' }, 'Commissions to pay'),
+      ...owed.map((r) => h('div', { class: 'reminder-item overdue', onclick: () => openCommissionsFor(r.rep) },
+        h('div', {},
+          h('div', { class: 'name' }, r.rep),
+          h('div', { class: 'when' }, `${money(r.owed_cents)} owed · ${r.jobs} job${r.jobs === 1 ? '' : 's'} in the shop`),
+          r.oldest_at && h('div', { class: 'muted' }, `Oldest since ${shortDate(r.oldest_at)}`)),
+        h('div', { class: 'small-btns' }, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); openCommissionsFor(r.rep); } }, 'Pay')))),
+    ] : []),
+    ...group('Texted back, waiting for an answer', q.replies, (l) => item(l, 'overdue', [`${exactTime(l.last_reply_at)}: "${l.reply.length > 90 ? `${l.reply.slice(0, 90)}…` : l.reply}"`, stageLabel(l.stage)])),
+    ...group('Calls due now', groups.overdue, reminderRow('overdue')),
+    ...group('New leads to call', q.fresh, (l) => {
+      const left = 24 - (Date.now() - new Date(l.received_at)) / 3600000;
+      return item(l, left <= 0 ? 'overdue' : 'today', [left <= 0 ? `Came in ${exactTime(l.received_at)} · 24h call-back missed` : `Came in ${exactTime(l.received_at)} · call back within ${Math.max(1, Math.floor(left))}h`, l.best_time && `Best time: ${l.best_time}`, vehicleLine(l)]);
+    }),
+    ...group('Calls later today', groups.today, reminderRow('today')),
+    ...group('Quotes with no answer yet', q.quotes, (l) => item(l, 'later', [`Quote ${money(l.quote.total_cents, { cents: false })} sent ${exactTime(l.quote.sent_at)}`, lastTouch(l)]), 'No call or text since the quote went out, and no call planned.'),
+    ...group('No next step', q.stuck, (l) => item(l, 'later', [lastTouch(l), stageLabel(l.stage)]), 'Being worked, but no call is planned. Open one and log what\'s next, or move it to Waste.'),
+    ...group('Coming up', groups.later, reminderRow('later')),
+  ];
+  if (!blocks.length) {
+    fill(list, h('p', { class: 'muted' }, 'All caught up. New leads, customer replies and calls you schedule show up here.'));
     return;
   }
-  list.replaceChildren(...payGroup, ...Object.entries(groups).filter(([, items]) => items.length).flatMap(([key, items]) => [
-    h('div', { class: 'reminder-group' }, titles[key]),
-    ...items.map((r) => h('div', { class: `reminder-item ${key}`, onclick: () => openLead(r.lead_id) },
-      h('div', {},
-        h('div', { class: 'name' }, leadName(r), r.pipeline === 'rv' && ' ', r.pipeline === 'rv' && h('span', { class: 'tag rv' }, 'RV')),
-        h('div', { class: 'when' }, `${fmtDateTime(r.due_at)} · ${stageLabel(r.stage)}`),
-        r.phone && h('div', { class: 'muted' }, r.phone)),
-      h('div', { class: 'small-btns' },
-        r.phone && h('a', { class: 'btn-link', href: `tel:${r.phone.replace(/[^\d+]/g, '')}`, onclick: (e) => e.stopPropagation() }, 'Call'),
-        h('button', { type: 'button', title: 'Snooze 1 hour', onclick: (e) => { e.stopPropagation(); snooze(r.id); } }, '+1h'),
-        h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); completeReminder(r.id); } }, 'Done')))),
-  ]));
+  fill(list, ...blocks);
+}
+
+// ---------- Marketing and Setup menus ----------
+// The open list floats over the page under its button (on phones the toolbar scrolls sideways and would
+// cut it off). It closes after a pick, on a click elsewhere, on scroll or resize, and on Escape.
+function initMenus() {
+  const menus = [...document.querySelectorAll('details.menu')].map((m) => ({ m, list: m.querySelector('.menu-list') }));
+  const close = (x) => { if (x.m.open) x.m.open = false; };
+  for (const x of menus) {
+    x.list.addEventListener('click', (e) => { if (e.target.closest('button')) close(x); });
+    x.m.addEventListener('toggle', () => {
+      if (!x.m.open) { x.list.classList.toggle('floating', false); x.m.append(x.list); return; }
+      menus.forEach((o) => { if (o !== x) close(o); });
+      document.body.append(x.list);
+      x.list.classList.add('floating');
+      const r = x.m.querySelector('summary').getBoundingClientRect();
+      x.list.style.top = `${r.bottom + 6}px`;
+      x.list.style.left = `${Math.max(8, Math.min(r.left, innerWidth - x.list.offsetWidth - 8))}px`;
+    });
+  }
+  document.addEventListener('click', (e) => menus.forEach((x) => { if (x.m.open && !x.m.contains(e.target) && !x.list.contains(e.target)) close(x); }));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus.forEach(close); });
+  addEventListener('resize', () => menus.forEach(close));
+  document.querySelector('.actions')?.addEventListener('scroll', () => menus.forEach(close), { passive: true });
 }
 
 // ---------- updates feed (admins) ----------
@@ -1529,6 +1609,7 @@ async function init() {
   $('#remindersBtn').addEventListener('click', () => { renderReminders(); showPanel($('#remindersPanel')); updateNotifButton(); });
   $('#updatesBtn').addEventListener('click', openUpdates);
   $('#teamBtn').addEventListener('click', openTeam);
+  initMenus();
   $('#addUserForm').addEventListener('submit', addUser);
   $('#addUserForm').addEventListener('input', () => { $('#addUserError').hidden = true; });
   $('#addUserForm .show-pass').addEventListener('click', (e) => {

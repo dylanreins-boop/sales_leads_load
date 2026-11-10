@@ -511,7 +511,7 @@ function migrate(db) {
   if (!has('activities', 'user_name')) db.exec('ALTER TABLE activities ADD COLUMN user_name TEXT');
   if (!has('leads', 'sms_opt_in')) db.exec('ALTER TABLE leads ADD COLUMN sms_opt_in INTEGER');
   if (!has('jobs', 'review_sent_at')) db.exec('ALTER TABLE jobs ADD COLUMN review_sent_at TEXT');
-  for (const [column, type] of [['deposit_cents', 'INTEGER'], ['deposit_method', 'TEXT'], ['deposit_by', 'TEXT'], ['deposit_at', 'TEXT'],
+  for (const [column, type] of [['deposit_cents', 'INTEGER'], ['deposit_method', 'TEXT'], ['deposit_by', 'TEXT'], ['deposit_at', 'TEXT'], ['deposit_note', 'TEXT'],
     ['commission_rep', 'TEXT'], ['commission_override_cents', 'INTEGER'], ['commission_paid_cents', 'INTEGER'],
     ['commission_paid_by', 'TEXT'], ['commission_paid_at', 'TEXT']]) {
     if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} ${type}`);
@@ -529,6 +529,8 @@ function migrate(db) {
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
   // The customer said photos of their vehicle may be posted on social media (at the drop-off sign-off).
   if (!has('jobs', 'social_ok')) db.exec('ALTER TABLE jobs ADD COLUMN social_ok INTEGER');
+  // Who recorded the customer's OK (or that they took it back), when, and how (signoff | staff).
+  for (const column of ['social_ok_by', 'social_ok_at', 'social_ok_how']) if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
   if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
   // Where they were when they clocked in (shop logins clock in at the shop), and how far that was from it.
   for (const [column, type] of [['clock_in_lat', 'REAL'], ['clock_in_lng', 'REAL'], ['clock_in_accuracy', 'REAL'], ['clock_in_distance', 'REAL'], ['clock_in_off_site', 'INTEGER']]) {

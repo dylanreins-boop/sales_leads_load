@@ -95,7 +95,7 @@ async function startCall(leadId) {
   try {
     const me = await api('/api/calls/me');
     if (!me.call_phone) {
-      toast('Add your phone for the dialer first (Reminders → My phone).', 'error');
+      toast('Add your phone for the dialer first (To do → My phone).', 'error');
       showPanel($('#remindersPanel'));
       $('#callPhoneForm')?.call_phone.focus();
       return;

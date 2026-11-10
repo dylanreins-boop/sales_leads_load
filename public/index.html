@@ -68,22 +68,33 @@
       <button id="updatesBtn" type="button" class="admin-only">
         Updates <span id="updatesBadge" class="badge" hidden></span>
       </button>
-      <button id="teamBtn" type="button" class="admin-only">Team</button>
-      <button id="syncFb" type="button" class="lead-only admin-only">Sync Facebook</button>
-      <button id="syncGoogle" type="button" class="lead-only admin-only" hidden>Sync Google</button>
       <button id="addLeadBtn" type="button" class="lead-only">+ Add lead</button>
-      <button id="emailSettingsBtn" type="button" class="lead-only admin-only">Emails</button>
-      <button id="messagesBtn" type="button" class="lead-only admin-only">Texts &amp; reminders</button>
-      <button id="importBtn" type="button" class="lead-only admin-only">Import leads</button>
-      <button id="winbackBtn" type="button" class="lead-only admin-only">Win-back</button>
-      <button id="referralsBtn" type="button" class="lead-only admin-only">Referrals</button>
-      <button id="pricesBtn" type="button" class="lead-only admin-only">Price list</button>
-      <button id="pipelinesBtn" type="button" class="lead-only admin-only">Pipelines</button>
+      <!-- Admin tools, grouped so the everyday buttons stand out. -->
+      <details class="menu lead-only admin-only" id="marketingMenu">
+        <summary>Marketing</summary>
+        <div class="menu-list">
+          <button id="messagesBtn" type="button">Texts &amp; reminders</button>
+          <button id="emailSettingsBtn" type="button">Emails</button>
+          <button id="winbackBtn" type="button">Win-back</button>
+          <button id="referralsBtn" type="button">Referrals</button>
+        </div>
+      </details>
+      <details class="menu admin-only" id="setupMenu">
+        <summary>Setup</summary>
+        <div class="menu-list">
+          <button id="teamBtn" type="button">Team</button>
+          <button id="pricesBtn" type="button" class="lead-only">Price list</button>
+          <button id="pipelinesBtn" type="button" class="lead-only">Pipelines</button>
+          <button id="importBtn" type="button" class="lead-only">Import leads</button>
+          <button id="syncFb" type="button" class="lead-only">Sync Facebook</button>
+          <button id="syncGoogle" type="button" class="lead-only" hidden>Sync Google</button>
+        </div>
+      </details>
       <button id="socialBtn" type="button" class="admin-only">Social <span id="socialBadge" class="badge" hidden></span></button>
       <button id="dialerBtn" type="button" class="lead-only dialer-only" hidden>Start calling</button>
       <button id="callsBtn" type="button" class="admin-only dialer-only" hidden>Calls</button>
       <button id="remindersBtn" type="button" class="primary">
-        Reminders <span id="reminderBadge" class="badge" hidden></span>
+        To do <span id="reminderBadge" class="badge" hidden></span>
       </button>
     </div>
   </header>
@@ -602,12 +613,16 @@
   </aside>
 
   <!-- Reminders panel -->
-  <aside id="remindersPanel" class="drawer" aria-label="Reminders" hidden>
+  <aside id="remindersPanel" class="drawer" aria-label="To do" hidden>
     <div class="drawer-head">
-      <h2>Reminders</h2>
+      <div>
+        <h2>To do</h2>
+        <div class="muted">Who needs you now: replies, calls due, new leads, quiet quotes.</div>
+      </div>
       <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
     </div>
     <div class="drawer-body">
+      <div id="remindersList"></div>
       <section id="myAlerts" class="card-section my-alerts lead-only">
         <h3>My phone alerts</h3>
         <p id="alertsIntro" class="muted"></p>
@@ -626,7 +641,6 @@
         </form>
         <p id="callPhoneHint" class="hint" hidden>The dialer rings this phone first, then connects you to the customer from the shop's number.</p>
       </section>
-      <div id="remindersList"></div>
     </div>
   </aside>
 
@@ -1120,6 +1134,7 @@
       <h2 id="askTitle"></h2>
       <p id="askText" class="ask-text"></p>
       <textarea id="askInput" rows="3" hidden></textarea>
+      <div id="askChecks" class="ask-checks" hidden></div>
       <div class="dialog-actions">
         <button type="button" id="askCancel">Cancel</button>
         <button type="submit" id="askOk" class="primary">OK</button>

@@ -54,8 +54,10 @@ async function fakeFetch(url, options = {}) {
 
 let server;
 let base;
+let db;
 before(async () => {
-  server = http.createServer(createApp({ db: openDatabase(':memory:'), fetchImpl: fakeFetch, photosDir: path.join(dir, 'photos') }));
+  db = openDatabase(':memory:');
+  server = http.createServer(createApp({ db, fetchImpl: fakeFetch, photosDir: path.join(dir, 'photos') }));
   await new Promise((resolve) => server.listen(0, resolve));
   base = `http://localhost:${server.address().port}`;
 });
@@ -171,4 +173,61 @@ test('admins can skip a draft, make one by hand, and change the defaults', async
   const byHand = (await call('POST', `/api/social/jobs/${next.id}`)).data;
   assert.deepEqual(byHand.platforms, ['facebook', 'instagram']);
   assert.match(byHand.caption, /#bobmoses$/);
+});
+
+test('the customer\'s OK is recorded (who, when, how); taking it back stops posts, and what\'s up is listed', async () => {
+  failInstagram = false;
+  const job = await finishedJob();
+  let view = (await call('GET', `/api/jobs/${job.id}`, undefined, SHOP)).data;
+  assert.deepEqual([view.social_ok, view.social_ok_by, view.social_ok_how], [1, 'Mike', 'staff']);
+  assert.ok(view.social_ok_at);
+
+  // Taken back while a post waits: the post is skipped and can't go up.
+  const d = (await call('POST', `/api/social/jobs/${job.id}`)).data;
+  view = (await call('PATCH', `/api/jobs/${job.id}/social-ok`, { ok: false }, SHOP)).data;
+  assert.deepEqual([view.social_ok, view.social_ok_how], [0, 'staff']);
+  assert.match((await call('POST', `/api/social/${d.id}/post`)).data.error, /already been posted or skipped/);
+  assert.match((await call('POST', `/api/social/jobs/${job.id}`)).data.error, /hasn't OK'd/);
+
+  // OK again: posted, then taken back: the job lists what's already up.
+  await call('PATCH', `/api/jobs/${job.id}/social-ok`, { ok: true }, SHOP);
+  const d2 = (await call('POST', `/api/social/jobs/${job.id}`)).data;
+  assert.notEqual(d2.id, d.id);
+  assert.equal((await call('POST', `/api/social/${d2.id}/post`)).data.status, 'posted');
+  // Another post can be made from the same job (a new draft, not the posted one).
+  const d3 = (await call('POST', `/api/social/jobs/${job.id}`)).data;
+  assert.deepEqual([d3.status, d3.id !== d2.id], ['draft', true]);
+  failInstagram = true;
+  assert.equal((await call('POST', `/api/social/${d3.id}/post`)).data.status, 'partly');
+  view = (await call('PATCH', `/api/jobs/${job.id}/social-ok`, { ok: false }, SHOP)).data;
+  const posted = view.social_posts.flatMap((p) => p.posted.map((x) => x.platform));
+  assert.deepEqual([...new Set(posted)].sort(), ['facebook', 'instagram'], 'd2 went to both; d3 to Facebook');
+  assert.equal(view.social_posts.find((p) => p.id === d2.id).posted.find((x) => x.platform === 'facebook').url, 'https://www.facebook.com/1111_999');
+  // A retry after the OK was taken back is refused.
+  failInstagram = false;
+  assert.match((await call('POST', `/api/social/${d3.id}/retry`)).data.error, /took back their OK/);
+});
+
+test('a post stuck on Posting (the app restarted) is marked unfinished and can be retried; no retry while posting', async () => {
+  const job = await finishedJob();
+  const d = (await call('POST', `/api/social/jobs/${job.id}`)).data;
+  db.prepare("UPDATE social_posts SET status = 'posting', media_token = 'tok-stuck-1234567890ab', decided_at = ? WHERE id = ?").run(new Date().toISOString(), d.id);
+  assert.match((await call('POST', `/api/social/${d.id}/retry`)).data.error, /still posting/);
+  db.prepare('UPDATE social_posts SET decided_at = ? WHERE id = ?').run(new Date(Date.now() - 20 * 60000).toISOString(), d.id);
+  const stuck = (await call('GET', '/api/social')).data.done.find((p) => p.id === d.id);
+  assert.equal(stuck.status, 'failed');
+  assert.match(stuck.results.facebook.error, /didn't finish/);
+  failInstagram = false;
+  assert.equal((await call('POST', `/api/social/${d.id}/retry`)).data.status, 'posted');
+});
+
+test('auto drafts happen once per job: not again at Picked up after a skip', async () => {
+  await call('PUT', '/api/social/settings', { auto_draft: true });
+  const job = await finishedJob();
+  await call('PATCH', `/api/jobs/${job.id}`, { status: 'ready' }, SHOP);
+  const d = (await call('GET', '/api/social')).data.waiting.find((p) => p.job.id === job.id);
+  assert.ok(d);
+  await call('POST', `/api/social/${d.id}/skip`);
+  await call('PATCH', `/api/jobs/${job.id}`, { status: 'picked_up' }, SHOP);
+  assert.ok(!(await call('GET', '/api/social')).data.waiting.some((p) => p.job.id === job.id));
 });

@@ -350,7 +350,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   });
   const jobView = (id) => {
     const job = payments.decorate(commissions.figures(jobs.getJob(id)));
-    return { ...job, shop_time: jobs.capacityFor(job), work: workTime.summary(id) };
+    return { ...job, shop_time: jobs.capacityFor(job), work: workTime.summary(id), social_posts: social.forJob(id) };
   };
   route('GET', '/api/jobs/:id', ({ params }) => jobView(Number(params.id)), { roles: ANY_LOGIN });
   // Suggested work time from the shop's history: for a lead being booked, or a job already on the calendar.
@@ -855,6 +855,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // The customer's OK to post photos (ticked at the sign-off, or changed later).
   route('PATCH', '/api/jobs/:id/social-ok', ({ params, body, actor }) => {
     jobs.setSocialOk(Number(params.id), Boolean(body.ok), actor);
+    if (!body.ok) social.withdraw(Number(params.id), actor);
     return jobView(Number(params.id));
   }, { roles: CALENDAR });
   // The photos and video for a post, fetched by Facebook, Instagram and TikTok (the token is the key).
@@ -921,6 +922,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('PUT', '/api/ad-spend', ({ body, actor }) => adSpend.save(body, actor), { roles: ADMIN });
   route('PUT', '/api/settings/email', ({ body }) => leads.saveEmailSettings(body), { roles: ADMIN });
   route('GET', '/api/reminders', ({ query }) => leads.listReminders({ status: query.get('status') || 'open' }));
+  route('GET', '/api/queue', () => leads.workQueue());
   route('POST', '/api/reminders/:id/complete', ({ params, actor }) => leads.completeReminder(Number(params.id), actor));
   route('POST', '/api/reminders/:id/snooze', ({ params, body }) => leads.snoozeReminder(Number(params.id), body.due_at));
 

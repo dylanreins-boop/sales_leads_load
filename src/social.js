@@ -118,7 +118,8 @@ function createSocialService(db, { jobs, keys = {}, brand = {}, publicUrl = '', 
 
   function draftFor(jobId, { user = null } = {}) {
     const job = jobs.getJob(jobId);
-    const existing = stmt("SELECT * FROM social_posts WHERE job_id = ? AND status != 'skipped' ORDER BY id DESC LIMIT 1").get(jobId);
+    // One draft at a time per job (a job already posted can get another post).
+    const existing = stmt("SELECT * FROM social_posts WHERE job_id = ? AND status IN ('draft', 'posting') ORDER BY id DESC LIMIT 1").get(jobId);
     if (existing) return shape(existing);
     if (job.social_ok !== 1) throw new HttpError(400, 'The customer hasn\'t OK\'d posting photos of their vehicle. Tick it on the job first.');
     if (!job.photos.some((p) => p.phase === 'after')) throw new HttpError(400, 'Add after photos first.');
@@ -130,10 +131,42 @@ function createSocialService(db, { jobs, keys = {}, brand = {}, publicUrl = '', 
   // A job just finished: make the draft if everything's there (quietly skip if not).
   function autoDraft(jobId) {
     if (!getSettings().auto_draft) return null;
+    // Only once per job: not again at Picked up, and not after an admin skipped it.
+    if (stmt('SELECT 1 FROM social_posts WHERE job_id = ? LIMIT 1').get(jobId)) return null;
     try { return draftFor(jobId); } catch { return null; }
   }
 
+  // A post left on "Posting…" (the server restarted part way) after this long is marked as not finished,
+  // so it can be checked and tried again.
+  const STUCK_MS = 15 * 60 * 1000;
+  function unstick() {
+    const cutoff = new Date(Date.now() - STUCK_MS).toISOString();
+    for (const row of stmt("SELECT * FROM social_posts WHERE status = 'posting' AND decided_at < ?").all(cutoff)) {
+      const results = parse(row.results, {});
+      for (const k of parse(row.platforms, [])) {
+        if (results[k]?.status !== 'posted') results[k] = { status: 'failed', error: 'It didn\'t finish (the app restarted part way). Check the page before trying again, in case it went up.', at: now() };
+      }
+      const posted = Object.values(results).some((r) => r.status === 'posted');
+      stmt('UPDATE social_posts SET status = ?, results = ? WHERE id = ?').run(posted ? 'partly' : 'failed', JSON.stringify(results), row.id);
+    }
+  }
+
+  // The customer took back their OK: posts still waiting are skipped. Returns what already went up,
+  // so staff can take it down by hand.
+  function withdraw(jobId, { user } = {}) {
+    stmt("UPDATE social_posts SET status = 'skipped', decided_by = ?, decided_at = ? WHERE job_id = ? AND status = 'draft'").run(user ?? null, now(), jobId);
+    return forJob(jobId);
+  }
+
+  // A job's posts, for its Social media section: where each went and the links.
+  function forJob(jobId) {
+    return stmt("SELECT id, status, results, decided_by, decided_at, posted_at FROM social_posts WHERE job_id = ? AND status != 'skipped' ORDER BY id DESC").all(jobId)
+      .map((r) => ({ id: r.id, status: r.status, decided_by: r.decided_by, decided_at: r.decided_at, posted_at: r.posted_at,
+        posted: Object.entries(parse(r.results, {})).filter(([, x]) => x.status === 'posted').map(([k, x]) => ({ platform: k, name: PLATFORMS[k] || k, url: x.url || null })) }));
+  }
+
   function list() {
+    unstick();
     return {
       waiting: stmt("SELECT * FROM social_posts WHERE status = 'draft' ORDER BY id DESC").all().map(shape),
       done: stmt("SELECT * FROM social_posts WHERE status != 'draft' ORDER BY COALESCE(decided_at, created_at) DESC LIMIT 40").all().map(shape),
@@ -289,7 +322,10 @@ function createSocialService(db, { jobs, keys = {}, brand = {}, publicUrl = '', 
   async function publish(id, { user, retry = false } = {}) {
     let p = byId(id);
     if (!p) throw new HttpError(404, 'That post is gone.');
+    unstick();
     if (!retry && p.status !== 'draft') throw new HttpError(400, 'It\'s already been posted or skipped.');
+    if (retry && !['failed', 'partly'].includes(p.status)) throw new HttpError(400, p.status === 'posting' ? 'It\'s still posting. Give it a minute.' : 'Nothing to try again.');
+    if (!p.job.social_ok) throw new HttpError(400, 'The customer took back their OK to post photos of their vehicle, so it can\'t be posted.');
     if (!p.platforms.length) throw new HttpError(400, 'Pick at least one place to post it.');
     if (!p.photo_ids.length) throw new HttpError(400, 'Pick at least one photo.');
     const conn = connections();
@@ -300,6 +336,7 @@ function createSocialService(db, { jobs, keys = {}, brand = {}, publicUrl = '', 
     }
     const results = { ...p.results };
     const todo = p.platforms.filter((k) => !retry || results[k]?.status !== 'posted');
+    if (retry) stmt("UPDATE social_posts SET status = 'posting', decided_at = ? WHERE id = ?").run(now(), id);
     let ready;
     try {
       ready = await prepare(p, { video: todo.includes('youtube') && conn.youtube });
@@ -332,7 +369,7 @@ function createSocialService(db, { jobs, keys = {}, brand = {}, publicUrl = '', 
     return fs.existsSync(file) ? { file, type: name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg' } : null;
   }
 
-  return { PLATFORMS, getSettings, saveSettings, connections, captionFor, draftFor, autoDraft, list, waitingCount, update, skip, publish, mediaFile };
+  return { PLATFORMS, getSettings, saveSettings, connections, captionFor, draftFor, autoDraft, list, waitingCount, update, skip, publish, mediaFile, withdraw, forJob };
 }
 
 module.exports = { createSocialService, SOCIAL_PLATFORMS: PLATFORMS, makeVideo, preparePhoto };

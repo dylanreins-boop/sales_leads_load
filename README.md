@@ -6,7 +6,7 @@ It:
 - **Pulls in leads** from **Facebook Lead Ads** (real-time webhook plus a "Sync Facebook" backstop) and from your **company website** form.
 - Shows them on a **pipeline board**: New / Working → Voicemail → Follow Up 1 → Follow Up 2 → Follow Up 3 → Contacted → Booked → Waste.
 - Lets reps **disposition** every call. The disposition moves the lead to the right stage and **sets a reminder to call the lead the next day**.
-- Shows due reminders as a banner, a badge, a reminders panel and (optionally) desktop notifications.
+- Keeps a **To do** list of who needs you now (customer replies, calls due, new leads, quiet quotes, leads with no next step), with a banner, a badge and (optionally) phone alerts.
 - Sends **your own follow-up email** to the lead when a rep saves "No Answer – Left Voicemail" (off until you turn it on).
 - Works as a **website and as a phone app**: people can add it to their home screen from the browser.
 
@@ -130,13 +130,16 @@ about us", with how many booked, the booking rate, the revenue their jobs brough
 
 **Deposits.** Every booked job shows the deposit due (10% of the job amount). Tick **Deposit taken now**
 when booking (the amount fills in at 10%; change it if they paid a different amount, and pick how they
-paid), or use **Mark taken** on the lead's Shop job box later. Who took it and when is logged.
+paid), or use **Mark collected** later on the lead's Shop job box or the job on the calendar. Each job shows
+one of three states: **Not collected** (with the amount due), **Collected** (amount, how, who, when) or
+**Waived** (no deposit on purpose: **Waive** asks for the reason, which shows with who and when). Booked
+never means paid: a customer who books online pays the deposit at the shop. Who changed it and when is logged.
 
 **Commissions.** The rep who booked a job earns 10% of the job amount. A commission is only earned once
 the vehicle is **booked and in the shop**: it's **Pending** until the shop marks the job In the shop (or
 Ready / Picked up), then **Owed** until an admin marks it **Paid**. Cancelled jobs earn nothing.
 
-**Reminders to pay.** Admins' **Reminders** (and the badge and banner) list each rep who is owed, how much,
+**Reminders to pay.** Admins' **To do** (and the badge and banner) list each rep who is owed, how much,
 how many jobs, and since when, with a **Pay** button that opens that rep's owed commissions. When a job's
 commission becomes owed, it's logged on the lead and shows in Updates.
 
@@ -292,6 +295,31 @@ The tabs on the Leads page are pipelines. Admins open **Pipelines** to:
   pipeline can be renamed and its types changed, but not removed (RV quotes and work times use it).
 
 The pipeline menus on Revenue, Analytics and the Excel export list the pipelines too.
+
+## To do
+
+**To do** (top right; the badge counts what needs someone now) is the list of who to work next, most urgent
+first:
+
+1. **Texted back, waiting for an answer**: the customer texted and nobody has called or texted them since
+   (STOP / START don't count). Shows what they said.
+2. **Calls due now**: call reminders that are due, with Call, +1h and Done.
+3. **New leads to call**: not called yet, with the 24-hour call-back countdown (or "missed").
+4. **Calls later today**.
+5. **Quotes with no answer yet**: a quote went out 2+ days ago, nobody has reached them since, and no call is planned.
+6. **No next step**: leads being worked (talked to, not booked or waste) with no call planned. Open one and log
+   the outcome with a call reminder, or move it to Waste.
+7. **Coming up**: later call reminders. Admins also see **Commissions to pay** at the top.
+
+The board shows the same flags on each card (**Texted back · answer them**, **No next step**), and a lead opens
+with its **Next** step and **Last contact** at the top ("Next: call Tue 3:00 PM", "Last contact: No Answer –
+Left Voicemail · Yesterday 11:00 AM by Sam").
+
+## Admin menus
+
+Admins' everyday buttons stay in the toolbar (Updates, Add lead, Social, To do, Start calling). The rest are in
+two menus: **Marketing** (Texts & reminders, Emails, Win-back, Referrals) and **Setup** (Team, Price list,
+Pipelines, Import leads, Sync Facebook / Google).
 
 ## Search
 
@@ -449,7 +477,7 @@ A new Facebook, website, Google, referral, missed-call or text lead sends a **ph
 the lead. If nobody has called, texted or logged anything on it within **15 minutes**, the admins get an
 alert too. Alerts go out 7 AM to 8 PM (`ALERT_HOURS`); overnight leads are alerted in the morning.
 
-Each person turns alerts on in **Reminders → My phone alerts** (on iPhone, add the app to the Home Screen
+Each person turns alerts on in **To do → My phone alerts** (on iPhone, add the app to the Home Screen
 first and turn them on from there). Alerts use the browser's built-in push service: free, no outside
 account. Anyone can also enter a mobile number to get alerts by text (with Twilio connected).
 
@@ -576,7 +604,7 @@ The app comes in two builds from the same code: **without the dialer** (the defa
 dialer**, turned on with `CALLS_ENABLED=1`. With it off, none of the dialer exists: no buttons, no
 screens, no routes.
 
-**Calling.** On a lead, **Call** rings the rep's own phone (set under Reminders → My phone for the
+**Calling.** On a lead, **Call** rings the rep's own phone (set under To do → My phone for the
 dialer); when they pick up, Twilio calls the customer from the shop's number. The customer first hears
 "Hi, this call may be transcribed for quality. Connecting you now." (`CALL_NOTICE`), then they're
 connected. Calls only go out during calling hours (`CALL_HOURS`, default 8 AM to 9 PM) and never to
@@ -728,12 +756,20 @@ Shorts**, with one tap from an admin. Nothing posts on its own.
 2. **A draft.** When a job with after photos (and the OK) is marked **Ready for pickup** or **Picked up**,
    a draft appears in **Social** (admins; the badge counts what's waiting). Admins can also tap **Make a
    social post** on any job with the OK.
-3. **Approve.** Pick the photos (up to 2 before, then the after photos; 8 at most), edit the caption,
-   pick where it goes and tap **Post it**, or **Save for later** / **Skip**. Captions fill in from a
-   template (Social → Settings) with the vehicle, color, services, company, city and phone. Customer names
-   are never used. Shoot photos so plates aren't readable.
+3. **Approve.** Tap the photos in the order you want them (numbered; up to 8), edit the caption and pick
+   where it goes. A preview beside it plays the photos in that order (as the YouTube Short will, 2.5 seconds
+   each) with the caption. Drafts save as you type. **Post it** shows where it's going and asks for a last
+   check (no readable plates; no faces, names or paperwork; no customer names in the caption) before
+   anything goes up. Or **Skip**. Captions fill in from a template (Social → Settings) with the vehicle,
+   color, services, company, city and phone. Customer names are never used.
 4. **Results.** Each place shows Posted with a View link, or why it didn't post, and **Try the failed
-   ones again** retries only those.
+   ones again** retries only those. You can close Social while it posts; it shows "Posting…" and updates by
+   itself. A post left half-done (the server restarted) is marked as not finished after 15 minutes, so you can
+   check the page and try again.
+5. **Changing their mind.** The job's Social media section shows who recorded the OK, when and how (on the
+   sign-off, or the customer told staff). **They changed their mind** records that too, skips any post still
+   waiting, blocks retries, and lists what's already up (with links) so it can be taken down by hand.
+   Auto drafts are made once per job.
 
 What each place gets: Facebook, a Page post with the photos; Instagram, a carousel; TikTok, a photo post;
 YouTube Shorts, a short vertical before-and-after video the server makes from the photos (needs `ffmpeg`,
@@ -942,6 +978,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST | `/api/leads/:id/disposition` | `{ disposition, note?, reminder?, reminder_at? }` |
 | POST | `/api/leads/:id/notes` | `{ note }` |
 | GET | `/api/reminders` | Open reminders |
+| GET | `/api/queue` | The To do list: `{ replies, fresh, quotes, stuck }` |
 | POST | `/api/reminders/:id/complete` | Mark a reminder done |
 | POST | `/api/reminders/:id/snooze` | `{ due_at }` |
 | GET / PUT | `/api/settings/email` | Follow-up email template `{ enabled, subject, body }` |
@@ -970,7 +1007,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST | `/api/social/jobs/:id` | Admins: make a social post from a job (the customer must have OK'd it) |
 | PATCH / POST | `/api/social/:id`, `/api/social/:id/post\|retry\|skip` | Admins: edit `{ caption, photo_ids, platforms }`, post it, retry the failed places, skip it |
 | PUT | `/api/social/settings` | Admins: `{ auto_draft, platforms, caption, hashtags }` |
-| PATCH | `/api/jobs/:id/social-ok` | Staff: the customer's OK to post photos `{ ok }` |
+| PATCH | `/api/jobs/:id/social-ok` | Staff: the customer's OK to post photos `{ ok }` (taking it back skips waiting posts) |
 | POST | `/api/payroll/weeks/:sunday/approve`, `/api/payroll/weeks/:sunday/email` | Admins: approve a pay week, email its summary now |
 | GET / POST | `/api/clock/alerts`, `/api/clock/alerts/seen { ids \| 'all' }` | Admins: clock-ins away from the shop not yet marked seen (the red bar) |
 | GET / PUT | `/api/schedules` | Work schedules for attendance |
