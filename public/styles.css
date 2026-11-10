@@ -2101,3 +2101,13 @@ button:active:not(:disabled) { transform: scale(0.98); }
 .switch input:checked + .slider { background: var(--ok); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Admin log */
+.audit-filter { margin-bottom: 12px; }
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-day { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 14px 0 4px; }
+.audit-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.audit-row.warn .audit-what { color: var(--danger); }
+.audit-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.audit-meta { color: var(--muted); font-size: 11.5px; text-align: right; }
+@media (max-width: 640px) { .audit-row { grid-template-columns: 60px 1fr; } .audit-meta { grid-column: 2; text-align: left; } }

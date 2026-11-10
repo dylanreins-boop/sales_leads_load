@@ -486,6 +486,19 @@ CREATE TABLE IF NOT EXISTS user_prefs (
 );
 
 -- Who added, changed or deactivated each login.
+-- The admin log: sign-ins, exports, login and role changes, time and pay edits, money, settings, deletions.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  at          TEXT NOT NULL,
+  user_name   TEXT,
+  role        TEXT,
+  ip          TEXT,
+  area        TEXT NOT NULL,              -- signin | team | payroll | money | settings | export | delete
+  action      TEXT NOT NULL,
+  detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS audit_area ON audit_log (area, id);
+
 CREATE TABLE IF NOT EXISTS user_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_name   TEXT NOT NULL,

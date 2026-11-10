@@ -80,8 +80,39 @@ async function openAutomations() {
   } catch (err) { fail(err); }
 }
 
+// ---- Admin log: sign-ins, exports, login changes, time and pay, money, settings, deletions ----
+const AUDIT_AREAS = { '': 'Everything', signin: 'Sign-ins', team: 'Team', payroll: 'Time & pay', money: 'Money', settings: 'Settings', export: 'Exports', delete: 'Deletions' };
+const auditLog = { area: '', rows: [] };
+async function openAdminLog(more = false) {
+  try {
+    const q = new URLSearchParams();
+    if (auditLog.area) q.set('area', auditLog.area);
+    if (more && auditLog.rows.length) q.set('before', auditLog.rows[auditLog.rows.length - 1].id);
+    const rows = await api(`/api/audit?${q}`);
+    auditLog.rows = more ? [...auditLog.rows, ...rows] : rows;
+    const day = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    let lastDay = '';
+    openSettings('Admin log', 'Who signed in, exported, changed logins, time, pay, money or settings, or deleted something: when, and from what address.',
+      h('div', { class: 'seg audit-filter', role: 'group', 'aria-label': 'Show' }, ...Object.entries(AUDIT_AREAS).map(([k, label]) => h('button', {
+        type: 'button', 'aria-pressed': String(auditLog.area === k), onclick: () => { auditLog.area = k; openAdminLog(); },
+      }, label))),
+      auditLog.rows.length ? h('ul', { class: 'audit-list' }, ...auditLog.rows.flatMap((r) => {
+        const d = day(r.at);
+        const head = d !== lastDay ? h('li', { class: 'audit-day' }, d) : null;
+        lastDay = d;
+        return [head, h('li', { class: `audit-row ${r.area}${/Wrong|Locked/.test(r.action) ? ' warn' : ''}` },
+          h('span', { class: 'audit-time' }, new Date(r.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })),
+          h('span', { class: 'audit-what' }, h('b', {}, r.user_name || 'Someone'), ` ${r.action}`),
+          h('span', { class: 'audit-meta' }, [AUDIT_AREAS[r.area] || r.area, r.ip].filter(Boolean).join(' · ')))];
+      })) : h('p', { class: 'muted' }, 'Nothing logged yet.'),
+      auditLog.rows.length >= 200 && h('button', { type: 'button', onclick: () => openAdminLog(true) }, 'Show older'),
+      h('p', { class: 'hint' }, 'Passwords are never shown here, only that one was changed. Everyday lead work (calls, notes, stages) is on each lead and in Updates.'));
+  } catch (err) { fail(err); }
+}
+
 function initAdminScreens() {
   if (!isAdmin()) return;
   $('#scoringBtn').addEventListener('click', openScoring);
   $('#automationsBtn').addEventListener('click', openAutomations);
+  $('#adminLogBtn').addEventListener('click', () => { auditLog.area = ''; openAdminLog(); });
 }

@@ -6,6 +6,7 @@ It:
 - **Pulls in leads** from **Facebook Lead Ads** (real-time webhook plus a "Sync Facebook" backstop) and from your **company website** form.
 - Shows them on a **pipeline board**: New / Working → Voicemail → Follow Up 1 → Follow Up 2 → Follow Up 3 → Contacted → Booked → Waste.
 - Lets reps **disposition** every call. The disposition moves the lead to the right stage and **sets a reminder to call the lead the next day**.
+- Opens on an **Overview**: today's numbers, the pipeline scored HOT / WARM / COLD with each lead's value, suggestions from the data, the team's day and the call queue; plus a **Leaderboard** with monthly goals.
 - Keeps a **To do** list of who needs you now (customer replies, calls due, new leads, quiet quotes, leads with no next step), with a banner, a badge and (optionally) phone alerts.
 - Sends **your own follow-up email** to the lead when a rep saves "No Answer – Left Voicemail" (off until you turn it on).
 - Works as a **website and as a phone app**: people can add it to their home screen from the browser.
@@ -315,11 +316,92 @@ The board shows the same flags on each card (**Texted back · answer them**, **N
 with its **Next** step and **Last contact** at the top ("Next: call Tue 3:00 PM", "Last contact: No Answer –
 Left Voicemail · Yesterday 11:00 AM by Sam").
 
-## Admin menus
+## The menu
 
-Admins' everyday buttons stay in the toolbar (Updates, Add lead, Social, To do, Start calling). The rest are in
-two menus: **Marketing** (Texts & reminders, Emails, Win-back, Referrals) and **Setup** (Team, Price list,
-Pipelines, Import leads, Sync Facebook / Google).
+Everything is in the side menu, grouped: **Workspace** (Overview, Leads, Calendar, Calls, Updates),
+**Performance** (Leaderboard, Analytics, Commissions, Revenue), **Operations** (Time & Pay, Social),
+**Marketing** (Texts & reminders, Emails, Win-back, Referrals, Automations) and **Settings** (Team, Price
+list, Pipelines, Lead scoring, Import leads, Sync Facebook / Google, Admin log), with Appearance and Sign out
+at the bottom. Each person only sees what their login allows (shop logins see the calendar). The top bar has
+the search, **Add lead**, **To do** and **Clock in**. On a phone the menu slides out from the ☰ button and a
+bar at the bottom holds Overview, Leads, Calendar and To do.
+
+## Overview
+
+The home screen for admins and sales. Every number is counted from the app's own records, and tapping one
+goes to what's behind it.
+
+- **New leads today**, against the average of the last 7 days (imports don't count).
+- **Speed to first contact**: the middle (median) time this week from a lead coming in to the first call or
+  text by a rep, against last week, and how many new leads haven't been called.
+- **Appointments booked today**, and drop-offs in the next 7 days.
+- **Open quotes**: the latest quote for every lead still being worked, and what was quoted this week.
+- **Live pipeline**: New, Contacted, Quoted and Booked, the best leads first (by score), each with its value,
+  how long it's waited, and what's next ("Call now", "Quote sent 2d ago", "Drop-off Thu 9:00 AM").
+- **Suggestions**, worked out from the data: who to call first, customers who texted back, quotes with no
+  answer, leads with no next step, drop-offs coming up without a deposit, and in the dialer build the
+  month's most common concern and a coaching idea. Each one opens the leads behind it.
+- **Team today** (calls, talked, booked, sales; tap a rep for their page) and the **call queue**.
+
+## Lead scores, value and age
+
+Every lead gets a **score from 0 to 100**, shown as **HOT**, **WARM** or **COLD** on its card, so the best
+ones get called first. It's simple rules, not a prediction; open a lead and tap its score to see which rules
+counted. Standard points: appointment on the calendar +25, has a quote +20, vehicle 3 years old or newer +15,
+interested in 2 or more services +15, has a phone +10, texted back +10, we've talked to them +10, came in
+within 24 hours +10, referred +10, RV / trailer / boat / plane / semi +10, has an email +5, no answer 3 or
+more times -10, opted out of texts -5. Hot is 70 and up, Warm 40 and up. Admins change the points and the
+lines under **Settings → Lead scoring**.
+
+Each lead also shows its **value**: the job price once booked, else the latest quote, else what that kind of
+vehicle usually comes to here (the middle job price over the last year, or the price list until there are
+jobs), marked "est.". The card's left edge shows **how long it has waited** since the last call or text
+(or since it came in): green under 24 hours, then yellow, orange, and red after 3 days.
+
+## Leaderboard and goals
+
+**Performance → Leaderboard** ranks the reps for this or last week, this or last month, the last 3 months or
+the year: calls, leads called, talked, contact rate, quotes, booked, sales and conversion (and average talk
+time in the dialer build). Tap any column to rank by it; "What each number means" explains each one. Shop
+logins aren't ranked. Tap a rep for their page: this month and week, their **monthly sales goal** with
+progress and the pace they're on, sales over the last 6 months, and their open leads. Admins set the goal
+there. Commission amounts show only to the rep themself and to admins.
+
+## Automations
+
+**Marketing → Automations** lists everything the app does on its own, grouped (new leads, quotes and
+bookings, after the job, team, housekeeping): what each does, when, whether it's on, and what it still needs
+(texting, email, a review link…). Switch each on or off there; **Change** opens its wording and timing. It
+includes two messages after pickup: a **check-in text** 30 days later ("how's it holding up?") and a
+**maintenance reminder** 6 months later. Both go once per job, in the daytime, only to customers who haven't
+replied STOP; the maintenance one is skipped for customers who already booked again. Edit them under Texts &
+reminders.
+
+## Admin log
+
+**Settings → Admin log** keeps who signed in (and wrong passwords and lock-outs), downloaded the spreadsheet,
+added or changed a login or its role or password, changed clocked time, pay rates or payroll rules, approved
+time off or corrections, moved money (commissions, deposits, payments), changed settings, or deleted
+something: when, and from what address. Passwords are never written there, only that one changed. Everyday
+lead work stays on each lead and in Updates. Signing in is slowed after 8 wrong passwords for a name from one
+address (a 15-minute wait).
+
+## Backups: test a restore
+
+A backup only counts once it has been restored. Once a month (and after changing anything about backups):
+
+```bash
+node scripts/restore-check.js /var/backups/bob-moses-leads/leads-2026-11-10.db
+# or a copy from the bucket, compared with the live database:
+node scripts/restore-check.js leads-2026-11-10.db.gz --compare /var/lib/bob-moses-leads/leads.db
+```
+
+It unpacks the backup into a scratch folder (the live database is never touched), checks the file isn't
+damaged, opens it the way the app does and reads the leads back, says how fresh it is, and ends with
+**RESTORE TEST PASSED** or **RESTORE TEST FAILED** and why. To actually restore: stop the app
+(`sudo systemctl stop bob-moses-leads`, or `fly machine stop` on Fly), put the restored file in place as
+`leads.db` (on Fly, restore the volume snapshot or `fly ssh sftp` the file to `/data/leads.db`), and start it
+again. Photos restore the same way into the photos folder.
 
 ## Search
 
@@ -620,6 +702,19 @@ plus a coaching tip. With `ANTHROPIC_API_KEY` set, Claude writes the notes; with
 can't be reached), the app writes basic notes from the words used. **Use as the call outcome** fills
 in the disposition and notes for the rep to check and save.
 
+**Call score and next step.** Claude also scores five parts of each real conversation, 1 to 5: the opening,
+finding out what they need, explaining the value, handling concerns, and asking for the booking (shown as a
+score out of 100). It marks calls where the customer was never going to buy now, so they don't count against
+the rep, sorts the customer's concerns by kind (price, timing, checking with someone, shopping around, not
+sure it's needed), and suggests one next step: send a quote, send a booking link, schedule the call back
+(with the time they gave), text more info, or try again later. The lead's **last call** shows that step as
+one button that fills in or opens the right thing; nothing happens until the rep saves it. Scores are a guide
+for coaching, not a grade: by default only admins see them (Calls → AI call settings: admins only, everyone,
+or off). The Calls panel shows the last 30 days' most common concerns and the part of the call the team
+scores lowest, and Overview suggests it as a coaching idea. **AI call settings** also choose who can read
+what was said (everyone who can open the lead, or admins only) and delete it after a number of days (the
+short notes stay).
+
 **Start calling** works through the call list: call-backs that are due first, then new leads nobody
 has reached (leads whose best time is now go first). After the rep saves the outcome, the next call
 starts in 5 seconds; they can pause, skip or stop.
@@ -861,10 +956,16 @@ fields. Recognised field names include `name`, `first_name`, `last_name`, `email
   thank-you page.
 - **WordPress (Gravity Forms, WPForms, Contact Form 7), Webflow, Wix, Squarespace, Zapier:** use the
   form's webhook / "send to URL" option and point it at the same URL.
-- Add your site's address to `CORS_ORIGINS`.
-- `WEBSITE_API_KEY` is optional. If you set it, send it as an `X-API-Key` header from your server or
-  form tool. A key inside a public HTML form can be read by anyone, so treat it as a spam filter there,
-  not a password.
+- **On the live server the form needs `WEBSITE_API_KEY`**: with no key set there, the form is turned off
+  (it answers 503), so nobody can post leads into the app. Send it as an `X-API-Key` header from your server
+  or form tool, or as a hidden `api_key` field. A key inside a public HTML form can be read by anyone, so
+  treat it as a spam filter there, not a password.
+- Only the company website may post to it from a browser: by default `BRAND_WEBSITE` and its `www.` address
+  on the live server. Set `CORS_ORIGINS` to list others.
+- More than 20 submissions from one address in 10 minutes are turned away (bots).
+- It keeps where each lead came from: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`,
+  the page with the form (`page_url`) and the site they were on before (`referrer`). The example form sends
+  all of them.
 
 If someone who is already in the pipeline submits again (same email or phone), the inquiry is added to
 their existing lead's activity log instead of creating a duplicate card.
@@ -941,7 +1042,8 @@ each feature on when its keys are added):
    so start it early.
 6. **Facebook leads**: `FB_PAGE_ACCESS_TOKEN`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `FB_FORM_IDS`, and the
    webhook (see Connecting Facebook Lead Ads).
-7. **Website form**: `WEBSITE_API_KEY` and the form snippet (see Connecting the website form).
+7. **Website form**: `WEBSITE_API_KEY` (required on the live server) and the form snippet (see Connecting
+   the website form).
 8. **Google Local Services**, **ad spend**, **Talech card payments**: set up from inside the app when ready.
    Payments themselves are taken on the shop's card machine and entered in the app by hand.
 9. **Social media posts** (optional): `FB_PAGE_ID`, `IG_USER_ID`, and the TikTok and YouTube keys (see
@@ -949,7 +1051,11 @@ each feature on when its keys are added):
 10. **The dialer build only**: `CALLS_ENABLED=1`, the Twilio number, and `ANTHROPIC_API_KEY` for AI call notes.
 11. **Phones**: everyone opens the address on their phone and taps Add to Home Screen; shop people allow
     location when asked (needed to clock in).
-12. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server).
+12. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server), then
+    run `node scripts/restore-check.js` on a backup once (see Backups: test a restore) and monthly after.
+13. **First look around**: Settings → Lead scoring (the points), Marketing → Automations (switch off anything
+    you don't want yet), each rep's monthly goal (Leaderboard → tap the rep), and in the dialer build
+    Calls → AI call settings (who sees call scores; how long to keep what was said).
 
 ## Deploying elsewhere
 
@@ -979,6 +1085,15 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | POST | `/api/leads/:id/notes` | `{ note }` |
 | GET | `/api/reminders` | Open reminders |
 | GET | `/api/queue` | The To do list: `{ replies, fresh, quotes, stuck }` |
+| GET | `/api/overview` | The Overview: KPIs, the 4-column pipeline, suggestions, the team today, the call queue |
+| GET / PUT | `/api/settings/lead-score` | The scoring rules' points and the Hot / Warm lines (PUT: admins) |
+| GET | `/api/leaderboard?period=week\|last_week\|month\|last_month\|quarter\|year` | Each rep's numbers for the period, with goals |
+| GET | `/api/reps/:name` | A rep's page: this month and week, 6 months, goal and pace (commission: themself or admins) |
+| PUT | `/api/goals` | Admins: `{ name, monthly }` a rep's monthly sales goal in dollars (empty removes it) |
+| GET / PATCH | `/api/automations`, `/api/automations/:id` | Admins: everything automatic; `{ on }` switches one |
+| GET | `/api/audit?area=&before=` | Admins: the admin log (signin, team, payroll, money, settings, export, delete) |
+| GET / PUT | `/api/settings/calls` | Admins (dialer build): `{ scores: admins\|everyone\|off, transcripts: everyone\|admins, transcript_days }` |
+| GET | `/api/calls/coaching?from=&to=` | Admins (dialer build): concerns by kind and the call-score parts averaged |
 | POST | `/api/reminders/:id/complete` | Mark a reminder done |
 | POST | `/api/reminders/:id/snooze` | `{ due_at }` |
 | GET / PUT | `/api/settings/email` | Follow-up email template `{ enabled, subject, body }` |
@@ -1052,6 +1167,10 @@ src/calls.js         the dialer (CALLS_ENABLED): calls, live transcription, revi
 src/pipelines.js     the pipelines admins set up; public/pipelines.js its screen
 src/timeclock.js     time clock, time off, hourly rates and Time & Pay; public/timeclock.js its screens
 src/social.js        social media posts (Facebook, Instagram, TikTok, YouTube Shorts); public/social.js the Social panel
+src/insights.js      lead scores, values and age; the Overview and Leaderboard numbers; public/overview.js, public/leaderboard.js
+src/automations.js   the Automations list and switches; public/admin.js the Lead scoring, Automations and Admin log screens
+src/audit.js         the admin log
+scripts/restore-check.js  checks a backup restores (integrity, the app reads it, how fresh, vs. the live database)
 src/callsummary.js   call notes with Claude (or basic notes without a key)
 public/calls.js      the dialer's screens
 src/google-lsa.js    Google Local Services leads (Google Ads API)

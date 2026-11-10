@@ -29,6 +29,7 @@ const { createUserService, ROLES, MIN_PASSWORD } = require('./src/users');
 const { createQuoteService } = require('./src/quotes');
 const { createInsightService } = require('./src/insights');
 const { createAutomations } = require('./src/automations');
+const { createAuditLog } = require('./src/audit');
 const { createReviewService } = require('./src/reviews');
 const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/commissions');
 const { createTexter, toE164 } = require('./src/sms');
@@ -264,6 +265,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     }),
   });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
+  const audit = createAuditLog(db);
   const automations = createAutomations({ messages, campaigns, reviews, daySheets, social, timeClock, leads, calls, texter, mailer, config });
   // Booking confirmations never hold up or undo a booking; problems are logged on the lead.
   const confirmBooking = (jobId, actor) => messages.sendConfirmation(jobId, actor)
@@ -362,6 +364,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/overview', ({ actor }) => insights.overview({ role: actor.role }));
   // ---- Automations: everything the app does on its own, with a switch ----
   route('GET', '/api/automations', () => automations.list(), { roles: ADMIN });
+  route('GET', '/api/audit', ({ query }) => audit.list({ area: query.get('area') || null, before: query.get('before') }), { roles: ADMIN });
   route('PATCH', '/api/automations/:id', ({ params, body }) => automations.set(params.id, body.on), { roles: ADMIN });
   // ---- Leaderboard and each rep's page ----
   route('GET', '/api/leaderboard', ({ query }) => insights.leaderboard(query.get('period') || 'month'));
@@ -613,13 +616,18 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // ---- Sign in / sign out ----
   route('POST', '/api/login', ({ req, res, body }) => {
     const key = loginKey(req, body.name);
-    if (tooManyTries(key)) throw new HttpError(429, 'Too many wrong tries. Wait 15 minutes, or ask an admin to reset your password.');
+    if (tooManyTries(key)) {
+      audit.write({ user: String(body.name || '').trim().slice(0, 40) || null, ip: clientIp(req), area: 'signin', action: 'Locked out for 15 minutes (too many wrong tries)' });
+      throw new HttpError(429, 'Too many wrong tries. Wait 15 minutes, or ask an admin to reset your password.');
+    }
     const user = users.authenticate(String(body.name || '').trim(), String(body.password || ''));
     if (!user) {
       loginFailures.get(key).push(Date.now());
+      audit.write({ user: String(body.name || '').trim().slice(0, 40) || null, ip: clientIp(req), area: 'signin', action: 'Wrong password or name' });
       throw new HttpError(401, 'That name and password don\'t match. Check them and try again.');
     }
     loginFailures.delete(key);
+    audit.write({ user: user.name, role: user.role, ip: clientIp(req), area: 'signin', action: 'Signed in' });
     const { token, maxAge } = users.createSession(user.name);
     send(res, 200, { name: user.name, role: user.role }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
   }, { isPublic: true });
@@ -632,6 +640,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     if (String(body.password || '') !== String(body.confirm ?? body.password)) throw new HttpError(400, 'The two passwords don\'t match.');
     const user = users.create({ name, password: String(body.password || ''), role: 'admin' }, { user: name });
     const { token, maxAge } = users.createSession(user.name);
+    audit.write({ user: user.name, role: 'admin', ip: clientIp(req), area: 'team', action: 'Set up the first admin login' });
     send(res, 201, { name: user.name, role: 'admin' }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
   }, { isPublic: true });
   route('POST', '/api/logout', ({ req, res }) => {
@@ -1144,6 +1153,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
       const raw = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readBody(req, match.bodyLimit) : Buffer.alloc(0);
       const body = match.rawBody ? {} : parseBody(raw, req.headers['content-type']);
       let result = await match.handler({ req, res, params, query: url.searchParams, body, raw, actor });
+      try { audit.record({ method: req.method, path: url.pathname, actor, body, result, ip: clientIp(req) }); } catch (err) { console.error('Admin log failed:', err.message); }
       if (actor.role === 'shop') result = hideAmount(result);
       if (!res.headersSent) send(res, req.method === 'POST' ? 201 : 200, result ?? { ok: true });
     } catch (err) {
