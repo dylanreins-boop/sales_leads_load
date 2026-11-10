@@ -394,8 +394,9 @@ deactivate themselves, and there is always at least one admin. Passwords are sto
 as plain text.
 
 Logins set in `APP_USERS` show on the Team panel as server logins and are changed on the server. With no
-`APP_USERS` and no Team logins at all, the app is open; the first login added there has to be an admin,
-and from then on everyone signs in.
+`APP_USERS` and no Team logins at all: on the live server (`NODE_ENV=production`) the sign-in page asks for
+the first admin's name and password (and `SETUP_CODE`, if set) and nobody gets in until that's done; on a
+computer for trying it out, the app is open until the first login (an admin) is added from Team.
 
 The browser asks for a name and password when the app opens. From then on, every note, call outcome,
 stage move, completed reminder and email in a lead's activity log shows **who did it and when**
@@ -800,10 +801,15 @@ with the [Fly CLI](https://fly.io/docs/flyctl/install/) installed and `fly auth 
 ```bash
 fly launch --copy-config --no-deploy          # creates the app from fly.toml (pick a new name if asked)
 fly volumes create leads_data --region lax --size 1
-fly secrets set APP_USERS='Dylan:a-strong-password:admin,Sam:another-strong-password:sales,Mike:shop-password:shop'
+fly secrets set SETUP_CODE='something-only-you-know'
 fly deploy
 fly open                                      # opens https://<app-name>.fly.dev
 ```
+
+**The admin login.** The first time the site opens, the sign-in page says **Set up the admin login**: type the
+setup code, the admin's name and a password (twice). That's the owner's login; everyone else is added from the
+**Team** button (name, password, and Sales, Shop or Admin), and they sign in on the same page. Nobody can get
+in before that first admin is set up. (`APP_USERS` still works too if you'd rather set logins in secrets.)
 
 **Prefer your own server?** Oracle Cloud's free tier, AWS Lightsail or EC2 work too. See
 [deploy/oracle/README.md](deploy/oracle/README.md): one setup script installs everything. Static-site
@@ -838,11 +844,40 @@ single file on the volume. Turn on volume snapshots (`fly volumes list`, then th
 
 Off-server backups, if you run the app on your own server: see `deploy/oracle/README.md`.
 
+## Go-live checklist
+
+Before launch day (each one is optional except the first three; the app runs without the rest and turns
+each feature on when its keys are added):
+
+1. **Hosting**: a Fly.io account (about $5 a month for one small machine and a 1 GB volume) or your own
+   server (`deploy/oracle`). Deploy as above and set up the admin login.
+2. **Domain**: the `leads` CNAME at Namecheap (above), so it's https://leads.bobmosescc.com. Then
+   `fly secrets set PUBLIC_URL=https://leads.bobmosescc.com` if you changed the address.
+3. **Team**: add every sales and shop person from **Team**; in Time & Pay set hourly rates, **Work
+   schedules**, and **Payroll rules** (overtime, Friday sign-off, the admins' emails for the weekly summary,
+   and the shop's location for the clock-in geo-lock: stand at the shop and tap Use my current location).
+4. **Email** (weekly payroll summary, follow-up emails, invoices, day sheet): a Resend, SendGrid or Postmark
+   key: `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM`.
+5. **Texting** (welcome text, confirmations, reminders, missed-call text-back, alerts): a Twilio number:
+   `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`; point the number's webhooks at the app
+   (see Texting customers). Business texting needs Twilio's A2P 10DLC registration, which takes a few days,
+   so start it early.
+6. **Facebook leads**: `FB_PAGE_ACCESS_TOKEN`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `FB_FORM_IDS`, and the
+   webhook (see Connecting Facebook Lead Ads).
+7. **Website form**: `WEBSITE_API_KEY` and the form snippet (see Connecting the website form).
+8. **Card deposits** on booking links: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`.
+9. **Google Local Services**, **ad spend**, **Talech card payments**: set up from inside the app when ready.
+10. **The dialer build only**: `CALLS_ENABLED=1`, the Twilio number, and `ANTHROPIC_API_KEY` for AI call notes.
+11. **Phones**: everyone opens the address on their phone and taps Add to Home Screen; shop people allow
+    location when asked (needed to clock in).
+12. **Backups**: turn on Fly volume snapshots (or `deploy/oracle/backup-setup.sh` on your own server).
+
 ## Deploying elsewhere
 
 Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS. Things to check:
 
-- Set `APP_USERS` so the dashboard needs a login (see below). The webhook and website intake URLs stay public.
+- Set `NODE_ENV=production` so the dashboard needs a login (the first visit sets up the admin; or set
+  `APP_USERS`). The webhook and website intake URLs stay public.
 - Keep `data/leads.db` on a persistent disk, and back it up.
 - Set `TZ=America/Los_Angeles` so server-side reminder times are Las Vegas time.
 

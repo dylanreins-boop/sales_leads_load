@@ -235,9 +235,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
 
   // Returns the signed-in user ({ name, role }), or null if the login is wrong.
   // The sign-in page sets a session cookie; scripts can still use HTTP Basic auth.
-  // With no logins at all, everyone is let in as an admin without a name.
+  // With no logins at all: open (everyone an admin) on a computer for trying it out; on the live server
+  // nobody gets in until the first admin login is set up on the sign-in page.
+  const needsSetup = () => !users.anyLogins() && !config.openWithoutLogins;
   function authenticate(req) {
-    if (!users.anyLogins()) return { name: null, role: 'admin' };
+    if (!users.anyLogins()) return config.openWithoutLogins ? { name: null, role: 'admin' } : null;
     const session = users.sessionUser(readCookie(req, SESSION_COOKIE));
     if (session) return session;
     const [scheme, encoded] = (req.headers.authorization || '').split(' ');
@@ -555,6 +557,17 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     loginFailures.delete(key);
     const { token, maxAge } = users.createSession(user.name);
     send(res, 200, { name: user.name, role: user.role }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
+  }, { isPublic: true });
+  // First run on the live server: the sign-in page sets up the first admin login.
+  route('GET', '/api/setup', () => ({ needed: needsSetup(), code_required: Boolean(config.setupCode) }), { isPublic: true });
+  route('POST', '/api/setup', ({ req, res, body }) => {
+    if (!needsSetup()) throw new HttpError(409, 'The admin login is already set up. Sign in instead.');
+    if (config.setupCode && String(body.code || '').trim() !== config.setupCode) throw new HttpError(403, 'That setup code isn\'t right.');
+    const name = String(body.name || '').trim();
+    if (String(body.password || '') !== String(body.confirm ?? body.password)) throw new HttpError(400, 'The two passwords don\'t match.');
+    const user = users.create({ name, password: String(body.password || ''), role: 'admin' }, { user: name });
+    const { token, maxAge } = users.createSession(user.name);
+    send(res, 201, { name: user.name, role: 'admin' }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
   }, { isPublic: true });
   route('POST', '/api/logout', ({ req, res }) => {
     const token = readCookie(req, SESSION_COOKIE);

@@ -51,11 +51,15 @@
       <p class="muted">Use the name and password your admin gave you.</p>
       <p class="login-error" id="loginError" role="alert" hidden></p>
       <label>Name <input id="loginName" name="name" autocomplete="username" autocapitalize="words" required autofocus></label>
+      <label class="setup-only" hidden>Setup code <input id="setupCode" name="code" autocomplete="off"></label>
       <label>Password
         <span class="pass-row">
           <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
           <button type="button" id="showPass" aria-pressed="false">Show</button>
         </span>
+      </label>
+      <label class="setup-only" hidden>Type the password again
+        <input id="setupConfirm" name="confirm" type="password" autocomplete="new-password">
       </label>
       <button type="submit" class="primary" id="loginBtn">Sign in</button>
       <details class="forgot">
@@ -74,10 +78,34 @@
       e.target.textContent = show ? 'Hide' : 'Show';
       e.target.setAttribute('aria-pressed', String(show));
     });
+    // First run on a new server: set up the admin login instead of signing in.
+    let setup = false;
+    fetch('/api/setup').then((r) => r.json()).then((s) => {
+      if (!s.needed) return;
+      setup = true;
+      form.querySelector('h1').textContent = 'Set up the admin login';
+      form.querySelector('.muted').textContent = 'This is the first sign-in on this server. Pick the admin\'s name and a password (8 characters or more). You\'ll add everyone else from the Team button.';
+      document.querySelectorAll('.setup-only').forEach((el) => { el.hidden = el.querySelector('#setupCode') ? !s.code_required : false; });
+      pass.autocomplete = 'new-password';
+      document.getElementById('loginBtn').textContent = 'Create admin login';
+      document.querySelector('.forgot').hidden = true;
+    }).catch(() => {});
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       error.hidden = true;
       const name = form.name.value.trim();
+      if (setup) {
+        const confirm = document.getElementById('setupConfirm').value;
+        if (!name || !pass.value) { error.textContent = 'Pick a name and a password.'; error.hidden = false; return; }
+        if (pass.value !== confirm) { error.textContent = 'The two passwords don\'t match.'; error.hidden = false; return; }
+        const res = await fetch('/api/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password: pass.value, confirm, code: document.getElementById('setupCode').value }) }).catch(() => null);
+        if (res && res.ok) { location.replace('/'); return; }
+        const data = res ? await res.json().catch(() => ({})) : {};
+        error.textContent = data.error || 'Can\'t reach the server. Check your connection and try again.';
+        error.hidden = false;
+        return;
+      }
       if (!name || !pass.value) {
         error.textContent = 'Enter your name and password.';
         error.hidden = false;

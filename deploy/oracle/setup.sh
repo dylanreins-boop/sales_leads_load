@@ -81,6 +81,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   cat > "$ENV_FILE" <<CONF
 # Settings for the lead pipeline. After changing anything: sudo systemctl restart $SERVICE
 PORT=3000
+NODE_ENV=production
 HOST=127.0.0.1
 TRUST_PROXY=true
 DB_PATH=$DATA_DIR/leads.db

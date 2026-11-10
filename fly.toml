@@ -19,7 +19,10 @@ primary_region = "lax"   # Los Angeles, the closest Fly region to Las Vegas
   REMINDER_SKIP_WEEKENDS = "true"
   LEAD_ARCHIVE_DAYS = "14"
   CORS_ORIGINS = "https://bobmosescc.com,https://www.bobmosescc.com"
-  # Passwords and keys (APP_USERS, EMAIL_API_KEY, FB_*) go in `fly secrets set`, not here.
+  NODE_ENV = "production"
+  # The app's web address, for links in texts, emails and booking pages (change if you use another domain).
+  PUBLIC_URL = "https://leads.bobmosescc.com"
+  # Passwords and keys (SETUP_CODE, EMAIL_API_KEY, TWILIO_*, FB_*, STRIPE_*) go in `fly secrets set`, not here.
 
 # The lead database lives on this disk so it survives deploys and restarts.
 [[mounts]]

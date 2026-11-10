@@ -34,7 +34,12 @@ module.exports = {
   //   sales - the lead pipelines: work leads, log calls, book jobs (no calendar, export or settings)
   //   shop  - the job calendar only
   // A login without a level is "sales". APP_USER/APP_PASSWORD (a single shared login) is an admin.
-  // With neither set, the dashboard has no login and everyone is treated as an admin.
+  // With neither set and no logins added in the app: on a computer for trying it out the dashboard is
+  // open (everyone is an admin), but on the live server (NODE_ENV=production, as the Dockerfile sets)
+  // the sign-in page asks for the first admin's name and password, and nobody gets in until that's done.
+  // SETUP_CODE, if set, has to be typed in to do that first setup.
+  openWithoutLogins: process.env.OPEN_ACCESS === '1' || (process.env.NODE_ENV !== 'production' && process.env.OPEN_ACCESS !== '0'),
+  setupCode: process.env.SETUP_CODE || '',
   users: [
     ...list(process.env.APP_USERS).map((entry) => {
       const level = entry.match(/:(admin|sales|shop)$/i);
