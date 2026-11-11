@@ -71,7 +71,8 @@ test('Overview: today\'s numbers, the 4-column snapshot, suggestions from the da
   assert.equal(booked.status, 201, JSON.stringify(booked.data));
 
   const o = (await call('GET', '/api/overview')).data;
-  assert.ok(o.kpis.new_today.value >= 3);
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  assert.equal(o.kpis.new_today.value, db.prepare("SELECT COUNT(*) AS n FROM leads WHERE received_at >= ? AND source != 'import'").get(midnight.toISOString()).n, 'leads that came in since midnight (any time of day)');
   assert.equal(o.kpis.speed.seconds, 360, '6 minutes to first contact');
   assert.equal(o.kpis.booked_today.value, 1);
   assert.deepEqual([o.kpis.quoted.count, o.kpis.quoted.value_cents], [1, 195000]);
@@ -116,7 +117,8 @@ test('Analytics: each month\'s new leads followed on their own, and a lead-sourc
   const all = (await call('GET', `/api/analytics?from=${from}&to=${to}`, undefined, ADMIN)).data;
   assert.equal(all.months.length, 2);
   const now = all.months[1];
-  assert.equal(now.came_in, 4);
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+  assert.equal(now.came_in, db.prepare('SELECT COUNT(*) AS n FROM leads WHERE received_at >= ?').get(monthStart).n, 'this month\'s leads (any day of the month)');
   assert.equal(now.booked, 1);
   const web = (await call('GET', `/api/analytics?from=${from}&to=${to}&source=website`, undefined, ADMIN)).data;
   assert.equal(web.range.source, 'website');
