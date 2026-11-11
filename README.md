@@ -51,6 +51,12 @@ lead as a Coach / RV. Reminders cover both pipelines; RV leads are tagged "RV". 
 tab with `#rv` or `#other` at the end of the address. To change which types count as RVs, edit
 `PIPELINES` in `src/vehicle.js`. The API also takes `GET /api/leads?pipeline=rv` (or `other`).
 
+Above the board, four cards sum up the tab you're on: **Open leads** (not booked or waste, with how many
+came in today), **Pipeline value** (what the open leads are worth, from the job price, the latest quote or
+the usual price for that vehicle), **Hot leads** (tap to open the top one) and **Need a call or text** (new
+leads not called yet, call-backs due today or overdue, and texts waiting on an answer; tap for the To do
+list). Each column shows its count and what its leads add up to.
+
 ## Shop calendar
 
 **Calendar** (next to **Leads** in the header) shows every booked job.

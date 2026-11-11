@@ -347,16 +347,25 @@ function renderBoard() {
   $('#oldView').hidden = !showingOld;
   $('#customersView').hidden = !showingCustomers;
   $('#sourceFilter').hidden = showingOld || showingCustomers;
+  $('#boardTitle').textContent = showingOld ? 'Old & Dead Leads' : showingCustomers ? 'Past Customers' : pipelineLabel(state.pipeline);
+  $('#boardSub').textContent = showingOld || showingCustomers ? '' : 'Drag a card to move it. Click to open, double-click for full screen.';
+  $('#boardSub').hidden = showingOld || showingCustomers;
+  $('#boardStats').hidden = showingOld || showingCustomers;
   if (showingOld) return renderOld();
   if (showingCustomers) return renderCustomers();
   const board = $('#board');
   board.setAttribute('aria-label', pipelineLabel(state.pipeline));
   const inPipeline = state.leads.filter((l) => l.pipeline === state.pipeline);
+  renderBoardStats(inPipeline);
+  const sum = (list) => list.reduce((t, l) => t + (l.value_cents || 0), 0);
   board.replaceChildren(...state.meta.stages.map((stage) => {
     const leads = inPipeline.filter((l) => l.stage === stage.id);
+    const total = sum(leads);
     const column = h('section', { class: 'column', dataset: { stage: stage.id } },
-      h('div', { class: 'column-head' }, stage.label, h('span', { class: 'count' }, leads.length)),
-      h('div', { class: 'cards' }, leads.length ? leads.map(leadCard) : h('div', { class: 'empty' }, 'No leads')),
+      h('div', { class: 'column-head' },
+        h('div', { class: 'column-title' }, h('i', { class: 'column-dot' }), h('span', {}, stage.label), h('span', { class: 'count' }, leads.length)),
+        h('div', { class: 'column-value' }, total ? money(total, { cents: false }) : '$0')),
+      h('div', { class: 'cards' }, leads.length ? leads.map(leadCard) : h('div', { class: 'empty' }, 'No leads here')),
     );
     column.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -372,6 +381,27 @@ function renderBoard() {
     });
     return column;
   }));
+}
+
+// The four cards above the board: this pipeline at a glance, like the Calendar and Overview.
+function renderBoardStats(inPipeline) {
+  const open = inPipeline.filter((l) => !['booked', 'waste'].includes(l.stage));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const newToday = open.filter((l) => new Date(l.received_at) >= today).length;
+  const value = open.reduce((t, l) => t + (l.value_cents || 0), 0);
+  const quoted = open.filter((l) => l.value_kind === 'quote').length;
+  const hot = open.filter((l) => l.heat === 'hot').sort((a, b) => b.score - a.score);
+  const notCalled = open.filter((l) => !l.last_contacted_at);
+  const callNow = open.filter((l) => !l.last_contacted_at || (l.next_reminder_at && dueStatus(l.next_reminder_at) !== 'later') || l.needs_reply);
+  const names = (list) => list.slice(0, 3).map(leadName).join(', ') + (list.length > 3 ? ` +${list.length - 3}` : '');
+  const card = (label, val, sub, cls, onclick) => h(onclick ? 'button' : 'div', { class: `ov-card cal-stat ${cls}`, ...(onclick && { type: 'button', onclick }) },
+    h('span', { class: 'cal-stat-label' }, label), h('b', { class: 'cal-stat-value' }, val), h('span', { class: 'cal-stat-sub' }, sub));
+  fill($('#boardStats'),
+    card('Open leads', String(open.length), newToday ? `${newToday} came in today` : 'None new today', 'st-open'),
+    card('Pipeline value', money(value, { cents: false }), quoted ? `${quoted} with a quote sent` : 'Estimated from the vehicles', 'st-value'),
+    card('Hot leads', String(hot.length), hot.length ? names(hot) : 'None right now', 'st-hot', hot[0] ? () => openLead(hot[0].id) : null),
+    card('Need a call or text', String(callNow.length), notCalled.length ? `${notCalled.length} not called yet` : 'Everyone has been called', callNow.length ? 'st-due' : 'st-ok',
+      callNow.length ? () => $('#remindersBtn').click() : null));
 }
 
 // "Car · 2023 Tesla Model Y · Pearl White"

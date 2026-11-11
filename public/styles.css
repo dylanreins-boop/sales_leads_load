@@ -2211,3 +2211,116 @@ button.cal-stat:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba
   .cal-legend { gap: 4px; }
   .legend-item { padding: 2px 8px; font-size: 10.5px; }
 }
+
+/* ---- Leads board, in the new look (a header like Overview, stat cards, soft white columns) ---- */
+.lp-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 22px 30px 4px; min-width: 0; }
+.lp-head { display: flex; justify-content: space-between; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+.lp-title { min-width: 0; }
+.lp-head > * { min-width: 0; }
+.lp-title h1 { font: 700 25px/1.2 var(--font-brand); letter-spacing: -0.3px; margin: 0 0 4px; }
+.lp-title p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.lp-title p[hidden] { display: none; }
+.lp-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.lp-stats[hidden] { display: none; }
+.lp-stats .cal-stat { padding: 12px 16px; }
+.lp-stats .cal-stat-value { font-size: 23px; }
+.lp-stats .st-open { --st: var(--accent); }
+.lp-stats .st-value { --st: var(--ok); }
+.lp-stats .st-hot { --st: var(--danger); }
+.lp-stats .st-due { --st: var(--warn); }
+.lp-stats .st-ok { --st: var(--ok); }
+
+/* Pipeline tabs: a segmented control like the calendar's Month / Week / List. */
+.pipeline-tabs { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 11px; background: var(--panel); box-shadow: var(--card-shadow); overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+.pipeline-tabs::-webkit-scrollbar { display: none; }
+.pipeline-tab { border: 0; border-radius: 8px; margin: 0; padding: 7px 12px; font-family: inherit; font-weight: 600; font-size: 13px; color: var(--muted); box-shadow: none; }
+.pipeline-tab:hover { color: var(--text); background: var(--bg); }
+.pipeline-tab[aria-selected="true"], .pipeline-tab.old-tab[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border: 0; box-shadow: none; }
+.pipeline-tab .count { margin-left: 6px; padding: 0 7px; border: 0; border-radius: 20px; background: color-mix(in srgb, var(--muted) 14%, transparent); color: inherit; font-size: 11.5px; }
+.pipeline-tab[aria-selected="true"] .count { background: color-mix(in srgb, var(--accent-text) 22%, transparent); }
+.pipeline-tabs .spacer { flex: 0 0 4px; align-self: stretch; margin: 4px 4px; border-left: 1px solid var(--border); }
+.export-link { margin: 0; padding: 6px 12px; border-radius: 8px; border: 0; background: color-mix(in srgb, var(--ok) 11%, transparent); font-size: 13px; }
+.export-link:hover { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+
+/* The "texted back / due for a call" line: a card with a colored edge, like the calendar's notices. */
+.due-banner { margin: 0; padding: 11px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--warn); box-shadow: var(--card-shadow); font-size: 13.5px; font-weight: 500; transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease); }
+.due-banner:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 20, 43, 0.09); }
+.due-banner[hidden] { display: none; }
+
+/* Columns: soft panels with the stage, its count and what it's worth. */
+.board { gap: 14px; padding: 16px 30px 24px; }
+.column { flex: 0 0 272px; background: color-mix(in srgb, var(--bg) 55%, var(--panel)); border: 1px solid var(--border); border-radius: var(--radius); }
+.column.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.column-head { display: grid; gap: 2px; padding: 12px 14px 8px; border-bottom: 0; font-weight: 700; }
+.column-title { display: flex; align-items: center; gap: 8px; font: 700 14px var(--font-brand); min-width: 0; }
+.column-title > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.column-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.column-head .count { margin-left: auto; background: color-mix(in srgb, var(--accent) 10%, var(--panel)); color: var(--accent); border-radius: 20px; padding: 1px 9px; font-size: 11.5px; font-weight: 700; }
+.column-value { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; padding-left: 16px; }
+.column[data-stage="booked"] .column-head { color: inherit; }
+.column[data-stage="booked"] .column-dot { background: var(--ok); }
+.column[data-stage="booked"] .count { background: color-mix(in srgb, var(--ok) 13%, var(--panel)); color: var(--ok); }
+.column[data-stage="waste"] .column-dot { background: var(--muted); }
+.column[data-stage="waste"] .count { background: color-mix(in srgb, var(--muted) 14%, var(--panel)); color: var(--muted); }
+.column[data-stage="waste"] .column-head { color: var(--muted); }
+.cards { padding: 4px 10px 12px; gap: 10px; }
+.empty { margin: 4px 0; padding: 22px 8px; border: 1.5px dashed var(--border); border-radius: 12px; font-size: 12.5px; }
+
+/* Cards: rounder, a little more room, soft shadow. */
+.lead-card { border-radius: 12px; padding: 12px 13px; box-shadow: var(--card-shadow); }
+.lead-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.lead-card .name { font: 700 14px var(--font-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lead-card .row > * { min-width: 0; }
+.lead-card .row .pill, .lead-card .row .tag { flex: none; white-space: nowrap; }
+.lead-card .vehicle { margin-top: 6px; }
+.pill { border-radius: 20px; padding: 2px 8px; font-weight: 600; }
+.pill.due { background: color-mix(in srgb, var(--danger) 11%, transparent); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.pill.today { background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.pill.promise { background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.card-times { border-top-style: solid; margin-top: 8px; padding-top: 8px; }
+.best-time { border-radius: 8px; padding: 5px 9px; }
+
+/* Past Customers and Old & Dead show their name in the header now. */
+.old-view { padding: 12px 30px 28px; }
+.old-view .old-head h2 { display: none; }
+.old-view .old-head p { margin-top: 0; }
+
+/* Mid-size windows */
+@media (max-width: 1200px) {
+  .lp-stats { gap: 10px; }
+  .lp-stats .cal-stat { padding: 10px 12px; }
+  .lp-stats .cal-stat-value { font-size: 20px; }
+}
+/* Tablets and phones */
+@media (max-width: 900px) {
+  .lp-top { padding: 16px 16px 2px; gap: 12px; }
+  .board { padding: 12px 16px 16px; }
+  .old-view { padding: 10px 16px 24px; }
+}
+@media (max-width: 640px) {
+  .lp-top { padding: 12px 12px 0; gap: 10px; }
+  .lp-title h1 { font-size: 20px; margin: 0; }
+  .lp-title p { display: none; }
+  .lp-head { gap: 8px; }
+  .pipeline-tabs { width: 100%; }
+  .pipeline-tab { padding: 7px 9px; font-size: 12.5px; flex: none; }
+  .pipeline-tab .count { margin-left: 4px; padding: 0 6px; }
+  .lp-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .lp-stats .cal-stat { padding: 8px 8px 7px; border-top-width: 3px; }
+  .lp-stats .cal-stat-label { font-size: 10.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lp-stats .cal-stat-value { font-size: 17px; }
+  .lp-stats .cal-stat-sub { display: none; }
+  .due-banner { margin: 0; padding: 9px 11px; font-size: 13px; }
+  .board { padding: 10px 12px 12px; }
+  .column { flex-basis: 85vw; }
+  .old-view { padding: 8px 12px 24px; }
+}
+
+/* Clock-ins away from the shop (Time & Pay): room for the date and time so it doesn't run into the name. */
+.tp-away .tp-occ li { grid-template-columns: 170px 100px auto minmax(0, 1fr); }
+.tp-away .tp-occ-date { overflow: hidden; text-overflow: ellipsis; }
+.tp-away .tp-occ-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) {
+  .tp-away .tp-occ li { grid-template-columns: auto auto 1fr; }
+  .tp-away .tp-occ-detail { grid-column: 1 / -1; }
+}
