@@ -85,7 +85,13 @@ one connected bar across those days, so it reads at a glance. Approved time off 
 - **Job panel** (click any job): change the status, move drop-off/pick-up, call or email the customer,
   see the services, keep job notes (keys, gate codes), work the **vehicle checklist**, and add **photos**.
 - **Customer sign-off at drop-off.** In the job panel, the shop writes the condition notes (chips, scratches,
-  curb rash), the customer types their name, signs with a finger and ticks that they agree. The signature,
+  curb rash) and the customer's name, then taps **Hand to the customer to sign**. The screen goes **full
+  screen and locks** for the customer, in two steps made for a finger on a phone: **Review** (what they agree
+  to, the condition notes, the before photos, and big boxes to tick: they agree, and optionally OK to post
+  photos on social media), then **Sign**, where the whole screen is the signing area with Back, Clear and
+  Done. Swiping or pressing back doesn't close it; only **Cancel** (with a check) does. On Android it goes
+  truly full screen and turns sideways; on an iPhone it covers the screen and suggests turning the phone
+  sideways for more room (iPhones don't let a web page lock the screen). The signature (cropped to the ink),
   notes, wording and before-photo count are saved on the job and logged on the lead.
 
 ### Vehicle checklist

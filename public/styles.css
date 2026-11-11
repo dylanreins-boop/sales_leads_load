@@ -2531,3 +2531,62 @@ html[data-icons="lines"] .emo, html[data-icons="lines"] .grp-emo { display: none
   .soc-tabs button { padding: 7px 8px; font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .soc-pv-slide, .soc-pv-end, .soc-pv-slide.zoom .soc-pv-fg { animation: none; } }
+
+/* ---- The customer signing screen: full screen and locked, made for a finger on a phone ---- */
+body.signing { overflow: hidden; overscroll-behavior: none; }
+body.signing .toasts { z-index: 1001; }
+.signoff-start { min-height: 48px; font-size: 16px; }
+.sign-screen {
+  position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+  background: var(--bg); color: var(--text); overscroll-behavior: none; touch-action: manipulation;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  animation: signIn 0.2s var(--ease);
+}
+@keyframes signIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.sign-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex: none; }
+.sign-title { display: grid; min-width: 0; }
+.sign-title strong { font: 700 17px var(--font-brand); }
+.sign-title span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sign-btn { min-height: 48px; padding: 0 18px; border-radius: 12px; font-size: 16px; font-weight: 600; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+.sign-cancel { min-height: 40px; font-size: 14px; flex: none; }
+.sign-big { min-height: 52px; padding: 0 26px; border-radius: 12px; font-size: 17px; font-weight: 700; }
+.sign-big:disabled { opacity: 0.45; }
+.sign-screen[data-step="review"] .sign-pad, .sign-screen[data-step="sign"] .sign-review { display: none; }
+
+/* Step 1: review and tick */
+.sign-review { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; display: grid; gap: 12px; align-content: start; width: 100%; max-width: 720px; margin: 0 auto; }
+.sign-terms { display: grid; gap: 12px; padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--border); }
+.sign-lead { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.4; }
+.sign-notes p { margin: 4px 0 0; white-space: pre-wrap; font-size: 15px; }
+.sign-notes b, .sign-photos b { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.sign-thumbs { display: flex; gap: 6px; overflow-x: auto; margin-top: 6px; padding-bottom: 2px; }
+.sign-thumbs img { width: 76px; height: 76px; flex: none; object-fit: cover; border-radius: 10px; background: var(--bg); }
+.sign-tick { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; margin: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); font-size: 16px; line-height: 1.4; color: var(--text); font-weight: 500; cursor: pointer; }
+.sign-tick:has(input:checked) { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
+.sign-check { width: 28px; height: 28px; flex: none; margin: 0; accent-color: var(--ok); }
+.sign-review > .sign-big { width: 100%; margin-top: 4px; }
+
+/* Step 2: the whole screen is the signing area */
+.sign-pad { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.sign-canvas { flex: 1; min-height: 0; width: 100%; display: block; background: #fff; border: 2px dashed #c7ced8; border-radius: 16px; touch-action: none; cursor: crosshair; }
+.sign-line { position: absolute; left: 30px; right: 30px; bottom: calc(66px + 20%); display: flex; align-items: flex-end; gap: 8px; color: #9aa4b2; pointer-events: none; }
+.sign-line span { font-size: 22px; line-height: 1; }
+.sign-line i { flex: 1; border-bottom: 2px solid #c7ced8; }
+.sign-line small { position: absolute; left: 30px; top: calc(100% + 6px); font-size: 13px; }
+.sign-pad-bar { display: flex; gap: 8px; align-items: center; flex: none; }
+.sign-pad-bar .sign-big { margin-left: auto; min-width: 140px; }
+.sign-rotate { display: none; margin: 0; text-align: center; font-size: 13px; color: var(--muted); }
+@media (orientation: portrait) and (max-width: 600px) {
+  .sign-screen[data-step="sign"] .sign-rotate { display: block; }
+  .sign-line { bottom: calc(92px + 18%); }
+}
+/* Phones held sideways: everything compact so the signing area gets the height. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .sign-head { padding: 4px 12px; }
+  .sign-title strong { font-size: 15px; }
+  .sign-pad { padding: 6px 10px; gap: 6px; }
+  .sign-btn { min-height: 42px; }
+  .sign-big { min-height: 44px; }
+  .sign-line { bottom: calc(56px + 18%); }
+  .sign-review { padding: 10px 14px; }
+}

@@ -774,12 +774,6 @@ function renderJob() {
   ].filter(Boolean));
 
   tickWork();
-  const pad = $('#jobBody .signature-pad');
-  if (pad) {
-    const details = pad.closest('details');
-    if (details.open) requestAnimationFrame(() => setUpPad(pad));
-    details.addEventListener('toggle', () => details.open && setUpPad(pad));
-  }
   const form = $('#jobScheduleForm');
   if (form) {
     const fillTimes = wireShopTime(form, { pipeline: () => job.pipeline, jobId: () => job.id });
@@ -919,83 +913,191 @@ function signOffSection(job, edit) {
   const before = job.photos.filter((p) => p.phase === 'before').length;
   return h('details', { class: 'card-section signoff', open: job.status === 'scheduled' || job.status === 'in_shop' },
     h('summary', {}, h('h3', {}, 'Customer sign-off')),
-    h('form', { class: 'signoff-form', onsubmit: saveSignOff },
-      h('p', { class: 'muted' }, `Walk around the vehicle with the customer. ${before ? `${before} before photo${before === 1 ? '' : 's'} taken.` : 'Take before photos first (Photos below).'} Then hand them the screen to sign.`),
+    h('form', { class: 'signoff-form', onsubmit: (e) => { e.preventDefault(); openSigning(e.target); } },
+      h('p', { class: 'muted' }, `Walk around the vehicle with the customer. ${before ? `${before} before photo${before === 1 ? '' : 's'} taken.` : 'Take before photos first (Photos below).'} Then hand them the screen: it goes full screen for them to review and sign with a finger.`),
       h('label', {}, 'Condition notes', h('textarea', { name: 'notes', rows: '3', placeholder: 'Chips on the hood, curb rash on the front left wheel…' })),
       h('label', {}, 'Customer name', h('input', { name: 'name', autocomplete: 'off', value: job.full_name || '' })),
-      h('div', { class: 'signature-wrap' },
-        h('canvas', { class: 'signature-pad', 'aria-label': 'Sign here with a finger or mouse' }),
-        h('span', { class: 'signature-hint', 'aria-hidden': 'true' }, 'Sign here'),
-        h('button', { type: 'button', class: 'link-btn signature-clear', onclick: (e) => clearPad(e.target.closest('.signature-wrap').querySelector('canvas')) }, 'Clear')),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'agree' }),
-        ` I walked around my vehicle with ${state.meta.brand?.name || 'the shop'} and agree its condition is as noted above and in the before photos.`),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'social_ok' }),
-        ` OK to post photos of my vehicle on ${state.meta.brand?.name || 'the shop'}'s social media (no names or license plates).`),
-      h('button', { type: 'submit', class: 'primary' }, 'Save signature')));
+      h('button', { type: 'submit', class: 'primary signoff-start' }, '✍️ Hand to the customer to sign')));
 }
 
-// A finger/mouse signature pad on a canvas (sharp on high-density screens).
-function setUpPad(canvas) {
-  if (!canvas || canvas.dataset.ready) return;
-  canvas.dataset.ready = '1';
-  const ratio = window.devicePixelRatio || 1;
+// ---------- the signing screen: full screen and locked, made for a finger on a phone ----------
+// Two steps: Review (what they agree to, the condition notes, the before photos, the two boxes to tick),
+// then Sign (the whole screen is the signing area). It can't be swiped or backed out of by accident:
+// only Cancel (with a check) closes it. On Android it goes truly full screen and turns sideways; on an
+// iPhone it covers the screen and asks them to turn the phone sideways for more room.
+function openSigning(form) {
+  const job = cal.job;
+  const name = form.name.value.trim();
+  if (!name) return toast('Type the customer\'s name', 'error');
+  const notes = form.notes.value.trim();
+  const company = state.meta.brand?.name || 'the shop';
+  const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(' ') || job.vehicle_type || 'vehicle';
+  const befores = job.photos.filter((p) => p.phase === 'before');
+
+  // Full screen, sideways on phones (Android; an iPhone ignores both and gets the cover instead).
+  const root = document.documentElement;
+  const phone = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
+  if (root.requestFullscreen && !document.fullscreenElement) {
+    root.requestFullscreen({ navigationUI: 'hide' }).then(() => { if (phone) screen.orientation?.lock?.('landscape').catch(() => {}); }).catch(() => {});
+  }
+  document.body.classList.add('signing');
+  // The back button / back swipe doesn't close it.
+  history.pushState({ signing: true }, '');
+  const onBack = () => { history.pushState({ signing: true }, ''); toast('Tap Cancel to stop signing'); };
+  window.addEventListener('popstate', onBack);
+
+  let step = 'review';
+  const agree = h('input', { type: 'checkbox', class: 'sign-check' });
+  const social = h('input', { type: 'checkbox', class: 'sign-check' });
+  const nextBtn = h('button', { type: 'button', class: 'primary sign-big', disabled: true, onclick: () => show('sign') }, 'Next: sign →');
+  agree.addEventListener('change', () => { nextBtn.disabled = !agree.checked; });
+
+  const review = h('div', { class: 'sign-review' },
+    h('div', { class: 'sign-terms' },
+      h('p', { class: 'sign-lead' }, `I, ${name}, walked around my ${vehicle} with ${company}.`),
+      h('div', { class: 'sign-notes' }, h('b', {}, 'Condition notes'), h('p', {}, notes || 'None noted.')),
+      befores.length ? h('div', { class: 'sign-photos' }, h('b', {}, `Before photos (${befores.length})`),
+        h('div', { class: 'sign-thumbs' }, ...befores.slice(0, 12).map((ph) => h('img', { src: photoUrl(ph), alt: ph.caption || 'Before photo', loading: 'lazy' }))))
+        : h('p', { class: 'muted' }, 'No before photos.')),
+    h('label', { class: 'sign-tick' }, agree, h('span', {}, `I agree my vehicle's condition is as noted above and in the before photos.`)),
+    h('label', { class: 'sign-tick' }, social, h('span', {}, `OK to post photos of my vehicle on ${company}'s social media (no names or license plates). Optional.`)),
+    nextBtn);
+
+  // The pad: the strokes are kept, so turning the phone redraws them at the new size.
+  const canvas = h('canvas', { class: 'sign-canvas', 'aria-label': 'Sign here with your finger' });
+  const strokes = [];
+  let width = 1;
+  const ctx = () => canvas.getContext('2d');
   const size = () => {
     const box = canvas.getBoundingClientRect();
+    if (!box.width) return;
+    const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.round(box.width * ratio);
     canvas.height = Math.round(box.height * ratio);
-    const ctx = canvas.getContext('2d');
-    ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.4;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#0e1a2b';
+    width = box.width;
+    const c = ctx();
+    c.setTransform(ratio, 0, 0, ratio, 0, 0);
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = '#0e1a2b';
+    redraw();
   };
-  size();
-  let drawing = false;
-  const point = (e) => { const b = canvas.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  const lineWidth = (p) => Math.max(2.2, Math.min(5, width / 260)) * (p ? 0.7 + p * 0.6 : 1);
+  const drawSeg = (a, b) => {
+    const c = ctx();
+    c.lineWidth = lineWidth(b[2]);
+    c.beginPath();
+    c.moveTo(a[0] * width, a[1] * width);
+    c.lineTo(b[0] * width, b[1] * width);
+    c.stroke();
+  };
+  function redraw() {
+    ctx().clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of strokes) {
+      if (s.length === 1) drawSeg(s[0], s[0]);
+      for (let i = 1; i < s.length; i += 1) drawSeg(s[i - 1], s[i]);
+    }
+  }
+  const at = (e) => { const b = canvas.getBoundingClientRect(); return [(e.clientX - b.left) / width, (e.clientY - b.top) / width, e.pointerType === 'pen' ? e.pressure : 0]; };
+  let cur = null;
   canvas.addEventListener('pointerdown', (e) => {
-    drawing = true;
-    canvas.setPointerCapture(e.pointerId);
-    const ctx = canvas.getContext('2d');
-    ctx.beginPath();
-    ctx.moveTo(...point(e));
-    ctx.lineTo(...point(e));
-    ctx.stroke();
-    canvas.dataset.signed = '1';
-    canvas.parentElement.classList.add('signed');
     e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    cur = [at(e)];
+    strokes.push(cur);
+    drawSeg(cur[0], cur[0]);
+    signed();
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!drawing) return;
-    const ctx = canvas.getContext('2d');
-    ctx.lineTo(...point(e));
-    ctx.stroke();
+    if (!cur) return;
     e.preventDefault();
+    for (const ev of e.getCoalescedEvents?.() || [e]) {
+      const pt = at(ev);
+      drawSeg(cur[cur.length - 1], pt);
+      cur.push(pt);
+    }
   });
-  const stop = () => { drawing = false; };
-  canvas.addEventListener('pointerup', stop);
-  canvas.addEventListener('pointercancel', stop);
-}
+  const end = () => { cur = null; };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  const hint = h('div', { class: 'sign-line', 'aria-hidden': 'true' }, h('span', {}, '✕'), h('i', {}), h('small', {}, `${name} · sign above the line`));
+  const doneBtn = h('button', { type: 'button', class: 'primary sign-big', disabled: true, onclick: finish }, 'Done');
+  const clearBtn = h('button', { type: 'button', class: 'sign-btn', onclick: () => { strokes.length = 0; redraw(); signed(); } }, 'Clear');
+  function signed() {
+    const any = strokes.length > 0;
+    doneBtn.disabled = !any;
+    pad.classList.toggle('has-ink', any);
+  }
+  const pad = h('div', { class: 'sign-pad' }, canvas, hint,
+    h('div', { class: 'sign-pad-bar' },
+      h('button', { type: 'button', class: 'sign-btn', onclick: () => show('review') }, '← Back'),
+      clearBtn, doneBtn),
+    h('p', { class: 'sign-rotate' }, '↻ Turn your phone sideways for more room'));
 
-function clearPad(canvas) {
-  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-  delete canvas.dataset.signed;
-  canvas.parentElement.classList.remove('signed');
-}
+  const title = h('div', { class: 'sign-title' }, h('strong', {}, 'Drop-off sign-off'), h('span', {}, `${vehicle} · ${company}`));
+  const cancel = h('button', { type: 'button', class: 'sign-btn sign-cancel', onclick: async () => {
+    if (await askConfirm('Stop signing?', 'Nothing is saved. Hand the screen back to the shop.', { ok: 'Stop signing' })) close();
+  } }, 'Cancel');
+  const screenEl = h('div', { class: 'sign-screen', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Customer sign-off' },
+    h('div', { class: 'sign-head' }, title, cancel), review, pad);
+  document.body.append(screenEl);
+  const ro = new ResizeObserver(() => { if (step === 'sign') size(); });
+  ro.observe(canvas);
 
-async function saveSignOff(e) {
-  e.preventDefault();
-  const f = e.target;
-  const canvas = f.querySelector('canvas');
-  if (!f.name.value.trim()) return toast('Type the customer\'s name', 'error');
-  if (!canvas.dataset.signed) return toast('Have the customer sign in the box', 'error');
-  if (!f.agree.checked) return toast('The customer needs to tick the box to agree', 'error');
-  try {
-    cal.job = await api(`/api/jobs/${cal.job.id}/signoff`, { method: 'POST', body: { name: f.name.value, notes: f.notes.value, agree: true, social_ok: f.social_ok.checked, signature: canvas.toDataURL('image/png') } });
-    renderJob();
-    syncJobOnCalendar(cal.job);
-    toast('Signature saved');
-  } catch (err) { fail(err); }
+  function show(which) {
+    step = which;
+    screenEl.dataset.step = which;
+    if (which === 'sign') requestAnimationFrame(size);
+  }
+  show('review');
+
+  function close() {
+    ro.disconnect();
+    window.removeEventListener('popstate', onBack);
+    screenEl.remove();
+    document.body.classList.remove('signing');
+    try { screen.orientation?.unlock?.(); } catch { /* not locked */ }
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    if (history.state?.signing) history.back();
+  }
+
+  // Only the part they signed, on a white-free (transparent) image, at most 1000 px wide.
+  function signatureImage() {
+    const pts = strokes.flat();
+    const xs = pts.map((p) => p[0] * width);
+    const ys = pts.map((p) => p[1] * width);
+    const padPx = 14;
+    const x0 = Math.max(0, Math.min(...xs) - padPx);
+    const y0 = Math.max(0, Math.min(...ys) - padPx);
+    const x1 = Math.min(canvas.getBoundingClientRect().width, Math.max(...xs) + padPx);
+    const y1 = Math.min(canvas.getBoundingClientRect().height, Math.max(...ys) + padPx);
+    const ratio = canvas.width / canvas.getBoundingClientRect().width;
+    const w = Math.max(40, x1 - x0);
+    const hgt = Math.max(30, y1 - y0);
+    const scale = Math.min(1, 1000 / (w * ratio));
+    const out = document.createElement('canvas');
+    out.width = Math.round(w * ratio * scale);
+    out.height = Math.round(hgt * ratio * scale);
+    out.getContext('2d').drawImage(canvas, x0 * ratio, y0 * ratio, w * ratio, hgt * ratio, 0, 0, out.width, out.height);
+    return out.toDataURL('image/png');
+  }
+
+  async function finish() {
+    if (!strokes.length) return toast('Sign in the box first', 'error');
+    doneBtn.disabled = true;
+    doneBtn.textContent = 'Saving…';
+    try {
+      cal.job = await api(`/api/jobs/${job.id}/signoff`, { method: 'POST', body: { name, notes, agree: agree.checked, social_ok: social.checked, signature: signatureImage() } });
+      close();
+      renderJob();
+      syncJobOnCalendar(cal.job);
+      toast('Signed. Thank you!');
+    } catch (err) {
+      fail(err);
+      doneBtn.disabled = false;
+      doneBtn.textContent = 'Done';
+    }
+  }
 }
 
 async function finishWork() {
