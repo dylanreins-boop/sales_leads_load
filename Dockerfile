@@ -2,8 +2,8 @@
 FROM node:22-slim
 
 ENV NODE_ENV=production
-# ffmpeg sizes the social media photos and makes the YouTube Shorts video.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# ffmpeg sizes the social media photos and makes the Reels and Shorts; the font draws the words on them.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund

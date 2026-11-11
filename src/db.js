@@ -377,7 +377,7 @@ CREATE INDEX IF NOT EXISTS clock_alerts_open ON clock_alerts (seen_at, created_a
 -- Social posts made from a finished job's photos: a draft an admin approves, then the result per platform.
 CREATE TABLE IF NOT EXISTS social_posts (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  job_id      INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  job_id      INTEGER REFERENCES jobs (id) ON DELETE CASCADE,  -- empty for a post made from scratch
   status      TEXT NOT NULL DEFAULT 'draft',
   caption     TEXT NOT NULL,
   photo_ids   TEXT NOT NULL,
@@ -391,6 +391,17 @@ CREATE TABLE IF NOT EXISTS social_posts (
   posted_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS social_posts_job ON social_posts (job_id);
+-- Photos and video clips uploaded for social posts (not from a job), and the background music.
+CREATE TABLE IF NOT EXISTS social_media (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL,              -- photo | clip | music
+  file        TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  name        TEXT,
+  bytes       INTEGER NOT NULL DEFAULT 0,
+  created_by  TEXT,
+  created_at  TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS pay_rates (
   name_norm  TEXT PRIMARY KEY,
   user_name  TEXT NOT NULL,
@@ -554,6 +565,28 @@ function migrate(db) {
   for (const column of ['utm_source', 'utm_medium', 'utm_content', 'utm_term', 'landing_page', 'referrer_url']) if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   // Who recorded the customer's OK (or that they took it back), when, and how (signoff | staff).
   for (const column of ['social_ok_by', 'social_ok_at', 'social_ok_how']) if (!has('jobs', column)) db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
+  // Social posts can be made from scratch (no job), scheduled, approved ahead of time, and made into a Reel.
+  const jobCol = db.prepare('PRAGMA table_info(social_posts)').all().find((c) => c.name === 'job_id');
+  if (jobCol?.notnull) {
+    const cols = db.prepare('PRAGMA table_info(social_posts)').all().map((c) => c.name).join(', ');
+    // The usual SQLite table rebuild: foreign key checks off while the rows move (an old post can point at a
+    // job that's gone).
+    const fk = db.prepare('PRAGMA foreign_keys').get()?.foreign_keys;
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec(`CREATE TABLE social_posts_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER REFERENCES jobs (id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'draft',
+      caption TEXT NOT NULL, photo_ids TEXT NOT NULL, platforms TEXT NOT NULL, results TEXT, media_token TEXT, created_by TEXT,
+      created_at TEXT NOT NULL, decided_by TEXT, decided_at TEXT, posted_at TEXT)`);
+    db.exec(`INSERT INTO social_posts_new (${cols}) SELECT ${cols} FROM social_posts`);
+    db.exec('DROP TABLE social_posts');
+    db.exec('ALTER TABLE social_posts_new RENAME TO social_posts');
+    db.exec('CREATE INDEX IF NOT EXISTS social_posts_job ON social_posts (job_id)');
+    if (fk) db.exec('PRAGMA foreign_keys = ON');
+  }
+  for (const column of ['kind', 'post_type', 'title', 'notes', 'items', 'overlay', 'video_style', 'ai_clip', 'scheduled_for', 'approve_by',
+    'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'missed_at', 'rendered_at']) {
+    if (!has('social_posts', column)) db.exec(`ALTER TABLE social_posts ADD COLUMN ${column} TEXT`);
+  }
   if (!has('time_punches', 'out_reason')) db.exec('ALTER TABLE time_punches ADD COLUMN out_reason TEXT');
   // Where they were when they clocked in (shop logins clock in at the shop), and how far that was from it.
   for (const [column, type] of [['clock_in_lat', 'REAL'], ['clock_in_lng', 'REAL'], ['clock_in_accuracy', 'REAL'], ['clock_in_distance', 'REAL'], ['clock_in_off_site', 'INTEGER']]) {

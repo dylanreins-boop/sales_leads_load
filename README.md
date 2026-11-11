@@ -854,36 +854,95 @@ tracking numbers).
 
 ## Social media posts
 
-Finished jobs' photos can go to the company's **Facebook**, **Instagram**, **TikTok** and **YouTube
-Shorts**, with one tap from an admin. Nothing posts on its own.
+Posts and Reels for the company's **Facebook**, **Instagram**, **TikTok** and **YouTube Shorts**, made in
+the app, scheduled ahead and approved by an admin before they go out. Admins only. Nothing goes out without
+an admin's OK.
 
-1. **The customer's OK.** The drop-off sign-off has a checkbox: "OK to post photos of my vehicle (no
-   names or license plates)". It's added to the signed terms. The job's **Social media** section shows
-   it, and staff can change it if the customer changes their mind. No OK, no post.
-2. **A draft.** When a job with after photos (and the OK) is marked **Ready for pickup** or **Picked up**,
-   a draft appears in **Social** (admins; the badge counts what's waiting). Admins can also tap **Make a
+**Social** has four tabs:
+
+- **Calendar**: a month of what's going out and what went out, the posts **Waiting for approval** (with
+  their deadline and an **Approve** button), and the ones approved and scheduled.
+- **Drafts**: posts being worked on.
+- **Posted**: where each post went, with View links, and **Try the failed ones again**.
+- **Settings**: the approval lead time, the starting format, music for Reels, the caption template.
+
+### Making a post
+
+A post starts one of two ways:
+
+1. **From a finished job.** When a job with after photos (and the customer's OK) is marked **Ready for
+   pickup** or **Picked up**, a draft lands in Drafts by itself (once per job). Admins can also tap **Make a
    social post** on any job with the OK.
-3. **Approve.** Tap the photos in the order you want them (numbered; up to 8), edit the caption and pick
-   where it goes. A preview beside it plays the photos in that order (as the YouTube Short will, 2.5 seconds
-   each) with the caption. Drafts save as you type. **Post it** shows where it's going and asks for a last
-   check (no readable plates; no faces, names or paperwork; no customer names in the caption) before
-   anything goes up. Or **Skip**. Captions fill in from a template (Social → Settings) with the vehicle,
-   color, services, company, city and phone. Customer names are never used.
-4. **Results.** Each place shows Posted with a View link, or why it didn't post, and **Try the failed
-   ones again** retries only those. You can close Social while it posts; it shows "Posting…" and updates by
-   itself. A post left half-done (the server restarted) is marked as not finished after 15 minutes, so you can
-   check the page and try again.
-5. **Changing their mind.** The job's Social media section shows who recorded the OK, when and how (on the
-   sign-off, or the customer told staff). **They changed their mind** records that too, skips any post still
-   waiting, blocks retries, and lists what's already up (with links) so it can be taken down by hand.
-   Auto drafts are made once per job.
+2. **+ New post.** Pick the kind of post (Before & after, Finished job, Tip or how-to, Special offer,
+   Customer review, Behind the scenes), then build it.
 
-What each place gets: Facebook, a Page post with the photos; Instagram, a carousel; TikTok, a photo post;
-YouTube Shorts, a short vertical before-and-after video the server makes from the photos (needs `ffmpeg`,
-which the Docker image and `deploy/oracle/setup.sh` install). Photos are sized to 1080x1350 and served from
-`PUBLIC_URL` for a day so the platforms can fetch them, so `PUBLIC_URL` must be the public HTTPS address.
+The editor:
 
-Connecting each one (once, on the server; the Settings card shows what's connected):
+- **Photos and clips, in order** (up to 10): from **any job whose customer OK'd posting** (jobs without the
+  OK aren't offered), or **uploaded** (the shop's own photos and short video clips: polishing, water
+  beading, the shop). Reorder with the arrows; take one out with ×.
+- **Format: Photos or Reel video.** Photos: Facebook and Instagram get the photos, TikTok a photo post,
+  YouTube Shorts a simple slideshow. **Reel**: one vertical video everywhere (1080x1920), made on the
+  server: each photo fills the frame over a blurred copy of itself and slowly zooms in, **BEFORE / AFTER**
+  labels, a wipe from the before to the after, clips play up to 5 seconds, your **opening words** on the
+  first shot, and an ending with the logo, your **ending words** and the phone number. Music if the shop
+  uploaded a track (Settings); otherwise silent. Clips only go in Reels. **Make the real video to watch**
+  makes the actual Reel (about 15 seconds) so you can see it before it goes anywhere; the phone preview
+  beside the editor shows how it plays as you type.
+- **✨ Write it for me**: Claude writes the caption and hashtags, the opening and ending words, and an idea
+  for an AI intro clip, from the kind of post, the vehicles and work in the photos, and **What's it about?**
+  (an offer's terms, the tip, what the customer said). It never uses customer names and doesn't invent
+  prices, discounts or warranties. Without `ANTHROPIC_API_KEY` it fills in a template instead.
+- **🤖 AI intro clip (optional, paid).** Describe a short opening shot ("slow-motion water beading on black
+  paint"), and Google's Veo model makes it in a few minutes while you keep working. It opens the Reel and is
+  **always labeled**: "AI-generated" on the video, "Intro clip made with AI." in the caption, TikTok's AI
+  label (`is_aigc`) and YouTube's altered-or-synthetic flag (`containsSyntheticMedia`). The app always adds
+  "no people, no faces, no text, no logos, no license plates" to the description, so a clip can't pass for a
+  real customer's vehicle. Use it for an opening shot only, never as a job's results.
+- **Post to**, and **When it goes out**.
+
+Drafts save as you type.
+
+### Scheduling and approval
+
+- **Schedule for approval** puts the post on the Calendar as **Needs approval**. The time has to be at least
+  the approval lead time away (**2 days** by default; Settings, 0 to 14), and the post has to be approved by
+  then: a post going out Saturday at 10 AM must be approved by Thursday at 10 AM.
+- **Approve** (any admin) asks for the last check (no readable plates; no faces, names or paperwork; no
+  customer names in the caption). Approved posts go out **by themselves** at their time (the server checks
+  every minute).
+- **Not approved in time?** It doesn't go out. It goes back to Drafts marked "Not approved in time", and
+  shows crossed out on the Calendar. Pick a new time.
+- To change a scheduled or approved post, **Move back to Drafts** (it then needs scheduling and approving
+  again). **Cancel it** stops it.
+- **Post now** still posts a draft straight away (with the same last check).
+- The **Social** badge counts drafts and posts waiting for approval.
+
+### The customer's OK
+
+The drop-off sign-off has a checkbox: "OK to post photos of my vehicle (no names or license plates)". It's
+added to the signed terms. The job's **Social media** section shows who recorded the OK, when and how, and
+staff can change it. **They changed their mind** skips that job's posts still waiting, takes that job's
+photos out of any other scheduled post (which goes back to Drafts), blocks retries, and lists what's already
+up (with links) so it can be taken down by hand. Nothing with that job's photos can go out without the OK.
+
+### Results
+
+Each place shows Posted with a View link, or why it didn't post, and **Try the failed ones again** retries
+only those. You can close Social while it posts. A post left half-done (the server restarted) is marked as
+not finished after 15 minutes, so you can check the page and try again.
+
+What each place gets: **Facebook**, a Page post with the photos (or the Reel as a Page video);
+**Instagram**, a carousel (or a Reel; the app waits for Instagram to process it); **TikTok**, a photo post
+(or a video post); **YouTube Shorts**, the Reel or a slideshow. Photos are sized to 1080x1350. Media is
+served from `PUBLIC_URL` for the platforms to fetch, so `PUBLIC_URL` must be the public HTTPS address.
+Videos need `ffmpeg` and a font for the words (the Docker image and `deploy/oracle/setup.sh` install
+`ffmpeg` and `fonts-dejavu-core`; `SOCIAL_FONT` points at another .ttf). Without a font the Reel is made
+without words.
+
+### Connecting each platform
+
+Once, on the server; Settings shows what's connected:
 
 - **Facebook**: the same Meta app and Page token as Facebook leads, with `pages_manage_posts` added.
   Set `FB_PAGE_ID`.
@@ -893,13 +952,20 @@ Connecting each one (once, on the server; the Settings card shows what's connect
 - **TikTok**: create an app at developers.tiktok.com with **Content Posting API** (Direct Post) and the
   `video.publish` scope; sign in once with the company's TikTok to get a refresh token. Set
   `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REFRESH_TOKEN`, and verify the `PUBLIC_URL` domain
-  in the TikTok app (needed for photo posts). Until TikTok audits the app, posts are private ("only me").
+  in the TikTok app. Until TikTok audits the app, posts are private ("only me").
 - **YouTube Shorts**: a Google Cloud project with **YouTube Data API v3**, an OAuth client, and a refresh
   token from signing in once with the channel's Google account (scope `youtube.upload`). Set
   `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`. Until Google verifies the app,
   uploads are private; make them public from YouTube Studio.
+- **AI writing**: `ANTHROPIC_API_KEY` (the same key as the dialer's call notes). A caption costs well
+  under a cent.
+- **AI intro clips**: a Gemini API key from Google AI Studio with billing on, as `GEMINI_API_KEY`. Google
+  charges per second of video (roughly $0.10 to $0.40 a second depending on the model, so about $1 to $3 for
+  an 8-second clip; check Google's current price list). `AI_VIDEO_MODEL` picks the Veo model (default
+  `veo-3.1-generate-preview`); Google renames and retires these, so set it to a current one from Google's
+  Veo page if clips stop starting.
 
-All four APIs are free to use.
+The four posting APIs are free to use.
 
 ## Importing leads from before the app
 
@@ -1130,10 +1196,17 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/payroll?from=&to=` | Time & Pay for a period (admins) |
 | PUT | `/api/pay-rates`, `/api/payroll/settings` | Hourly rates `{ user_name, rate }` and payroll rules (overtime, `review_day`, `payroll_emails`) |
 | POST | `/api/timecard/approve-week`, `/api/clock/out { approve_week }` | Approve your own week (on Friday, clocking out needs it) |
-| GET | `/api/social`, `/api/social/waiting` | Admins: social posts waiting, posted and skipped, settings, what's connected / the waiting count |
-| POST | `/api/social/jobs/:id` | Admins: make a social post from a job (the customer must have OK'd it) |
-| PATCH / POST | `/api/social/:id`, `/api/social/:id/post\|retry\|skip` | Admins: edit `{ caption, photo_ids, platforms }`, post it, retry the failed places, skip it |
-| PUT | `/api/social/settings` | Admins: `{ auto_draft, platforms, caption, hashtags }` |
+| GET | `/api/social`, `/api/social/waiting` | Admins: drafts, planned (scheduled and approved), done, settings, what's connected, AI on/off / the badge count |
+| GET | `/api/social/library` | Admins: photos of jobs whose customer OK'd posting, and the uploads |
+| POST / GET / DELETE | `/api/social/media`, `/api/social/media/:id` | Admins: upload a photo or clip as the raw file (`?name=`; `?kind=music` for the Reel music), get it (byte ranges), delete it |
+| POST | `/api/social`, `/api/social/jobs/:id` | Admins: a new post `{ post_type, title }` / a post from a job (the customer must have OK'd it) |
+| PATCH | `/api/social/:id` | Admins: edit a draft `{ caption, items, platforms, title, notes, post_type, video_style, overlay: { hook, end_text } }` |
+| POST | `/api/social/:id/write` | Admins: a suggested caption, hashtags, words on the video and AI clip idea (not saved) |
+| POST | `/api/social/:id/schedule\|approve\|unschedule` | Admins: schedule `{ at }` (at least the approval lead time away), approve it, move it back to Drafts |
+| POST | `/api/social/:id/post\|retry\|skip` | Admins: post a draft now, retry the failed places, skip or cancel it |
+| POST / GET | `/api/social/:id/render`, `/api/social/:id/preview.mp4` | Admins: make the Reel to watch, and watch it |
+| POST / DELETE / GET | `/api/social/:id/ai-clip`, `/api/social/:id/ai-clip.mp4` | Admins: make an AI intro clip `{ prompt }` (Gemini API), take it out, watch it |
+| PUT | `/api/social/settings` | Admins: `{ auto_draft, platforms, caption, hashtags, approve_days, video_style }` |
 | PATCH | `/api/jobs/:id/social-ok` | Staff: the customer's OK to post photos `{ ok }` (taking it back skips waiting posts) |
 | POST | `/api/payroll/weeks/:sunday/approve`, `/api/payroll/weeks/:sunday/email` | Admins: approve a pay week, email its summary now |
 | GET / POST | `/api/clock/alerts`, `/api/clock/alerts/seen { ids \| 'all' }` | Admins: clock-ins away from the shop not yet marked seen (the red bar) |

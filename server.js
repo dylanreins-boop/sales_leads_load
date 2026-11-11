@@ -19,6 +19,8 @@ const { createMailer, PLACEHOLDERS } = require('./src/email');
 const { VEHICLE_FIELDS, VEHICLE_TYPES, PIPELINES } = require('./src/vehicle');
 const { createPipelineService } = require('./src/pipelines');
 const { createSocialService } = require('./src/social');
+const { createSocialWriter } = require('./src/socialwriter');
+const { createVideoAi } = require('./src/aivideo');
 const { createTimeService, TIME_OFF_KINDS } = require('./src/timeclock');
 const { BOOKING_SERVICES } = require('./src/services');
 const { HEARD_ABOUT_OPTIONS } = require('./src/answers');
@@ -180,7 +182,32 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer, socialMedia } = {}) {
+// Sends a file, with byte ranges (phones play videos in pieces).
+function sendFile(req, res, { file, type }, cache = 'private, max-age=3600') {
+  const size = fs.statSync(file).size;
+  const head = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff' };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (m && size) {
+    const suffix = m[1] === '';
+    const start = suffix ? Math.max(0, size - Number(m[2] || 0)) : Number(m[1]);
+    const end = suffix || m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+    if (start > end || start >= size) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(end - start + 1);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    return res.end(buf);
+  }
+  const data = fs.readFileSync(file);
+  res.writeHead(200, { ...head, 'Content-Length': data.length });
+  return res.end(data);
+}
+
+function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer, socialMedia, socialWriter, videoAi } = {}) {
   const leads = createLeadService(db, {
     reminderHour: config.reminderHour,
     skipWeekends: config.reminderSkipWeekends,
@@ -195,6 +222,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   // Social posts: the photos and video made for posting live next to the job photos.
   const social = createSocialService(db, {
     jobs, brand: config.brand, publicUrl: config.publicUrl, mediaDir: path.join(filesDir, 'social'), fetchImpl, ...(socialMedia && { media: socialMedia }),
+    writer: socialWriter || createSocialWriter(), videoAi: videoAi || createVideoAi(fetchImpl ? { fetchImpl } : {}),
+    logo: path.join(__dirname, 'public', 'brand', 'logo-white.png'),
     keys: { ...config.social, facebookToken: config.facebook.pageAccessToken, graphVersion: config.facebook.graphVersion },
   });
   const users = createUserService(db, { serverUsers: config.users });
@@ -916,9 +945,28 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   }
 
   // ---- Social posts (admins approve every post) ----
-  route('GET', '/api/social', () => ({ ...social.list(), settings: social.getSettings(), connections: social.connections(), platforms: social.PLATFORMS }), { roles: ADMIN });
+  route('GET', '/api/social', () => ({
+    ...social.list(), settings: social.getSettings(), connections: social.connections(), platforms: social.PLATFORMS, types: social.POST_TYPES, ai: social.aiInfo(),
+  }), { roles: ADMIN });
   route('GET', '/api/social/waiting', () => ({ count: social.waitingCount() }), { roles: ADMIN });
   route('PUT', '/api/social/settings', ({ body }) => social.saveSettings(body), { roles: ADMIN });
+  route('GET', '/api/social/library', () => social.library(), { roles: ADMIN });
+  // Uploads: photos and clips for posts (and, with ?kind=music, the background music), as the raw file.
+  route('POST', '/api/social/media', ({ raw, req, query, actor }) =>
+    social.addMedia(raw, { type: req.headers['content-type'], name: query.get('name'), kind: query.get('kind') }, actor),
+  { roles: ADMIN, rawBody: true, bodyLimit: 150_000_000 });
+  route('GET', '/api/social/media/:id', ({ params, req, res }) => sendFile(req, res, social.mediaById(Number(params.id))), { roles: ADMIN });
+  route('DELETE', '/api/social/media/:id', ({ params }) => social.deleteMedia(Number(params.id)), { roles: ADMIN });
+  route('POST', '/api/social', ({ body, actor }) => social.create(body, actor), { roles: ADMIN });
+  route('POST', '/api/social/:id/write', ({ params }) => social.write(Number(params.id)), { roles: ADMIN });
+  route('POST', '/api/social/:id/schedule', ({ params, body, actor }) => social.schedule(Number(params.id), body, actor), { roles: ADMIN });
+  route('POST', '/api/social/:id/approve', ({ params, actor }) => social.approve(Number(params.id), actor), { roles: ADMIN });
+  route('POST', '/api/social/:id/unschedule', ({ params }) => social.unschedule(Number(params.id)), { roles: ADMIN });
+  route('POST', '/api/social/:id/render', ({ params }) => social.render(Number(params.id)), { roles: ADMIN });
+  route('GET', '/api/social/:id/preview.mp4', ({ params, req, res }) => sendFile(req, res, social.previewFile(Number(params.id)), 'no-store'), { roles: ADMIN });
+  route('POST', '/api/social/:id/ai-clip', ({ params, body, actor }) => social.startClip(Number(params.id), body, actor), { roles: ADMIN });
+  route('DELETE', '/api/social/:id/ai-clip', ({ params }) => social.removeClip(Number(params.id)), { roles: ADMIN });
+  route('GET', '/api/social/:id/ai-clip.mp4', ({ params, req, res }) => sendFile(req, res, social.clipFile(Number(params.id)), 'no-store'), { roles: ADMIN });
   route('POST', '/api/social/jobs/:id', ({ params, actor }) => social.draftFor(Number(params.id), actor), { roles: ADMIN });
   route('PATCH', '/api/social/:id', ({ params, body }) => social.update(Number(params.id), body), { roles: ADMIN });
   route('POST', '/api/social/:id/skip', ({ params, actor }) => social.skip(Number(params.id), actor), { roles: ADMIN });
@@ -931,12 +979,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     return jobView(Number(params.id));
   }, { roles: CALENDAR });
   // The photos and video for a post, fetched by Facebook, Instagram and TikTok (the token is the key).
-  route('GET', '/social/media/:token/:name', ({ params, res }) => {
+  route('GET', '/social/media/:token/:name', ({ params, req, res }) => {
     const m = social.mediaFile(params.token, params.name);
     if (!m) throw new HttpError(404, 'Not found');
-    const data = fs.readFileSync(m.file);
-    res.writeHead(200, { 'Content-Type': m.type, 'Content-Length': data.length, 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
-    res.end(data);
+    sendFile(req, res, m, 'public, max-age=86400');
   }, { isPublic: true });
 
   // ---- Pipelines (admins set them up) ----
@@ -1106,6 +1152,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const alertTimer = setInterval(() => {
     runAlerts(); sendCampaigns(); sendWelcomes();
     timeClock.sendWeeklyDue().catch((err) => console.error('Weekly payroll email failed:', err.message));
+    // Scheduled social posts: approved ones go out at their time; ones not approved in time go back to Drafts.
+    social.runSchedule().catch((err) => console.error('Scheduled social posts failed:', err.message));
   }, 60000);
   alertTimer.unref();
   // Day-before reminders to customers and the shop's morning day sheet, checked every 5 minutes.
@@ -1119,7 +1167,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const noticeTimer = setInterval(sendReminders, 5 * 60000);
   noticeTimer.unref();
 
-  return async function handler(req, res) {
+  const handler = async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');
     try {
       const match = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
@@ -1163,6 +1211,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
       if (!res.headersSent) send(res, status, { error: status === 500 ? 'Server error' : err.message, ...(err.code && status < 500 && { code: err.code }) }, cors);
     }
   };
+  // For tests: the services behind the routes (e.g. to run the social schedule at a set time).
+  handler.services = { social };
+  return handler;
 }
 
 if (require.main === module) {
