@@ -2590,3 +2590,9 @@ body.signing .toasts { z-index: 1001; }
   .sign-line { bottom: calc(56px + 18%); }
   .sign-review { padding: 10px 14px; }
 }
+
+/* Import: the Zoho steps and the "everyone already booked" box */
+.import-howto { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.import-howto summary { cursor: pointer; font-weight: 600; color: var(--link); }
+.import-howto ol { margin: 10px 0 2px; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; }
+.import-booked { margin: 6px 0 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }

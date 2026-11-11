@@ -1,0 +1,9 @@
+Record Id,Lead Owner,Salutation,First Name,Last Name,Company,Email,Phone,Mobile,Lead Source,Lead Status,Created Time,Modified Time,Description,Street,City,State,Zip Code,Vehicle Year,Vehicle Make,Vehicle Model,Tag
+zcrm_5512000000123001,Sam Ortiz,Mr.,Carlos,Mendez,,carlos.m@example.com,,(702) 555-7781,Facebook,Not Contacted,2026-10-28 14:22:05,2026-10-28 14:22:05,Wants full coat before winter,,Las Vegas,NV,89123,2021,Ford,F-150,
+zcrm_5512000000123002,Sam Ortiz,Ms.,Tina,Park,,tina.park@example.com,702-555-1934,,Website,Attempted to Contact,2026-09-15 09:03:44,2026-09-20 10:00:00,,,Henderson,NV,89052,2023,Tesla,Model Y,
+zcrm_5512000000123003,Dylan Reins,,Mike,Rossi,,,725-555-0049,,Advertisement,Contacted,2026-08-02 11:40:00,2026-08-03 08:00:00,Quoted 1895,,,,,2020,BMW,X5,hot
+zcrm_5512000000123004,Sam Ortiz,,Jen,Alvarez,,jen@example.com,702-555-6610,,Cold Call,Junk Lead,2026-07-11 16:00:00,2026-07-11 16:00:00,,,,,,,,,
+zcrm_5512000000123005,Sam Ortiz,,Rob,Lee,,rob@example.com,702-555-3302,,Web Research,Not Qualified,2026-06-01 10:00:00,2026-06-01 10:00:00,,,,,,,,,
+zcrm_5512000000123006,Sam Ortiz,,Ana,Diaz,,ana@example.com,702-555-9920,,Employee Referral,Contact in Future,2026-05-05 10:00:00,2026-05-06 10:00:00,Call back in spring,,,,,2019,Jeep,Wrangler,
+zcrm_5512000000123007,Sam Ortiz,,Lou,Grant,,lou@example.com,702-555-4401,,Chat,Pre-Qualified,"Oct 30, 2026 03:15 PM",,,,,,,,,,
+zcrm_5512000000123008,Sam Ortiz,,Kim,Ng,,kim@example.com,702-555-8812,,Partner,Lost Lead,2026-04-04 10:00:00,,,,,,,,,,

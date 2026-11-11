@@ -108,3 +108,32 @@ test('a CSV goes on the board as fresh leads when asked, without new-lead alerts
   const template = await fetch(`${base}/api/import/template.csv`, { headers: { Authorization: ADMIN } });
   assert.match(await template.text(), /^First name,Last name,Phone,Email,Vehicle/);
 });
+
+test('a Zoho CRM leads export: the rep is never the customer, Mobile fills in, Zoho statuses land right', async () => {
+  const csv = fs.readFileSync(path.join(__dirname, 'fixtures', 'zoho-leads.csv'));
+  const up = (await upload(csv, 'Leads_2026_11_12.csv')).data;
+  const col = (key) => up.headers[up.mapping[key]];
+  assert.deepEqual([col('first_name'), col('last_name'), col('phone'), col('phone2'), col('status'), col('received_at'), col('message')],
+    ['First Name', 'Last Name', 'Phone', 'Mobile', 'Lead Status', 'Created Time', 'Description']);
+  assert.equal(up.mapping.full_name, undefined, 'Lead Owner is not the customer\'s name');
+  const check = (await call('POST', '/api/import/check', { token: up.token, mapping: up.mapping })).data;
+  const byName = Object.fromEntries(check.sample.map((l) => [l.first_name, l]));
+  assert.equal(byName.Carlos.full_name, undefined);
+  assert.equal(byName.Carlos.phone, '702-555-7781', 'Mobile used when Phone is empty');
+  assert.match(byName.Carlos.message, /Lead Owner: Sam Ortiz/);
+  assert.doesNotMatch(byName.Carlos.message, /Modified Time|Salutation/, 'CRM housekeeping columns left out');
+  assert.deepEqual(['Carlos', 'Tina', 'Mike', 'Jen', 'Rob', 'Ana', 'Lou', 'Kim'].map((n) => byName[n].stage),
+    ['new', 'voicemail', 'contacted', 'waste', 'waste', 'contacted', 'contacted', 'waste']);
+  // A Contacts export: everyone already booked.
+  const booked = (await call('POST', '/api/import/check', { token: up.token, mapping: up.mapping, all_booked: true })).data;
+  assert.deepEqual(booked.stages, { booked: booked.ready });
+  const done = (await call('POST', '/api/import/commit', { token: up.token, mapping: up.mapping, placement: 'auto', all_booked: true })).data;
+  assert.equal(done.created, 8);
+  assert.equal(done.customers + done.board, 8, 'old ones go to Past Customers, none to Old & Dead');
+  await call('POST', `/api/import/batches/${done.batch}/undo`);
+});
+
+test('Zoho deal stages and negative statuses', () => {
+  assert.deepEqual(['Not Contacted', 'Not Qualified', 'Attempted to Contact', 'Contact in Future', 'Pre-Qualified', 'Closed Won', 'Closed Lost', 'Proposal/Price Quote', 'Junk Lead']
+    .map(stageFrom), ['new', 'waste', 'voicemail', 'contacted', 'contacted', 'booked', 'waste', 'contacted', 'waste']);
+});

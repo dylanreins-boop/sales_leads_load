@@ -989,6 +989,26 @@ shows a preview, and asks where the leads go: **by date** (recent ones on the bo
 Old & Dead Leads, old booked customers to Past Customers), all on the board, or none. Leads already in the
 app and repeats in the file are skipped, columns that aren't matched are kept in the lead's notes, imports
 don't set off new-lead alerts, and every import can be **undone**. There's a sample file to start from.
+Up to 20,000 rows a file.
+
+**From Zoho CRM** (the import screen has these steps too):
+
+1. In Zoho, open **Leads** → view **All Leads** → **⋯** / Actions → **Export Leads**, as CSV with all fields
+   (or Setup → Data Administration → Export for everything).
+2. Choose the file in **Import leads**. Zoho's columns are matched for you: First Name, Last Name, Phone,
+   **Mobile** (used when Phone is empty; a second number goes in the notes), Email, Lead Source, Lead Status,
+   Created Time, Description, and custom fields named like Vehicle Year / Make / Model. **Lead Owner** (the
+   rep) is never taken as the customer's name; it's kept in the notes with the other unmatched columns, and
+   Zoho's own housekeeping columns (Modified Time, Created By, Salutation…) are left out.
+3. Lead Status becomes the stage: Not Contacted → New; Attempted to Contact → Voicemail; Contacted, Contact in
+   Future, Pre-Qualified → Contacted; Junk Lead, Lost Lead, Not Qualified → Waste. Deal stages work too
+   (Closed Won → Booked, Closed Lost → Waste, the rest → Contacted).
+4. Customers who already booked are usually in Zoho's **Contacts** (or Deals). Export them too and tick
+   **Everyone in this file already booked**, so they're marked Booked and the older ones land in Past
+   Customers.
+
+Created Time is read in the shop's time zone (`TZ`), as Zoho writes it. Leads already in the app (same phone or
+email) are skipped, so importing Leads and then Contacts won't double up people who are in both.
 
 ## Appearance
 

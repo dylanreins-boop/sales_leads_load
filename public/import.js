@@ -15,7 +15,7 @@ function importStep(step) {
   $('#importStart').hidden = step !== 'start';
   $('#importMatch').hidden = step !== 'match';
   $('#importDone').hidden = step !== 'done';
-  if (step === 'start') { $('#importFile').value = ''; $('#importError').hidden = true; }
+  if (step === 'start') { $('#importFile').value = ''; $('#importError').hidden = true; $('#importAllBooked').checked = false; }
 }
 
 async function uploadImport(e) {
@@ -59,7 +59,7 @@ function renderImportColumns() {
 }
 
 async function checkImport() {
-  const r = await api('/api/import/check', { method: 'POST', body: { token: imp.upload.token, mapping: imp.mapping } });
+  const r = await api('/api/import/check', { method: 'POST', body: { token: imp.upload.token, mapping: imp.mapping, all_booked: $('#importAllBooked').checked } });
   const stages = Object.entries(r.stages).map(([s, n]) => `${n} ${STAGE_NAMES[s] || s}`).join(', ');
   $('#importSummary').textContent = `${r.ready} of ${r.total} will be imported${stages ? ` (${stages})` : ''}${r.skipped ? `; ${r.skipped} skipped` : ''}.`;
   $('#importGo').textContent = `Import ${r.ready} lead${r.ready === 1 ? '' : 's'}`;
@@ -86,7 +86,7 @@ async function runImport() {
   const placement = document.querySelector('[name=importPlace]:checked').value;
   $('#importGo').disabled = true;
   try {
-    const r = await api('/api/import/commit', { method: 'POST', body: { token: imp.upload.token, mapping: imp.mapping, placement } });
+    const r = await api('/api/import/commit', { method: 'POST', body: { token: imp.upload.token, mapping: imp.mapping, placement, all_booked: $('#importAllBooked').checked } });
     $('#importDone').replaceChildren(
       h('h3', {}, `Imported ${r.created} lead${r.created === 1 ? '' : 's'}`),
       h('ul', { class: 'import-result' },
@@ -130,6 +130,7 @@ function initImport() {
   if (!isAdmin()) return;
   $('#importBtn').addEventListener('click', openImport);
   $('#importFile').addEventListener('change', uploadImport);
+  $('#importAllBooked').addEventListener('change', () => checkImport().catch(fail));
   $('#importGo').addEventListener('click', runImport);
   $('#importRestart').addEventListener('click', () => importStep('start'));
 }

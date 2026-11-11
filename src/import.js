@@ -9,10 +9,11 @@ const { readSheet } = require('./sheets');
 const { normalizeVehicleType, VEHICLE_TYPES } = require('./vehicle');
 
 const FIELDS = [
-  { key: 'full_name', label: 'Full name', words: ['name', 'full name', 'customer', 'customer name', 'client', 'client name', 'contact', 'contact name', 'lead name', 'lead'] },
+  { key: 'full_name', label: 'Full name', words: ['name', 'full name', 'customer', 'customer name', 'client', 'client name', 'contact', 'contact name', 'lead name'] },
   { key: 'first_name', label: 'First name', words: ['first', 'first name', 'fname', 'given name'] },
   { key: 'last_name', label: 'Last name', words: ['last', 'last name', 'lname', 'surname', 'family name'] },
   { key: 'phone', label: 'Phone', words: ['phone', 'phone number', 'phone #', 'phone no', 'mobile', 'cell', 'cell phone', 'telephone', 'tel', 'number', 'contact number'] },
+  { key: 'phone2', label: 'Other phone (used when Phone is empty)', words: ['mobile', 'mobile phone', 'cell', 'cell phone', 'other phone', 'home phone', 'work phone', 'phone 2', 'secondary phone', 'alternate phone'] },
   { key: 'email', label: 'Email', words: ['email', 'e mail', 'email address', 'mail'] },
   { key: 'vehicle', label: 'Vehicle (year, make and model together)', words: ['vehicle', 'car', 'year make model', 'ymm', 'vehicle info', 'vehicle details', 'what vehicle'] },
   { key: 'vehicle_year', label: 'Year', words: ['year', 'vehicle year', 'yr', 'model year'] },
@@ -28,7 +29,13 @@ const FIELDS = [
 ];
 const FIELD_KEYS = FIELDS.map((f) => f.key);
 const PLACEMENTS = ['auto', 'board', 'archive'];
-const MAX_ROWS = 5000;
+const MAX_ROWS = 20000;
+// Columns about the CRM itself, not the customer (Zoho and others): left out of the notes.
+const SKIP_COLUMNS = new Set(['modified time', 'modified by', 'created by', 'last activity time', 'layout', 'salutation', 'currency', 'exchange rate',
+  'unsubscribed mode', 'unsubscribed time', 'change log time', 'locked', 'last enriched time', 'enrich status', 'converted', 'is converted', 'record image']);
+// Who worked the lead in the old CRM, never the customer's name.
+const NOT_A_NAME = /\b(owner|created by|modified by|assigned|rep|salesperson|sales person|user|agent)\b/;
+const NAME_FIELDS = ['full_name', 'first_name', 'last_name'];
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9#]+/g, ' ').trim();
 const clean = (s) => String(s ?? '').trim();
@@ -41,7 +48,7 @@ function guessMapping(headers) {
   for (const pass of ['exact', 'partial']) {
     for (const field of FIELDS) {
       if (field.key in mapping) continue;
-      const i = heads.findIndex((h, idx) => !used.has(idx) && h && (pass === 'exact'
+      const i = heads.findIndex((h, idx) => !used.has(idx) && h && !(NAME_FIELDS.includes(field.key) && NOT_A_NAME.test(h)) && (pass === 'exact'
         ? field.words.includes(h)
         : field.words.some((w) => w.length > 3 && (` ${h} `).includes(` ${w} `))));
       if (i >= 0) { mapping[field.key] = i; used.add(i); }
@@ -52,11 +59,16 @@ function guessMapping(headers) {
   return mapping;
 }
 
+// Checked in this order, so "Not Contacted" is new and "Not Qualified" is waste. Includes Zoho's lead
+// statuses (Not Contacted, Attempted to Contact, Contact in Future, Pre-Qualified, Junk Lead, Lost Lead,
+// Not Qualified) and deal stages (Qualification ... Closed Won / Closed Lost).
 const STAGE_WORDS = [
+  ['new', ['not contacted', 'not yet contacted', 'uncontacted', 'never contacted']],
+  ['waste', ['dead', 'lost', 'not interested', 'no', 'waste', 'wrong number', 'bad number', 'do not call', 'dnc', 'junk', 'spam', 'closed lost', 'not qualified', 'unqualified', 'disqualified']],
   ['booked', ['booked', 'sold', 'won', 'customer', 'completed', 'complete', 'done', 'paid', 'closed won', 'scheduled']],
-  ['waste', ['dead', 'lost', 'not interested', 'no', 'waste', 'wrong number', 'bad number', 'do not call', 'dnc', 'junk', 'spam', 'closed lost']],
-  ['voicemail', ['voicemail', 'vm', 'left message', 'left vm']],
-  ['contacted', ['contacted', 'talked', 'spoke', 'follow up', 'following up', 'quoted', 'quote sent', 'interested', 'hot', 'warm']],
+  ['voicemail', ['voicemail', 'vm', 'left message', 'left vm', 'attempted to contact', 'attempted', 'no answer']],
+  ['contacted', ['contacted', 'talked', 'spoke', 'follow up', 'following up', 'quoted', 'quote sent', 'interested', 'hot', 'warm', 'contact in future',
+    'pre qualified', 'qualified', 'qualification', 'needs analysis', 'proposal', 'price quote', 'negotiation', 'value proposition', 'id decision makers', 'perception analysis']],
 ];
 function stageFrom(text) {
   const t = ` ${norm(text)} `;
@@ -69,12 +81,14 @@ function stageFrom(text) {
 function sourceFrom(text) {
   const t = norm(text);
   if (/\b(facebook|fb|instagram|ig|meta)\b/.test(t)) return { source: 'facebook' };
+  if (/\b(web research|cold call|trade show|seminar|partner|external referral)\b/.test(t) && !/referral/.test(t)) return { source: 'import', heard_about: 'Other', note: `Source: ${clean(text)}` };
+  if (/\b(chat|web chat|live chat)\b/.test(t)) return { source: 'website' };
   if (/\b(website|web|site|online form|form)\b/.test(t)) return { source: 'website' };
   if (!t) return { source: 'import' };
   if (/\b(google|search|internet|yelp)\b/.test(t)) return { source: 'import', heard_about: 'Searched on the internet' };
   if (/\b(referral|referred|friend|word of mouth|family)\b/.test(t)) return { source: 'import', heard_about: 'Word of mouth referral' };
   if (/\b(radio)\b/.test(t)) return { source: 'import', heard_about: 'Radio' };
-  if (/\b(social|tiktok|ad|ads)\b/.test(t)) return { source: 'import', heard_about: 'Saw an ad on social media' };
+  if (/\b(social|tiktok|ad|ads|advertisement|advertising)\b/.test(t)) return { source: 'import', heard_about: 'Saw an ad on social media' };
   return { source: 'import', heard_about: 'Other', note: `Source: ${clean(text)}` };
 }
 
@@ -110,7 +124,9 @@ function rowToLead(row, headers, mapping) {
     lead.first_name = first;
     lead.last_name = rest.join(' ') || null;
   }
-  lead.phone = prettyPhone(get('phone'));
+  // Phone, or the other number (Zoho's Mobile) when Phone is empty; a second, different number goes in the notes.
+  lead.phone = prettyPhone(get('phone') || get('phone2'));
+  if (get('phone') && get('phone2') && get('phone2').replace(/\D/g, '') !== get('phone').replace(/\D/g, '')) notes.push(`Other phone: ${prettyPhone(get('phone2')) || get('phone2')}`);
   const email = get('email');
   if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) lead.email = email;
   else if (email) notes.push(`Email (as written): ${email}`);
@@ -134,7 +150,7 @@ function rowToLead(row, headers, mapping) {
   const mapped = new Set(Object.values(mapping));
   headers.forEach((h, i) => {
     const v = clean(row[i]);
-    if (v && !mapped.has(i)) notes.push(`${clean(h) || `Column ${i + 1}`}: ${v}`);
+    if (v && !mapped.has(i) && !SKIP_COLUMNS.has(norm(h))) notes.push(`${clean(h) || `Column ${i + 1}`}: ${v}`);
   });
   lead.message = notes.join('\n') || null;
   return lead;
@@ -174,12 +190,14 @@ function createImportService(db, { leads, archiveDays = 14 }) {
   }
 
   // Works out what each row would become. `commit` does it for real.
-  function plan(token, mapping) {
+  // allBooked: everyone in the file already booked (a Zoho Contacts export, a past-customer list).
+  function plan(token, mapping, { allBooked = false } = {}) {
     const u = upload(token);
     const map = cleanMapping(mapping, u.headers);
     const seen = new Set();
     return u.rows.map((row, i) => {
       const lead = rowToLead(row, u.headers, map);
+      if (allBooked) lead.stage = 'booked';
       const name = lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(' ');
       const phone = String(lead.phone || '').replace(/\D/g, '').slice(-10);
       const email = (lead.email || '').toLowerCase();
@@ -197,8 +215,8 @@ function createImportService(db, { leads, archiveDays = 14 }) {
     });
   }
 
-  function check(token, mapping) {
-    const rows = plan(token, mapping);
+  function check(token, mapping, { all_booked: allBooked = false } = {}) {
+    const rows = plan(token, mapping, { allBooked: Boolean(allBooked) });
     const ready = rows.filter((r) => !r.skip);
     return {
       total: rows.length,
@@ -212,10 +230,10 @@ function createImportService(db, { leads, archiveDays = 14 }) {
 
   // Imports the rows. placement: 'auto' (leads older than the 2-week window go straight to Old & Dead
   // Leads, or Past Customers if booked), 'board' (all on the board as fresh leads) or 'archive' (none).
-  function commit(token, mapping, { placement = 'auto' } = {}, { user } = {}) {
+  function commit(token, mapping, { placement = 'auto', all_booked: allBooked = false } = {}, { user } = {}) {
     if (!PLACEMENTS.includes(placement)) throw new HttpError(400, 'Pick where the leads go.');
     const u = upload(token);
-    const rows = plan(token, mapping);
+    const rows = plan(token, mapping, { allBooked: Boolean(allBooked) });
     const batch = `imp_${crypto.randomUUID().slice(0, 8)}`;
     const ts = now();
     const cutoff = new Date(Date.now() - archiveDays * 86400000).toISOString();
