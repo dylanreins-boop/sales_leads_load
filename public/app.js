@@ -545,7 +545,7 @@ function renderOld() {
     h('h3', {}, t, h('span', { class: 'muted' }, `${groups.get(t).length} lead${groups.get(t).length === 1 ? '' : 's'}`)),
     h('div', { class: 'table-scroll' }, h('table', { class: 'old-table' },
       h('thead', {}, h('tr', {}, ...['Name', 'Lead type', 'Status', 'Phone', 'Vehicle', 'Last outcome', 'Came in', 'Moved here', ''].map((c) => h('th', {}, c)))),
-      h('tbody', {}, ...groups.get(t).map((l) => h('tr', { onclick: () => openLead(l.id) },
+      h('tbody', {}, ...groups.get(t).map((l) => h('tr', { title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(l.id, e) },
         h('td', {}, h('strong', {}, leadName(l))),
         h('td', {}, SOURCE_LABELS[l.source] || l.source),
         h('td', {}, h('span', { class: `status-pill ${l.status}` }, l.status === 'dead' ? 'Dead' : 'Old')),
@@ -593,7 +593,7 @@ function renderCustomers() {
 
   $('#customersTable').replaceChildren(...(rows.length ? [
     h('thead', {}, h('tr', {}, ...['Name', 'Vehicle', 'Phone', 'Last pick-up', 'Jobs', 'Services', 'Spent', ''].map((c, i) => h('th', { class: [4, 6].includes(i) ? 'num' : '' }, c)))),
-    h('tbody', {}, ...rows.map((l) => h('tr', { onclick: () => openLead(l.id) },
+    h('tbody', {}, ...rows.map((l) => h('tr', { title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(l.id, e) },
       h('td', {}, h('strong', {}, leadName(l))),
       h('td', {}, [l.vehicle_type, [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ')].filter(Boolean).join(' · ')),
       h('td', {}, l.phone || ''),
@@ -1102,7 +1102,7 @@ function renderReminders() {
   const owed = state.commissionsOwed?.reps || [];
   const MAX = 25;
   const callBtn = (phone) => phone && h('a', { class: 'btn-link', href: `tel:${phone.replace(/[^\d+]/g, '')}`, onclick: (e) => e.stopPropagation() }, 'Call');
-  const item = (lead, kind, lines, buttons = []) => h('div', { class: `reminder-item ${kind}`, onclick: () => openLead(lead.lead_id ?? lead.id) },
+  const item = (lead, kind, lines, buttons = []) => h('div', { class: `reminder-item ${kind}`, title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(lead.lead_id ?? lead.id, e) },
     h('div', {},
       h('div', { class: 'name' }, leadName(lead), lead.pipeline === 'rv' && ' ', lead.pipeline === 'rv' && h('span', { class: 'tag rv' }, 'RV')),
       ...lines.filter(Boolean).map((t, i) => h('div', { class: i ? 'muted' : 'when' }, t))),

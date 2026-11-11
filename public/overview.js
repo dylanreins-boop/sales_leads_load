@@ -58,7 +58,7 @@ const heatTag = (l) => h('span', { class: `heat ${l.heat}`, title: 'Lead score: 
 
 function miniLead(l) {
   const next = nextText(l);
-  return h('button', { type: 'button', class: `ov-lead age-${l.age || 'none'}`, onclick: () => openLead(l.id) },
+  return h('button', { type: 'button', class: `ov-lead age-${l.age || 'none'}`, title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(l.id, e) },
     h('div', { class: 'ov-lead-top' }, h('b', {}, l.name), l.stage === 'booked' ? h('span', { class: 'heat booked' }, 'BOOKED') : heatTag(l)),
     l.vehicle && h('small', {}, l.vehicle),
     h('small', {}, `${sourceLabel[l.source] || l.source} · ${timeAgo(l.received_at)}`),
@@ -107,8 +107,8 @@ function renderOverview() {
       h('section', { class: 'ov-card ov-suggest' },
         h('div', { class: 'ov-sechead' }, h('h2', {}, 'Suggestions'), h('span', { class: 'ov-live' }, 'FROM TODAY\'S DATA')),
         h('p', { class: 'ov-suggest-intro' }, 'Worked out from the leads, calls and texts in the app. Tap one to go to it.'),
-        ...(d.suggestions.length ? d.suggestions.map((s) => h('button', { type: 'button', class: 'ov-insight', onclick: () => {
-          if (s.lead_id) openLead(s.lead_id);
+        ...(d.suggestions.length ? d.suggestions.map((s) => h('button', { type: 'button', class: 'ov-insight', onclick: (e) => {
+          if (s.lead_id) cardClick(s.lead_id, e);
           else if (s.open === 'todo') $('#remindersBtn').click();
           else if (s.open === 'commissions') showSection('commissions');
           else if (s.open === 'calls') $('#callsBtn').click();
