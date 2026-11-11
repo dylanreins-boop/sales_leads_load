@@ -332,6 +332,12 @@ at the bottom. Each person only sees what their login allows (shop logins see th
 the search, **Add lead**, **To do** and **Clock in**. On a phone the menu slides out from the ☰ button and a
 bar at the bottom holds Overview, Leads, Calendar and To do.
 
+
+Each menu item has an emoji that matches its name (📊 Overview, 🎯 Leads, 📅 Calendar, 🔔 Updates, 🏆 Leaderboard,
+💰 Revenue, ⏰ Time & Pay, 📸 Social and so on), and each one has its own small animation when you point at it or
+tap it: the bell rings, the phone shakes, the trophy jumps, Win-back spins. Items with a red count give a small
+nudge every few seconds. To go back to the plain line icons, open **Appearance** and pick **Simple lines** under
+Menu icons (kept on that device). Phones and computers set to reduce motion don't animate them.
 ## Overview
 
 The home screen for admins and sales. Every number is counted from the app's own records, and tapping one

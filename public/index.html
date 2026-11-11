@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="/appearance.css">
   <script>
     // Light or Dark picked under Appearance (otherwise the device's setting).
-    try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch { /* storage unavailable */ }
+    try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; if (localStorage.getItem('menuIcons') === 'lines') document.documentElement.dataset.icons = 'lines'; } catch { /* storage unavailable */ }
   </script>
 </head>
 <body class="app-page">
@@ -747,6 +747,15 @@
           <button type="button" role="radio" data-theme-choice="">Match my device</button>
         </div>
         <p class="hint">Saved to your login, so it follows you to any phone or computer.</p>
+      </section>
+
+      <section class="card-section">
+        <h3>Menu icons</h3>
+        <div class="segmented icons-pick" role="radiogroup" aria-label="Menu icons">
+          <button type="button" role="radio" data-icons-choice="emoji">😀 Emoji</button>
+          <button type="button" role="radio" data-icons-choice="lines">Simple lines</button>
+        </div>
+        <p class="hint">Emoji move a little when you point at or tap them. Kept on this device.</p>
       </section>
 
       <div class="segmented look-scope admin-only" role="tablist" aria-label="Whose look">

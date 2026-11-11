@@ -46,6 +46,46 @@ async function setTheme(choice) {
   } catch (err) { fail(err); }
 }
 
+// ---------- menu icons: an emoji for each menu item, each with its own little animation ----------
+// Keyed by the item's data-section, data-open or id. [emoji, animation]
+const MENU_ICONS = {
+  overview: ['📊', 'pop'], leads: ['🎯', 'hit'], calendar: ['📅', 'flip'], callsBtn: ['📞', 'ring'], updatesBtn: ['🔔', 'bell'],
+  leaderboard: ['🏆', 'jump'], analytics: ['📈', 'rise'], commissions: ['💵', 'sway'], revenue: ['💰', 'jingle'],
+  time: ['⏰', 'ring'], socialBtn: ['📸', 'flash'],
+  messagesBtn: ['💬', 'pop'], emailSettingsBtn: ['✉️', 'fly'], winbackBtn: ['🔁', 'spin'], referralsBtn: ['🎁', 'jump'], automationsBtn: ['⚡', 'zap'],
+  teamBtn: ['👥', 'pop'], pricesBtn: ['🏷️', 'swing'], pipelinesBtn: ['🗂️', 'flip'], scoringBtn: ['🔥', 'flicker'], importBtn: ['📥', 'drop'],
+  syncFb: ['🔄', 'spin'], syncGoogle: ['🔄', 'spin'], adminLogBtn: ['🛡️', 'pulse'], appearanceBtn: ['🎨', 'wiggle'], signOutBtn: ['🚪', 'swing'],
+  todo: ['✅', 'pop'],
+};
+const GROUP_ICONS = { Workspace: '💼', Performance: '🏁', Operations: '🛠️', Marketing: '📣', Settings: '⚙️' };
+const iconChoice = () => { try { return localStorage.getItem('menuIcons') === 'lines' ? 'lines' : 'emoji'; } catch { return 'emoji'; } };
+
+function applyMenuIcons() {
+  for (const btn of document.querySelectorAll('.side-item, .bottom-bar button')) {
+    const key = btn.dataset.section || btn.dataset.open || btn.id;
+    const icon = MENU_ICONS[key];
+    if (!icon || btn.querySelector('.emo')) continue;
+    const emo = h('span', { class: 'emo', 'aria-hidden': 'true', dataset: { anim: icon[1] } }, icon[0]);
+    btn.insertBefore(emo, btn.querySelector('.ico') || btn.firstChild);
+    // Plays once when tapped, too (hover already plays it on a computer).
+    btn.addEventListener('click', () => { emo.classList.remove('play'); void emo.offsetWidth; emo.classList.add('play'); });
+    emo.addEventListener('animationend', () => emo.classList.remove('play'));
+  }
+  for (const g of document.querySelectorAll('.side-group')) {
+    const icon = GROUP_ICONS[g.textContent.trim()];
+    if (icon && !g.querySelector('.grp-emo')) g.prepend(h('span', { class: 'grp-emo', 'aria-hidden': 'true' }, icon));
+  }
+  showIconChoice(iconChoice());
+}
+
+// Kept on this device: emoji (the default) or the simple line icons.
+function showIconChoice(choice) {
+  try { if (choice === 'lines') localStorage.setItem('menuIcons', 'lines'); else localStorage.removeItem('menuIcons'); } catch { /* storage unavailable */ }
+  if (choice === 'lines') document.documentElement.dataset.icons = 'lines';
+  else delete document.documentElement.dataset.icons;
+  document.querySelectorAll('[data-icons-choice]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.iconsChoice === choice)));
+}
+
 // ---------- applying the look ----------
 function setAppearanceCss(css) {
   let tag = $('#appearanceCss');
@@ -289,6 +329,8 @@ async function resetAppearance() {
 }
 
 function initAppearance() {
+  applyMenuIcons();
+  document.querySelectorAll('[data-icons-choice]').forEach((b) => b.addEventListener('click', () => showIconChoice(b.dataset.iconsChoice)));
   api('/api/appearance').then(applyAppearance).catch(() => {});
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyLogo);
   $('#appearanceBtn').addEventListener('click', openAppearance);

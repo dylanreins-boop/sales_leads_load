@@ -2324,3 +2324,62 @@ button.cal-stat:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba
   .tp-away .tp-occ li { grid-template-columns: auto auto 1fr; }
   .tp-away .tp-occ-detail { grid-column: 1 / -1; }
 }
+
+/* ---- Menu emoji: one per menu item, each with its own little animation on hover or tap ---- */
+.emo { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; font-size: 16px; line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; transform-origin: 50% 60%; will-change: transform; }
+.grp-emo { margin-right: 6px; font-size: 11px; letter-spacing: 0; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+html:not([data-icons="lines"]) .side-item > .ico, html:not([data-icons="lines"]) .bottom-bar button > .ico { display: none; }
+html[data-icons="lines"] .emo, html[data-icons="lines"] .grp-emo { display: none; }
+.side-item[aria-current="page"] .emo { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--highlight) 55%, transparent)); transform: scale(1.12); }
+.bottom-bar .emo { width: 24px; height: 24px; font-size: 20px; }
+.bottom-bar button[aria-current="page"] .emo { transform: scale(1.14); }
+.bottom-bar button:not([aria-current="page"]) .emo { filter: saturate(0.75); opacity: 0.85; }
+
+/* Items with something waiting (a badge) give a small nudge every few seconds. */
+.side-item:has(.badge:not([hidden])) .emo { animation: emo-nudge 7s ease-in-out infinite; }
+
+/* Each animation plays on hover, or once when tapped (.play). */
+.side-item:hover .emo[data-anim="pop"], .emo.play[data-anim="pop"] { animation: emo-pop 0.5s var(--ease); }
+.side-item:hover .emo[data-anim="hit"], .emo.play[data-anim="hit"] { animation: emo-hit 0.55s var(--ease); }
+.side-item:hover .emo[data-anim="flip"], .emo.play[data-anim="flip"] { animation: emo-flip 0.6s var(--ease); }
+.side-item:hover .emo[data-anim="ring"], .emo.play[data-anim="ring"] { animation: emo-ring 0.7s ease-in-out; }
+.side-item:hover .emo[data-anim="bell"], .emo.play[data-anim="bell"] { animation: emo-bell 0.9s ease-in-out; transform-origin: 50% 8%; }
+.side-item:hover .emo[data-anim="jump"], .emo.play[data-anim="jump"] { animation: emo-jump 0.6s var(--ease); }
+.side-item:hover .emo[data-anim="rise"], .emo.play[data-anim="rise"] { animation: emo-rise 0.6s var(--ease); }
+.side-item:hover .emo[data-anim="sway"], .emo.play[data-anim="sway"] { animation: emo-sway 0.8s ease-in-out; }
+.side-item:hover .emo[data-anim="jingle"], .emo.play[data-anim="jingle"] { animation: emo-jingle 0.7s ease-in-out; transform-origin: 50% 100%; }
+.side-item:hover .emo[data-anim="flash"], .emo.play[data-anim="flash"] { animation: emo-flash 0.55s ease-out; }
+.side-item:hover .emo[data-anim="fly"], .emo.play[data-anim="fly"] { animation: emo-fly 0.7s var(--ease); }
+.side-item:hover .emo[data-anim="spin"], .emo.play[data-anim="spin"] { animation: emo-spin 0.7s var(--ease); transform-origin: 50% 50%; }
+.side-item:hover .emo[data-anim="zap"], .emo.play[data-anim="zap"] { animation: emo-zap 0.6s steps(1, end); }
+.side-item:hover .emo[data-anim="swing"], .emo.play[data-anim="swing"] { animation: emo-swing 0.8s ease-in-out; transform-origin: 20% 10%; }
+.side-item:hover .emo[data-anim="flicker"], .emo.play[data-anim="flicker"] { animation: emo-flicker 0.7s ease-in-out; transform-origin: 50% 100%; }
+.side-item:hover .emo[data-anim="drop"], .emo.play[data-anim="drop"] { animation: emo-drop 0.6s var(--ease); }
+.side-item:hover .emo[data-anim="pulse"], .emo.play[data-anim="pulse"] { animation: emo-pulse 0.7s ease-in-out; }
+.side-item:hover .emo[data-anim="wiggle"], .emo.play[data-anim="wiggle"] { animation: emo-wiggle 0.6s ease-in-out; }
+
+@keyframes emo-nudge { 0%, 88%, 100% { transform: none; } 91% { transform: rotate(-14deg) scale(1.1); } 94% { transform: rotate(12deg) scale(1.1); } 97% { transform: rotate(-6deg); } }
+@keyframes emo-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 70% { transform: scale(0.92); } 100% { transform: scale(1); } }
+@keyframes emo-hit { 0% { transform: scale(1); } 30% { transform: scale(0.8); } 55% { transform: scale(1.25) rotate(8deg); } 75% { transform: scale(0.95) rotate(-4deg); } 100% { transform: none; } }
+@keyframes emo-flip { 0% { transform: perspective(80px) rotateX(0); } 50% { transform: perspective(80px) rotateX(-180deg); } 100% { transform: perspective(80px) rotateX(-360deg); } }
+@keyframes emo-ring { 0%, 100% { transform: none; } 10%, 30%, 50%, 70% { transform: rotate(-16deg) scale(1.1); } 20%, 40%, 60%, 80% { transform: rotate(16deg) scale(1.1); } }
+@keyframes emo-bell { 0%, 100% { transform: none; } 15% { transform: rotate(24deg); } 30% { transform: rotate(-20deg); } 45% { transform: rotate(14deg); } 60% { transform: rotate(-9deg); } 75% { transform: rotate(4deg); } }
+@keyframes emo-jump { 0%, 100% { transform: none; } 30% { transform: translateY(-7px) scale(1.12); } 50% { transform: translateY(0) scale(1.15, 0.85); } 70% { transform: translateY(-2px); } }
+@keyframes emo-rise { 0% { transform: none; } 45% { transform: translate(3px, -5px) scale(1.15); } 100% { transform: none; } }
+@keyframes emo-sway { 0%, 100% { transform: none; } 25% { transform: translateY(-3px) rotate(-12deg); } 50% { transform: translateY(1px) rotate(8deg); } 75% { transform: translateY(-2px) rotate(-5deg); } }
+@keyframes emo-jingle { 0%, 100% { transform: none; } 20% { transform: scale(1.1, 0.9); } 40% { transform: translateY(-5px) rotate(-10deg) scale(1.1); } 60% { transform: translateY(-2px) rotate(10deg); } 80% { transform: rotate(-4deg); } }
+@keyframes emo-flash { 0% { transform: none; filter: none; } 25% { transform: scale(1.25); filter: brightness(1.9) drop-shadow(0 0 8px #fff); } 100% { transform: none; filter: none; } }
+@keyframes emo-fly { 0% { transform: none; opacity: 1; } 40% { transform: translate(14px, -6px) rotate(12deg); opacity: 0; } 41% { transform: translate(-12px, 4px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes emo-spin { from { transform: rotate(0); } to { transform: rotate(-360deg); } }
+@keyframes emo-zap { 0%, 100% { transform: none; filter: none; } 15% { transform: scale(1.3) skewX(-8deg); filter: brightness(1.8); } 30% { transform: scale(0.95); filter: none; } 45% { transform: scale(1.2) skewX(6deg); filter: brightness(1.6); } 60% { transform: none; } }
+@keyframes emo-swing { 0%, 100% { transform: none; } 25% { transform: rotate(18deg); } 50% { transform: rotate(-12deg); } 75% { transform: rotate(6deg); } }
+@keyframes emo-flicker { 0%, 100% { transform: none; } 20% { transform: scale(1.05, 1.2) skewX(4deg); } 40% { transform: scale(0.95, 1.05) skewX(-5deg); } 60% { transform: scale(1.08, 1.25) skewX(3deg); } 80% { transform: scale(1, 1.08); } }
+@keyframes emo-drop { 0% { transform: translateY(-9px); opacity: 0; } 50% { transform: translateY(2px); opacity: 1; } 70% { transform: translateY(-2px); } 100% { transform: none; } }
+@keyframes emo-pulse { 0%, 100% { transform: none; filter: none; } 50% { transform: scale(1.2); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--highlight) 70%, transparent)); } }
+@keyframes emo-wiggle { 0%, 100% { transform: none; } 20% { transform: rotate(-15deg); } 40% { transform: rotate(13deg); } 60% { transform: rotate(-8deg); } 80% { transform: rotate(4deg); } }
+
+@media (prefers-reduced-motion: reduce) { .emo, .emo.play { animation: none !important; } }
+.icons-pick { margin-bottom: 4px; }
+.icons-pick button { font-family: inherit; }
+.icons-pick button[aria-checked="true"] { background: var(--accent); color: var(--accent-text); }
