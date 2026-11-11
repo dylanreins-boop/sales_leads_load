@@ -257,8 +257,8 @@ function initNav() {
 }
 
 function showSection(name) {
-  // Shop logins only have the calendar.
-  const section = state.meta.currentRole === 'shop' ? 'calendar' : name;
+  // Shop logins only have the calendar; the Leaderboard is for admins.
+  const section = state.meta.currentRole === 'shop' ? 'calendar' : name === 'leaderboard' && !isAdmin() ? 'overview' : name;
   state.section = section;
   document.body.dataset.section = section;
   for (const [id, name] of [['#overviewSection', 'overview'], ['#leaderboardSection', 'leaderboard'], ['#leadsSection', 'leads'], ['#calendarSection', 'calendar'],
@@ -1788,7 +1788,7 @@ async function init() {
   const linked = location.hash.slice(1);
   // Opens on Overview, or the screen in the address (#calendar, #rv, …).
   const isPipeline = state.meta.pipelines.some((p) => p.id === linked) || ['customers', 'old'].includes(linked);
-  showSection(['calendar', 'overview', 'leaderboard', 'commissions'].includes(linked) || (isAdmin() && ['revenue', 'analytics', 'time'].includes(linked)) ? linked
+  showSection(['calendar', 'overview', 'commissions'].includes(linked) || (isAdmin() && ['revenue', 'analytics', 'time', 'leaderboard'].includes(linked)) ? linked
     : isPipeline ? 'leads' : 'overview');
   // Opened from a phone alert: /?lead=12 opens that lead.
   const fromAlert = Number(new URLSearchParams(location.search).get('lead'));

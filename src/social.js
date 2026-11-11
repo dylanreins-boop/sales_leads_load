@@ -7,6 +7,8 @@
 // A post goes out as photos (Facebook photos, an Instagram carousel, a TikTok photo post and a YouTube
 // Short slideshow), or as one Reel-style video everywhere, made from the photos and clips (src/reel.js),
 // optionally opening with an AI-made clip (src/aivideo.js, always labeled as AI).
+// The video side (Reels, uploaded clips, music, AI intro clips) is built but off unless SOCIAL_VIDEO=1
+// (videoEnabled): with it off, posts go out as photos and those requests are refused.
 // It goes out now (Post now) or on a schedule: an admin picks the time, and an admin has to approve it
 // a set number of days before (2 by default). Approved posts go out by themselves at their time; a post
 // not approved in time doesn't go out and goes back to Drafts. Captions never carry customer names.
@@ -71,15 +73,20 @@ const UPLOAD_TYPES = {
 
 function createSocialService(db, {
   jobs, keys = {}, brand = {}, publicUrl = '', mediaDir, logo = null, fetchImpl = (...a) => fetch(...a),
-  media = {}, writer = null, videoAi = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  media = {}, writer = null, videoAi = null, videoEnabled = true, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 }) {
   const stmt = (sql) => db.prepare(sql);
   const tools = { preparePhoto, makeVideo, makeReel, ...media };
   const libraryDir = path.join(mediaDir, 'library');
 
   // ---- settings and connections ----
+  const NO_VIDEO = 'Reel videos aren\'t turned on. Posts go out as photos.';
+  const needVideo = () => { if (!videoEnabled) throw new HttpError(400, NO_VIDEO); };
   function getSettings() {
-    try { return { ...DEFAULTS, ...JSON.parse(stmt("SELECT value FROM settings WHERE key = 'social'").get()?.value || '{}') }; } catch { return { ...DEFAULTS }; }
+    let s;
+    try { s = { ...DEFAULTS, ...JSON.parse(stmt("SELECT value FROM settings WHERE key = 'social'").get()?.value || '{}') }; } catch { s = { ...DEFAULTS }; }
+    if (!videoEnabled) s.video_style = 'photos';
+    return s;
   }
   const putSettings = (next) => stmt("INSERT INTO settings (key, value) VALUES ('social', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(JSON.stringify(next));
   function saveSettings(input = {}) {
@@ -99,13 +106,14 @@ function createSocialService(db, {
     }
     if ('video_style' in input) {
       if (!['photos', 'reel'].includes(input.video_style)) throw new HttpError(400, 'Pick Photos or Reel.');
+      if (input.video_style === 'reel') needVideo();
       next.video_style = input.video_style;
     }
     putSettings(next);
     return settingsView(next);
   }
   function settingsView(s = getSettings()) {
-    const music = s.music_id ? stmt('SELECT id, name, bytes, created_at FROM social_media WHERE id = ? AND kind = \'music\'').get(s.music_id) : null;
+    const music = videoEnabled && s.music_id ? stmt('SELECT id, name, bytes, created_at FROM social_media WHERE id = ? AND kind = \'music\'').get(s.music_id) : null;
     return { ...s, music: music || null };
   }
   // What each platform needs to post. Instagram, Facebook and TikTok fetch the photos from the app's
@@ -120,7 +128,7 @@ function createSocialService(db, {
       youtube: Boolean(yt.clientId && yt.clientSecret && yt.refreshToken),
     };
   }
-  const aiInfo = () => ({ writer: Boolean(writer?.configured), video: Boolean(videoAi?.configured) });
+  const aiInfo = () => ({ writer: Boolean(writer?.configured), video: Boolean(videoEnabled && videoAi?.configured), reels: Boolean(videoEnabled) });
 
   // ---- what's in a post ----
   const parse = (s, d) => { try { return JSON.parse(s) ?? d; } catch { return d; } };
@@ -320,6 +328,7 @@ function createSocialService(db, {
     }
     if ('video_style' in input) {
       if (!['photos', 'reel'].includes(input.video_style)) throw new HttpError(400, 'Pick Photos or Reel.');
+      if (input.video_style === 'reel') needVideo();
       stmt('UPDATE social_posts SET video_style = ? WHERE id = ?').run(input.video_style, id);
     }
     if (input.overlay) {
@@ -343,7 +352,8 @@ function createSocialService(db, {
     if (p.items.some((i) => i.missing)) throw new HttpError(400, 'One of the photos or clips is gone. Pick them again.');
     if (p.items.some((i) => i.src === 'job' && !i.ok)) throw new HttpError(400, 'The customer took back their OK to post photos of their vehicle, so it can\'t be posted.');
     if (p.job && !p.job.social_ok) throw new HttpError(400, 'The customer took back their OK to post photos of their vehicle, so it can\'t be posted.');
-    if (p.video_style === 'photos' && p.items.some((i) => i.kind === 'clip')) throw new HttpError(400, 'Clips only go in a Reel. Switch it to Reel, or take the clips out.');
+    if (p.video_style === 'reel' && !videoEnabled) throw new HttpError(400, 'Reel videos aren\'t turned on. Switch it to Photos.');
+    if (p.video_style === 'photos' && p.items.some((i) => i.kind === 'clip')) throw new HttpError(400, videoEnabled ? 'Clips only go in a Reel. Switch it to Reel, or take the clips out.' : 'Video clips aren\'t turned on. Take the clips out.');
     if (!p.platforms.length) throw new HttpError(400, 'Pick at least one place to post it.');
     if (p.video_style === 'reel' && p.ai_clip?.status === 'making') throw new HttpError(400, 'The AI clip is still being made. Wait for it, or take it out.');
   }
@@ -405,6 +415,7 @@ function createSocialService(db, {
     if (!raw?.length) throw new HttpError(400, 'The file was empty.');
     if (!known) throw new HttpError(400, 'Upload a photo (JPEG, PNG, WebP), a video clip (MP4, MOV, WebM) or, for music, an MP3 or M4A.');
     const [k, ext] = known;
+    if (k !== 'photo' && !videoEnabled) throw new HttpError(400, 'Video clips and music aren\'t turned on. Upload photos (JPEG, PNG or WebP).');
     if (kind === 'music' ? k !== 'music' : k === 'music') throw new HttpError(400, kind === 'music' ? 'Upload the music as an MP3 or M4A.' : 'Upload music under Social → Settings.');
     fs.mkdirSync(libraryDir, { recursive: true });
     const file = `${k}-${crypto.randomBytes(9).toString('hex')}.${ext}`;
@@ -452,7 +463,7 @@ function createSocialService(db, {
         return { id: j.id, vehicle: [vehicle(j), j.vehicle_color].filter(Boolean).join(' · '), start_at: j.start_at, status: j.status,
           photos: j.photos.map((p) => ({ id: p.id, phase: p.phase, caption: p.caption, url: `/api/jobs/${j.id}/photos/${p.id}` })) };
       }),
-      uploads: stmt("SELECT * FROM social_media WHERE kind IN ('photo', 'clip') ORDER BY id DESC LIMIT 100").all().map(mediaView),
+      uploads: stmt(`SELECT * FROM social_media WHERE kind IN (${videoEnabled ? "'photo', 'clip'" : "'photo'"}) ORDER BY id DESC LIMIT 100`).all().map(mediaView),
     };
   }
 
@@ -478,6 +489,7 @@ function createSocialService(db, {
   async function startClip(id, { prompt } = {}, { user = null } = {}) {
     const p = mustGet(id);
     if (p.status !== 'draft') throw new HttpError(400, 'Move it back to Drafts to change it.');
+    needVideo();
     if (!videoAi?.configured) throw new HttpError(400, 'AI video isn\'t set up. Add a GEMINI_API_KEY on the server (see the README).');
     const text = String(prompt || '').trim();
     if (text.length < 8) throw new HttpError(400, 'Describe the clip in a few words.');
@@ -499,7 +511,7 @@ function createSocialService(db, {
   let lastCheck = 0;
   // Looks in on AI clips still being made (every 15 seconds at most).
   function checkClips({ force = false } = {}) {
-    if (!videoAi?.configured) return Promise.resolve();
+    if (!videoEnabled || !videoAi?.configured) return Promise.resolve();
     if (checking) return checking;
     if (!force && Date.now() - lastCheck < 15000) return Promise.resolve();
     lastCheck = Date.now();
@@ -550,6 +562,7 @@ function createSocialService(db, {
   }
   // A preview of the Reel, before it goes anywhere.
   async function render(id) {
+    needVideo();
     const p = mustGet(id);
     readyCheckForVideo(p);
     fs.mkdirSync(dirFor(p), { recursive: true });

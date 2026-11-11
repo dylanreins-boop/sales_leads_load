@@ -83,13 +83,15 @@ test('Overview: today\'s numbers, the 4-column snapshot, suggestions from the da
   assert.ok(o.suggestions.some((s) => s.kind === 'reply' && /texted back/.test(s.title)));
   assert.ok(o.suggestions.some((s) => s.kind === 'call' && s.lead_id));
   const sam = o.team.find((r) => r.name === 'Sam');
+  assert.ok(o.team.every((r) => r.name === 'Sam'), 'sales see only their own row, not the team');
   assert.deepEqual([sam.calls, sam.conversations, sam.appointments, sam.booked_cents, sam.quotes], [2, 2, 1, 150000, 1]);
   assert.equal(o.queue.next.why, 'Texted back');
   assert.equal((await call('GET', '/api/overview', undefined, auth('Mike', 'shop-pass'))).status, 403, 'not for the shop');
 });
 
 test('Leaderboard: a week or a month per rep, monthly goals (admins set them), and each rep\'s page', async () => {
-  const board = (await call('GET', '/api/leaderboard?period=week')).data;
+  assert.equal((await call('GET', '/api/leaderboard?period=week')).status, 403, 'sales don\'t see the leaderboard');
+  const board = (await call('GET', '/api/leaderboard?period=week', undefined, ADMIN)).data;
   assert.equal(board.period, 'week');
   const sam = board.reps.find((r) => r.name === 'Sam');
   assert.deepEqual([sam.appointments, sam.booked_cents, sam.quotes], [1, 150000, 1]);
@@ -98,7 +100,7 @@ test('Leaderboard: a week or a month per rep, monthly goals (admins set them), a
   assert.equal((await call('PUT', '/api/goals', { name: 'Sam', monthly: '20000' })).status, 403, 'admins set goals');
   assert.match((await call('PUT', '/api/goals', { name: 'Sam', monthly: 'lots' }, ADMIN)).data.error, /in dollars/);
   assert.deepEqual((await call('PUT', '/api/goals', { name: 'Sam', monthly: '$20,000' }, ADMIN)).data, { Sam: 2000000 });
-  const month = (await call('GET', '/api/leaderboard?period=month')).data.reps.find((r) => r.name === 'Sam');
+  const month = (await call('GET', '/api/leaderboard?period=month', undefined, ADMIN)).data.reps.find((r) => r.name === 'Sam');
   assert.deepEqual([month.goal_cents, month.month_booked_cents], [2000000, 150000]);
 
   const page = (await call('GET', '/api/reps/Sam')).data;
@@ -106,8 +108,7 @@ test('Leaderboard: a week or a month per rep, monthly goals (admins set them), a
   assert.equal(page.months.length, 6);
   assert.equal(page.months[5].booked_cents, 150000);
   assert.ok(page.commission, 'Sam sees his own commission');
-  const other = (await call('GET', '/api/reps/Dylan')).data;
-  assert.equal(other.commission, undefined, 'but not someone else\'s');
+  assert.equal((await call('GET', '/api/reps/Dylan')).status, 403, 'and only his own page');
   assert.ok((await call('GET', '/api/reps/Sam', undefined, ADMIN)).data.commission, 'admins see everyone\'s');
 });
 

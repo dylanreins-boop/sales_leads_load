@@ -7,6 +7,8 @@
 //    (Claude can write it), where it goes, a live phone preview, then Schedule for approval or Post now.
 //  - Posted: what went out, with links, and Try again for the ones that didn't.
 //  - Settings: defaults, the approval lead time, music for Reels, the caption template.
+// The video side (Reels, clips, music, AI intro clips) shows only when the server has it on (SOCIAL_VIDEO=1;
+// soc.data.ai.reels). Otherwise posts are photos.
 // Uses the helpers from app.js ($, h, fill, api, toast, fail, showPanel, fmtDateTime, ask, askConfirm).
 
 const soc = { data: null, poll: null, tab: 'calendar', open: null, month: null, library: null, picker: false, pickerTab: 'jobs' };
@@ -301,9 +303,12 @@ async function skipPost(p) {
 // ---------- the editor (a draft) ----------
 function socEditor(p) {
   const d = soc.data;
+  const reels = d.ai.reels;
+  // Reels turned off on the server: a post saved as a Reel goes out as photos.
+  const wasReel = !reels && p.video_style === 'reel';
   const st = {
-    items: p.items.filter((i) => !i.missing).map((i) => ({ ...i })),
-    post_type: p.post_type, title: p.title || '', notes: p.notes || '', video_style: p.video_style,
+    items: p.items.filter((i) => !i.missing && (reels || i.kind !== 'clip')).map((i) => ({ ...i })),
+    post_type: p.post_type, title: p.title || '', notes: p.notes || '', video_style: reels ? p.video_style : 'photos',
     overlay: { hook: p.overlay.hook || '', end_text: p.overlay.end_text || '' }, platforms: [...p.platforms],
   };
   const caption = h('textarea', { rows: '6', maxlength: '2200', 'aria-label': 'Caption', placeholder: 'What the post says. No customer names.' }, p.caption);
@@ -384,12 +389,12 @@ function socEditor(p) {
       try { soc.library = await api('/api/social/library'); } catch (err) { fill(picker, h('p', { class: 'soc-urgent' }, err.message)); return; }
     }
     const lib = soc.library;
-    const upload = h('label', { class: 'soc-upload' }, '⬆ Upload photos or clips',
-      h('input', { type: 'file', accept: 'image/*,video/mp4,video/quicktime,video/webm', multiple: true, hidden: true, onchange: (e) => uploadMedia(e, (made) => { made.forEach((m) => { if (st.items.length < 10) st.items.push({ src: 'upload', id: m.id, kind: m.kind, url: m.url, name: m.name }); }); paintStrip(); paintPicker(); changed(); }) }));
+    const upload = h('label', { class: 'soc-upload' }, reels ? '⬆ Upload photos or clips' : '⬆ Upload photos',
+      h('input', { type: 'file', accept: reels ? 'image/*,video/mp4,video/quicktime,video/webm' : 'image/*', multiple: true, hidden: true, onchange: (e) => uploadMedia(e, (made) => { made.forEach((m) => { if (st.items.length < 10) st.items.push({ src: 'upload', id: m.id, kind: m.kind, url: m.url, name: m.name }); }); paintStrip(); paintPicker(); changed(); }) }));
     const tabsEl = h('div', { class: 'seg soc-picker-tabs' },
       ...[['jobs', 'From jobs'], ['uploads', `Uploads (${lib.uploads.length})`]].map(([k, label]) => h('button', { type: 'button', 'aria-pressed': String(soc.pickerTab === k), onclick: () => { soc.pickerTab = k; paintPicker(); } }, label)));
     const content = soc.pickerTab === 'uploads'
-      ? [h('div', { class: 'soc-picker-row' }, upload, h('span', { class: 'hint' }, 'Your own photos and short clips (shop shots, polishing, water beading). Clips go in Reels.')),
+      ? [h('div', { class: 'soc-picker-row' }, upload, h('span', { class: 'hint' }, reels ? 'Your own photos and short clips (shop shots, polishing, water beading). Clips go in Reels.' : 'Your own photos (shop shots, polishing, water beading).')),
         lib.uploads.length ? h('div', { class: 'soc-grid-tiles' }, ...lib.uploads.map((u) => pickTile({ src: 'upload', id: u.id, kind: u.kind, url: u.url, name: u.name }, u.name || u.kind))) : h('p', { class: 'muted' }, 'Nothing uploaded yet.')]
       : [h('p', { class: 'hint' }, 'Only jobs whose customer OK\'d posting photos of their vehicle.'),
         ...(lib.jobs.length ? lib.jobs.map((j) => h('div', { class: 'soc-job-group' },
@@ -433,7 +438,7 @@ function socEditor(p) {
 
   // Write it for me.
   const writeBtn = h('button', { type: 'button', class: 'soc-write', onclick: async () => {
-    if (caption.value.trim() && !await askConfirm('Replace the caption?', 'It writes a new caption, hashtags and the words on the video.', { ok: 'Write it' })) return;
+    if (caption.value.trim() && !await askConfirm('Replace the caption?', reels ? 'It writes a new caption, hashtags and the words on the video.' : 'It writes a new caption and hashtags.', { ok: 'Write it' })) return;
     writeBtn.disabled = true;
     writeBtn.textContent = 'Writing…';
     try {
@@ -508,6 +513,7 @@ function socEditor(p) {
 
   paintStrip();
   paintPicker();
+  if (wasReel) setTimeout(changed); // save it as photos
   return h('div', { class: 'soc-editor' },
     h('div', { class: 'soc-ed-left' },
       h('button', { type: 'button', class: 'link-btn soc-back', onclick: async () => { await flush().catch(() => {}); soc.open = null; soc.tab = 'drafts'; await socReload(); } }, '← Drafts'),
@@ -516,9 +522,9 @@ function socEditor(p) {
         h('button', { type: 'button', class: 'link-btn', onclick: async () => { await flush().catch(() => {}); showPanel(null); showSection('calendar'); openJob(p.job.id); } }, 'Open job')),
       h('div', { class: 'soc-row2' }, h('label', { class: 'soc-label' }, 'Kind of post', typeSel), h('label', { class: 'soc-label' }, 'Name (just for you)', titleIn)),
       h('label', { class: 'soc-label' }, 'What\'s it about? (helps the writing)', notesIn),
-      h('div', { class: 'soc-label' }, 'Photos and clips, in order'),
+      h('div', { class: 'soc-label' }, reels ? 'Photos and clips, in order' : 'Photos, in order'),
       strip, picker,
-      h('div', { class: 'soc-label' }, 'Format'), styleSeg, styleHint, reelBox,
+      ...(reels ? [h('div', { class: 'soc-label' }, 'Format'), styleSeg, styleHint, reelBox] : []),
       h('div', { class: 'soc-label soc-cap-head' }, h('span', {}, 'Caption (no customer names)'), writeBtn),
       caption,
       h('div', { class: 'soc-label' }, 'Post to'),
@@ -671,7 +677,7 @@ function settingsCard() {
     try {
       soc.data.settings = await api('/api/social/settings', { method: 'PUT', body: {
         auto_draft: Boolean(f.get('auto_draft')), platforms: f.getAll('platforms'), caption: f.get('caption'), hashtags: f.get('hashtags'),
-        approve_days: Number(f.get('approve_days')), video_style: f.get('video_style'),
+        approve_days: Number(f.get('approve_days')), ...(ai.reels && { video_style: f.get('video_style') }),
       } });
       toast('Saved');
     } catch (err) { fail(err); }
@@ -683,7 +689,7 @@ function settingsCard() {
   h('h3', {}, 'New posts'),
   h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'auto_draft', checked: s.auto_draft }),
     ' Make a draft when a job is marked Ready for pickup (only when the customer OK\'d it and there are after photos)'),
-  h('label', { class: 'soc-label' }, 'Format, to start with',
+  ai.reels && h('label', { class: 'soc-label' }, 'Format, to start with',
     h('select', { name: 'video_style' }, h('option', { value: 'photos', selected: s.video_style === 'photos' }, 'Photos'), h('option', { value: 'reel', selected: s.video_style === 'reel' }, 'Reel video'))),
   h('div', { class: 'soc-label' }, 'Post to, by default'),
   h('div', { class: 'soc-platforms' }, ...Object.keys(platforms).map((k) => h('label', { class: 'check' },
@@ -716,10 +722,10 @@ function settingsCard() {
 
   const aiCard = h('section', { class: 'card-section' },
     h('h3', {}, 'AI help'),
-    h('p', {}, ai.writer ? '✓ Claude writes captions and the words on the video (Write it for me).' : 'Write it for me fills in a template. Add ANTHROPIC_API_KEY on the server for Claude to write them.'),
-    h('p', {}, ai.video ? '✓ AI intro clips are on (Google Veo, paid per clip).' : 'AI intro clips are off. Add GEMINI_API_KEY on the server to turn them on (Google Veo, paid per clip).'),
-    h('p', { class: 'hint' }, 'Facebook and Instagram post the photos or the Reel; TikTok a photo or video post; YouTube Shorts a video. Each platform is connected once on the server (see the README). TikTok keeps posts private until it approves the app.'));
-  return h('div', { class: 'soc-settings-wrap' }, h('section', { class: 'card-section' }, form), music, aiCard);
+    h('p', {}, ai.writer ? `✓ Claude writes captions${ai.reels ? ' and the words on the video' : ''} (Write it for me).` : 'Write it for me fills in a template. Add ANTHROPIC_API_KEY on the server for Claude to write them.'),
+    ai.reels && h('p', {}, ai.video ? '✓ AI intro clips are on (Google Veo, paid per clip).' : 'AI intro clips are off. Add GEMINI_API_KEY on the server to turn them on (Google Veo, paid per clip).'),
+    h('p', { class: 'hint' }, ai.reels ? 'Facebook and Instagram post the photos or the Reel; TikTok a photo or video post; YouTube Shorts a video.' : 'Facebook and Instagram post the photos; TikTok a photo post; YouTube Shorts a short slideshow of the photos.', ' Each platform is connected once on the server (see the README). TikTok keeps posts private until it approves the app.'));
+  return h('div', { class: 'soc-settings-wrap' }, h('section', { class: 'card-section' }, form), ai.reels && music, aiCard);
 }
 
 // The job panel: the customer's OK (who recorded it, when and how), what's already posted from this job,

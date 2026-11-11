@@ -119,14 +119,15 @@ function renderOverview() {
 
     h('div', { class: 'ov-lower' },
       h('section', { class: 'ov-card' },
-        h('div', { class: 'ov-sechead' }, h('h2', {}, 'Team today'), h('button', { type: 'button', class: 'link-btn', onclick: () => showSection('leaderboard') }, 'Full leaderboard →')),
+        h('div', { class: 'ov-sechead' }, h('h2', {}, isAdmin() ? 'Team today' : 'Your day'),
+          isAdmin() && h('button', { type: 'button', class: 'link-btn', onclick: () => showSection('leaderboard') }, 'Full leaderboard →')),
         d.team.length ? h('table', { class: 'ov-table' },
           h('thead', {}, h('tr', {}, h('th', {}, 'Rep'), h('th', { class: 'num' }, 'Calls'), h('th', { class: 'num' }, 'Talked'), h('th', { class: 'num' }, 'Booked'), h('th', { class: 'num' }, 'Sales'), h('th', {}, 'Booked ÷ leads called'))),
           h('tbody', {}, ...d.team.map((r) => h('tr', { class: 'lb-row', title: `Open ${r.name}'s page`, onclick: () => openRep(r.name) },
             h('td', {}, h('span', { class: 'ov-person' }, h('span', { class: 'mini-avatar' }, r.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()), r.name)),
             h('td', { class: 'num' }, r.calls), h('td', { class: 'num' }, r.conversations), h('td', { class: 'num' }, r.appointments), h('td', { class: 'num' }, shortMoney(r.booked_cents)),
             h('td', {}, h('span', { class: 'ov-conv' }, r.conversion == null ? '–' : `${r.conversion}%`, h('span', { class: 'ov-bar' }, h('i', { style: `width:${Math.min(100, r.conversion || 0)}%` }))))))))
-          : h('p', { class: 'muted' }, 'No calls logged yet today.'),
+          : h('p', { class: 'muted' }, isAdmin() ? 'No calls logged yet today.' : 'No calls logged yet today. Your calls, talks and bookings show here as you log them.'),
         h('p', { class: 'ov-note' }, 'Calls are logged call outcomes; Talked = they answered (follow up, call back, booked, not interested). Booked counts jobs put on the calendar today.')),
       h('section', { class: 'ov-card ov-queue' },
         h('div', { class: 'ov-sechead' }, h('h2', {}, 'Call queue'), h('button', { type: 'button', class: 'link-btn', onclick: () => $('#remindersBtn').click() }, 'Open To do →')),

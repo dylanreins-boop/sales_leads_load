@@ -141,6 +141,8 @@ module.exports = {
   // Social posts from finished jobs (an admin approves each). Facebook and Instagram use the Page token
   // above (it needs the pages_manage_posts and instagram_content_publish permissions).
   social: {
+    // Reel videos, video clips, music and AI intro clips: built and saved, but off unless SOCIAL_VIDEO=1.
+    video: /^(1|true|on|yes)$/i.test(process.env.SOCIAL_VIDEO || ''),
     facebookPageId: process.env.FB_PAGE_ID || '',
     instagramUserId: process.env.IG_USER_ID || '',
     tiktok: { accessToken: process.env.TIKTOK_ACCESS_TOKEN || '', clientKey: process.env.TIKTOK_CLIENT_KEY || '', clientSecret: process.env.TIKTOK_CLIENT_SECRET || '', refreshToken: process.env.TIKTOK_REFRESH_TOKEN || '' },

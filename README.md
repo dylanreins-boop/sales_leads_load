@@ -6,7 +6,7 @@ It:
 - **Pulls in leads** from **Facebook Lead Ads** (real-time webhook plus a "Sync Facebook" backstop) and from your **company website** form.
 - Shows them on a **pipeline board**: New / Working → Voicemail → Follow Up 1 → Follow Up 2 → Follow Up 3 → Contacted → Booked → Waste.
 - Lets reps **disposition** every call. The disposition moves the lead to the right stage and **sets a reminder to call the lead the next day**.
-- Opens on an **Overview**: today's numbers, the pipeline scored HOT / WARM / COLD with each lead's value, suggestions from the data, the team's day and the call queue; plus a **Leaderboard** with monthly goals.
+- Opens on an **Overview**: today's numbers, the pipeline scored HOT / WARM / COLD with each lead's value, suggestions from the data, the team's day and the call queue; plus a **Leaderboard** with monthly goals (admins).
 - Keeps a **To do** list of who needs you now (customer replies, calls due, new leads, quiet quotes, leads with no next step), with a banner, a badge and (optionally) phone alerts.
 - Sends **your own follow-up email** to the lead when a rep saves "No Answer – Left Voicemail" (off until you turn it on).
 - Works as a **website and as a phone app**: people can add it to their home screen from the browser.
@@ -353,7 +353,8 @@ goes to what's behind it.
 - **Suggestions**, worked out from the data: who to call first, customers who texted back, quotes with no
   answer, leads with no next step, drop-offs coming up without a deposit, and in the dialer build the
   month's most common concern and a coaching idea. Each one opens the leads behind it.
-- **Team today** (calls, talked, booked, sales; tap a rep for their page) and the **call queue**.
+- **Team today** (calls, talked, booked, sales; tap a rep for their page) and the **call queue**. Sales see
+  **Your day** instead: their own row only.
 
 ## Lead scores, value and age
 
@@ -372,12 +373,13 @@ jobs), marked "est.". The card's left edge shows **how long it has waited** sinc
 
 ## Leaderboard and goals
 
-**Performance → Leaderboard** ranks the reps for this or last week, this or last month, the last 3 months or
+**Performance → Leaderboard** (admins only; sales logins don't see it) ranks the reps for this or last week, this or last month, the last 3 months or
 the year: calls, leads called, talked, contact rate, quotes, booked, sales and conversion (and average talk
 time in the dialer build). Tap any column to rank by it; "What each number means" explains each one. Shop
 logins aren't ranked. Tap a rep for their page: this month and week, their **monthly sales goal** with
 progress and the pace they're on, sales over the last 6 months, and their open leads. Admins set the goal
-there. Commission amounts show only to the rep themself and to admins.
+there. Commission amounts show only to the rep themself and to admins. Sales can open only their own page
+(from **Your day** on the Overview), never another rep's.
 
 ## Automations
 
@@ -864,7 +866,7 @@ an admin's OK.
   their deadline and an **Approve** button), and the ones approved and scheduled.
 - **Drafts**: posts being worked on.
 - **Posted**: where each post went, with View links, and **Try the failed ones again**.
-- **Settings**: the approval lead time, the starting format, music for Reels, the caption template.
+- **Settings**: the approval lead time, the default places to post, the caption template.
 
 ### Making a post
 
@@ -878,27 +880,14 @@ A post starts one of two ways:
 
 The editor:
 
-- **Photos and clips, in order** (up to 10): from **any job whose customer OK'd posting** (jobs without the
-  OK aren't offered), or **uploaded** (the shop's own photos and short video clips: polishing, water
-  beading, the shop). Reorder with the arrows; take one out with ×.
-- **Format: Photos or Reel video.** Photos: Facebook and Instagram get the photos, TikTok a photo post,
-  YouTube Shorts a simple slideshow. **Reel**: one vertical video everywhere (1080x1920), made on the
-  server: each photo fills the frame over a blurred copy of itself and slowly zooms in, **BEFORE / AFTER**
-  labels, a wipe from the before to the after, clips play up to 5 seconds, your **opening words** on the
-  first shot, and an ending with the logo, your **ending words** and the phone number. Music if the shop
-  uploaded a track (Settings); otherwise silent. Clips only go in Reels. **Make the real video to watch**
-  makes the actual Reel (about 15 seconds) so you can see it before it goes anywhere; the phone preview
-  beside the editor shows how it plays as you type.
-- **✨ Write it for me**: Claude writes the caption and hashtags, the opening and ending words, and an idea
-  for an AI intro clip, from the kind of post, the vehicles and work in the photos, and **What's it about?**
-  (an offer's terms, the tip, what the customer said). It never uses customer names and doesn't invent
-  prices, discounts or warranties. Without `ANTHROPIC_API_KEY` it fills in a template instead.
-- **🤖 AI intro clip (optional, paid).** Describe a short opening shot ("slow-motion water beading on black
-  paint"), and Google's Veo model makes it in a few minutes while you keep working. It opens the Reel and is
-  **always labeled**: "AI-generated" on the video, "Intro clip made with AI." in the caption, TikTok's AI
-  label (`is_aigc`) and YouTube's altered-or-synthetic flag (`containsSyntheticMedia`). The app always adds
-  "no people, no faces, no text, no logos, no license plates" to the description, so a clip can't pass for a
-  real customer's vehicle. Use it for an opening shot only, never as a job's results.
+- **Photos, in order** (up to 10): from **any job whose customer OK'd posting** (jobs without the OK
+  aren't offered), or **uploaded** (the shop's own photos: polishing, water beading, the shop). Reorder with
+  the arrows; take one out with ×. Facebook and Instagram get the photos, TikTok a photo post, YouTube Shorts
+  a short slideshow of them. The phone preview beside the editor shows the post as you type.
+- **✨ Write it for me**: Claude writes the caption and hashtags from the kind of post, the vehicles and work
+  in the photos, and **What's it about?** (an offer's terms, the tip, what the customer said). It never uses
+  customer names and doesn't invent prices, discounts or warranties. Without `ANTHROPIC_API_KEY` it fills in
+  a template instead.
 - **Post to**, and **When it goes out**.
 
 Drafts save as you type.
@@ -932,13 +921,10 @@ Each place shows Posted with a View link, or why it didn't post, and **Try the f
 only those. You can close Social while it posts. A post left half-done (the server restarted) is marked as
 not finished after 15 minutes, so you can check the page and try again.
 
-What each place gets: **Facebook**, a Page post with the photos (or the Reel as a Page video);
-**Instagram**, a carousel (or a Reel; the app waits for Instagram to process it); **TikTok**, a photo post
-(or a video post); **YouTube Shorts**, the Reel or a slideshow. Photos are sized to 1080x1350. Media is
-served from `PUBLIC_URL` for the platforms to fetch, so `PUBLIC_URL` must be the public HTTPS address.
-Videos need `ffmpeg` and a font for the words (the Docker image and `deploy/oracle/setup.sh` install
-`ffmpeg` and `fonts-dejavu-core`; `SOCIAL_FONT` points at another .ttf). Without a font the Reel is made
-without words.
+What each place gets: **Facebook**, a Page post with the photos; **Instagram**, a carousel; **TikTok**, a
+photo post; **YouTube Shorts**, a short slideshow made from the photos (needs `ffmpeg`, which the Docker
+image and `deploy/oracle/setup.sh` install). Photos are sized to 1080x1350. Media is served from
+`PUBLIC_URL` for the platforms to fetch, so `PUBLIC_URL` must be the public HTTPS address.
 
 ### Connecting each platform
 
@@ -959,13 +945,35 @@ Once, on the server; Settings shows what's connected:
   uploads are private; make them public from YouTube Studio.
 - **AI writing**: `ANTHROPIC_API_KEY` (the same key as the dialer's call notes). A caption costs well
   under a cent.
-- **AI intro clips**: a Gemini API key from Google AI Studio with billing on, as `GEMINI_API_KEY`. Google
-  charges per second of video (roughly $0.10 to $0.40 a second depending on the model, so about $1 to $3 for
-  an 8-second clip; check Google's current price list). `AI_VIDEO_MODEL` picks the Veo model (default
-  `veo-3.1-generate-preview`); Google renames and retires these, so set it to a current one from Google's
-  Veo page if clips stop starting.
 
 The four posting APIs are free to use.
+
+### Saved for later: Reel videos and AI intro clips (off)
+
+Built, tested and kept in the code, but **off**: with it off, posts are photos only, the screens don't show
+any of it, and the server refuses those requests. To turn it on, set `SOCIAL_VIDEO=1` on the server and
+restart. Then the editor gets:
+
+- **Format: Photos or Reel video.** A Reel is one vertical video everywhere (1080x1920), made on the server:
+  each photo fills the frame over a blurred copy of itself and slowly zooms in, **BEFORE / AFTER** labels, a
+  wipe from the before to the after, uploaded **video clips** (up to 5 seconds each), your **opening words**
+  on the first shot, and an ending with the logo, your **ending words** and the phone number. **Music** if
+  the shop uploads a track it has the rights to (Settings). **Make the real video to watch** makes the
+  actual Reel (about 15 seconds). Facebook gets a Page video, Instagram a Reel (the app waits for Instagram
+  to process it), TikTok a video post, YouTube the Short. Write it for me also writes the words on the video.
+- **🤖 AI intro clip (optional, paid).** Describe a short opening shot ("slow-motion water beading on black
+  paint"), and Google's Veo model makes it in a few minutes. It opens the Reel and is **always labeled**:
+  "AI-generated" on the video, "Intro clip made with AI." in the caption, TikTok's AI label (`is_aigc`) and
+  YouTube's altered-or-synthetic flag (`containsSyntheticMedia`). The app always adds "no people, no faces,
+  no text, no logos, no license plates" to the description. Needs `GEMINI_API_KEY` (Google AI Studio, billing
+  on); Google charges per second of video, roughly $0.10 to $0.40 a second, so about $1 to $3 for an
+  8-second clip. `AI_VIDEO_MODEL` picks the Veo model (default `veo-3.1-generate-preview`); Google renames
+  and retires these, so set it to a current one if clips stop starting.
+
+Reels need a font for the words (`fonts-dejavu-core`, installed by the Docker image and setup script;
+`SOCIAL_FONT` points at another .ttf) and a little more server memory (about 1 GB). Before relying on it,
+make a first real Reel post on each platform: the video posting was tested against stand-ins, not the live
+sites.
 
 ## Importing leads from before the app
 
@@ -1165,8 +1173,8 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | GET | `/api/queue` | The To do list: `{ replies, fresh, quotes, stuck }` |
 | GET | `/api/overview` | The Overview: KPIs, the 4-column pipeline, suggestions, the team today, the call queue |
 | GET / PUT | `/api/settings/lead-score` | The scoring rules' points and the Hot / Warm lines (PUT: admins) |
-| GET | `/api/leaderboard?period=week\|last_week\|month\|last_month\|quarter\|year` | Each rep's numbers for the period, with goals |
-| GET | `/api/reps/:name` | A rep's page: this month and week, 6 months, goal and pace (commission: themself or admins) |
+| GET | `/api/leaderboard?period=week\|last_week\|month\|last_month\|quarter\|year` | Admins: each rep's numbers for the period, with goals |
+| GET | `/api/reps/:name` | A rep's page: this month and week, 6 months, goal and pace (admins any rep; sales their own) |
 | PUT | `/api/goals` | Admins: `{ name, monthly }` a rep's monthly sales goal in dollars (empty removes it) |
 | GET / PATCH | `/api/automations`, `/api/automations/:id` | Admins: everything automatic; `{ on }` switches one |
 | GET | `/api/audit?area=&before=` | Admins: the admin log (signin, team, payroll, money, settings, export, delete) |

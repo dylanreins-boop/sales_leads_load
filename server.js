@@ -207,7 +207,7 @@ function sendFile(req, res, { file, type }, cache = 'private, max-age=3600') {
   return res.end(data);
 }
 
-function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer, socialMedia, socialWriter, videoAi } = {}) {
+function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, summarizer, socialMedia, socialWriter, videoAi, socialVideo = config.social.video } = {}) {
   const leads = createLeadService(db, {
     reminderHour: config.reminderHour,
     skipWeekends: config.reminderSkipWeekends,
@@ -223,7 +223,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const social = createSocialService(db, {
     jobs, brand: config.brand, publicUrl: config.publicUrl, mediaDir: path.join(filesDir, 'social'), fetchImpl, ...(socialMedia && { media: socialMedia }),
     writer: socialWriter || createSocialWriter(), videoAi: videoAi || createVideoAi(fetchImpl ? { fetchImpl } : {}),
-    logo: path.join(__dirname, 'public', 'brand', 'logo-white.png'),
+    logo: path.join(__dirname, 'public', 'brand', 'logo-white.png'), videoEnabled: socialVideo,
     keys: { ...config.social, facebookToken: config.facebook.pageAccessToken, graphVersion: config.facebook.graphVersion },
   });
   const users = createUserService(db, { serverUsers: config.users });
@@ -390,15 +390,23 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     return insights.decorate(leads.listLeads(leadFilters(query)));
   });
   // ---- Overview (the home screen) and lead scoring ----
-  route('GET', '/api/overview', ({ actor }) => insights.overview({ role: actor.role }));
+  route('GET', '/api/overview', ({ actor }) => {
+    const o = insights.overview({ role: actor.role });
+    // The team's numbers side by side are for admins; sales see their own day.
+    if (actor.role !== 'admin') o.team = o.team.filter((r) => r.name === actor.user);
+    return o;
+  });
   // ---- Automations: everything the app does on its own, with a switch ----
   route('GET', '/api/automations', () => automations.list(), { roles: ADMIN });
   route('GET', '/api/audit', ({ query }) => audit.list({ area: query.get('area') || null, before: query.get('before') }), { roles: ADMIN });
   route('PATCH', '/api/automations/:id', ({ params, body }) => automations.set(params.id, body.on), { roles: ADMIN });
   // ---- Leaderboard and each rep's page ----
-  route('GET', '/api/leaderboard', ({ query }) => insights.leaderboard(query.get('period') || 'month'));
+  // Admins only: sales don't see the team ranked.
+  route('GET', '/api/leaderboard', ({ query }) => insights.leaderboard(query.get('period') || 'month'), { roles: ADMIN });
   route('GET', '/api/reps/:name', ({ params, actor }) => {
     const name = params.name;
+    // Sales can open their own page only.
+    if (actor.role !== 'admin' && actor.user !== name) throw new HttpError(403, 'Only admins can see other reps\' numbers.');
     const profile = insights.repProfile(name);
     // Commission money: the rep themself and admins only.
     if (actor.role === 'admin' || actor.user === name) {

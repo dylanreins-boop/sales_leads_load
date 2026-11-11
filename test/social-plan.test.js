@@ -22,6 +22,8 @@ process.env.TWILIO_ACCOUNT_SID = '';
 process.env.EMAIL_PROVIDER = '';
 process.env.ANTHROPIC_API_KEY = '';
 process.env.BRAND_PHONE = '702-555-0100';
+// The video side is built but off unless SOCIAL_VIDEO=1; these tests turn it on (the last test checks it off).
+process.env.SOCIAL_VIDEO = '1';
 
 const { createApp } = require('../server');
 const { openDatabase } = require('../src/db');
@@ -332,4 +334,33 @@ test('an older database upgrades: posts kept, a post no longer needs a job', () 
   db2.prepare("INSERT INTO social_posts (job_id, status, caption, photo_ids, platforms, created_at) VALUES (NULL, 'draft', '', '[]', '[]', 'x')").run();
   db2.close();
   assert.equal(openDatabase(file).prepare('SELECT COUNT(*) AS n FROM social_posts').get().n, 2, 'opening again changes nothing');
+});
+
+test('with the video side off (the default): photos only; Reels, clips, music and AI clips are refused', async () => {
+  const db3 = openDatabase(':memory:');
+  const app = createApp({ db: db3, fetchImpl: fakeFetch, photosDir: path.join(dir, 'photos-off'), socialMedia: fakeMedia, videoAi: fakeVideoAi, socialVideo: false });
+  const srv = http.createServer(app);
+  await new Promise((resolve) => srv.listen(0, resolve));
+  const b = `http://localhost:${srv.address().port}`;
+  const go = async (method, url, body, raw = null, type = 'image/jpeg') => {
+    const res = await fetch(b + url, { method, headers: { Authorization: ADMIN, 'Content-Type': raw ? type : 'application/json' }, body: raw || (body && JSON.stringify(body)) });
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  };
+  try {
+    const info = (await go('GET', '/api/social')).data;
+    assert.deepEqual([info.ai.reels, info.ai.video, info.settings.video_style], [false, false, 'photos']);
+    const p = (await go('POST', '/api/social', { post_type: 'tip' })).data;
+    assert.equal(p.video_style, 'photos');
+    assert.match((await go('PATCH', `/api/social/${p.id}`, { video_style: 'reel' })).data.error, /aren't turned on/);
+    assert.match((await go('PUT', '/api/social/settings', { video_style: 'reel' })).data.error, /aren't turned on/);
+    assert.match((await go('POST', '/api/social/media?name=c.mp4', null, Buffer.from('x'), 'video/mp4')).data.error, /aren't turned on/);
+    assert.match((await go('POST', '/api/social/media?kind=music', null, Buffer.from('x'), 'audio/mpeg')).data.error, /aren't turned on/);
+    assert.match((await go('POST', `/api/social/${p.id}/ai-clip`, { prompt: 'Water beading on black paint' })).data.error, /aren't turned on/);
+    assert.match((await go('POST', `/api/social/${p.id}/render`)).data.error, /aren't turned on/);
+    // Photos still work: upload one, write it, schedule it.
+    const up = (await go('POST', '/api/social/media?name=a.jpg', null, TINY_JPEG)).data;
+    assert.equal(up.kind, 'photo');
+    await go('PATCH', `/api/social/${p.id}`, { items: [{ src: 'upload', id: up.id }], caption: 'Skip the automatic car wash.' });
+    assert.equal((await go('POST', `/api/social/${p.id}/schedule`, { at: inDays(3) })).data.status, 'scheduled');
+  } finally { srv.close(); }
 });
