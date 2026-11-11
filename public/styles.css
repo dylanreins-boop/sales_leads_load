@@ -701,15 +701,19 @@ table.com-table { min-width: 760px; }
 .team-history li:last-child { border-bottom: 0; }
 
 /* Job status colors, used by chips, cards, the legend and the status picker. */
-.status-scheduled { --st: var(--accent); }
+/* Scheduled is its own blue (not the button color), so a red or green preset never makes it look
+   like Cancelled or Ready. */
+.status-scheduled { --st: #1f63c6; }
 .status-in_shop { --st: #c47a00; }
 .status-ready { --st: var(--ok); }
 .status-picked_up { --st: var(--muted); }
 .status-cancelled { --st: var(--danger); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .status-in_shop { --st: #ffad43; }
+  :root:not([data-theme="light"]) .status-scheduled { --st: #4c9dff; }
 }
 :root[data-theme="dark"] .status-in_shop { --st: #ffad43; }
+:root[data-theme="dark"] .status-scheduled { --st: #4c9dff; }
 
 /* ---------- Calendar ---------- */
 .calendar { overflow: auto; padding: 14px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left)); gap: 12px; }
@@ -2124,3 +2128,86 @@ button:active:not(:disabled) { transform: scale(0.98); }
 .ov-lead-foot { min-width: 0; align-items: baseline; }
 .ov-lead-foot span { flex: 1 1 auto; min-width: 0; }
 .ov-lead-foot b { flex: none; margin-left: auto; }
+
+/* Mid-size windows: the top bar's buttons go to icons (with their badges) so nothing runs off the edge. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .topbar .actions button:not(.clock-pill):not(.primary) span:not(.badge) { display: none; }
+  .crumb #brandCity, .crumb .crumb-sep { display: none; }
+}
+@media (min-width: 901px) and (max-width: 1020px) {
+  .topbar .actions button.primary span { display: none; }
+}
+
+/* ---- Calendar, in the new look (cards, soft corners, a header like Overview) ---- */
+.calendar { padding: 24px 30px 36px; gap: 16px; }
+.cal-toolbar { gap: 12px 16px; }
+.cal-title { font: 700 25px/1.2 var(--font-brand); letter-spacing: -0.3px; }
+.cal-nav { gap: 6px; }
+.nav-arrow { width: 38px; height: 38px; padding: 0; display: inline-grid; place-items: center; line-height: 1; border-radius: 10px; font-size: 24px; box-shadow: var(--card-shadow); }
+#calTodayBtn { height: 38px; padding: 0 14px; border-radius: 10px; font-weight: 600; box-shadow: var(--card-shadow); }
+#shopHoursBtn { height: 38px; border-radius: 10px; font-weight: 600; }
+.segmented { border-radius: 11px; padding: 3px; box-shadow: var(--card-shadow); }
+.segmented button { border-radius: 8px; padding: 7px 14px; font-size: 13px; }
+
+.cal-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.cal-stat { display: grid; gap: 3px; text-align: left; font: inherit; color: inherit; padding: 14px 16px; border-top: 3px solid var(--st, var(--border)); }
+button.cal-stat { cursor: pointer; transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease); }
+button.cal-stat:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 20, 43, 0.08); }
+.cal-stat-label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.cal-stat-value { font: 700 26px/1.15 var(--font-brand); font-variant-numeric: tabular-nums; }
+.cal-stat-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-stat.full { --st: var(--warn); }
+.cal-stat.over { --st: var(--danger); }
+.cal-stat.over .cal-stat-value { color: var(--danger); }
+
+.cal-legend { gap: 6px; }
+.legend-item { padding: 3px 10px; border-radius: 20px; background: var(--panel); border: 1px solid var(--border); font-weight: 600; color: var(--text); font-size: 11.5px; }
+.legend-item i { width: 8px; height: 8px; border-radius: 50%; }
+.cal-unscheduled { border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 12px; background: var(--panel); padding: 12px 14px; box-shadow: var(--card-shadow); }
+.waiting-chip { border-radius: 20px; padding: 5px 12px; font-weight: 600; background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+
+/* Month */
+.cal-month { border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.cal-dow { background: var(--panel); padding: 10px 12px; font-size: 11px; letter-spacing: 0.1em; }
+.cal-mweek { min-height: 118px; }
+.cal-mweek > .cal-cell-top { padding: 8px 8px 4px; }
+.cal-cell { transition: background 0.15s; }
+.cal-cell.today, .cal-cell-top.today { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.cal-date { font-size: 13px; min-width: 26px; height: 26px; display: inline-grid; place-items: center; padding: 0 7px; }
+.cal-cell.today .cal-date, .cal-cell-top.today .cal-date { box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
+.job-chip { border-radius: 7px; padding: 4px 8px; font-size: 12px; }
+.bar { margin: 0 8px 4px; }
+.off-bar { border-radius: 7px; padding: 4px 9px; }
+
+/* Week and list */
+.week-col { border-radius: var(--radius); background: var(--panel); box-shadow: var(--card-shadow); }
+.week-col.weekend { background: color-mix(in srgb, var(--bg) 55%, var(--panel)); }
+.week-col.today { box-shadow: inset 0 3px 0 var(--accent), var(--card-shadow); }
+.week-bar { border-radius: 10px; box-shadow: 0 1px 3px rgba(0, 20, 43, 0.06); }
+
+@media (max-width: 1100px) { .cal-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .calendar { padding: 14px 12px 24px; gap: 12px; }
+  .cal-title { font-size: 20px; }
+  .cal-stats { gap: 10px; }
+  .cal-stat { padding: 11px 12px; }
+  .cal-stat-value { font-size: 21px; }
+}
+/* Phones: a compact calendar header, so the days are on screen sooner. */
+@media (max-width: 640px) {
+  .cal-toolbar { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+  .cal-toolbar .cal-title { grid-column: 1 / -1; grid-row: 1; min-width: 0; }
+  .cal-toolbar .cal-nav { grid-column: 1; grid-row: 2; }
+  .cal-toolbar #calViews { grid-column: 2 / -1; grid-row: 2; justify-self: stretch; display: grid; grid-template-columns: repeat(4, 1fr); }
+  .cal-toolbar #calViews button { padding: 7px 2px; font-size: 12px; white-space: nowrap; }
+  .cal-toolbar #shopHoursBtn { grid-column: 1 / -1; grid-row: 3; justify-self: start; height: 32px; font-size: 13px; padding: 0 10px; }
+  .nav-arrow, #calTodayBtn { height: 36px; }
+  .nav-arrow { width: 34px; }
+  .cal-stats { gap: 8px; }
+  .cal-stat { padding: 9px 11px; gap: 1px; }
+  .cal-stat-label { font-size: 11.5px; }
+  .cal-stat-value { font-size: 19px; }
+  .cal-stat-sub { font-size: 11px; }
+  .cal-legend { gap: 4px; }
+  .legend-item { padding: 2px 8px; font-size: 10.5px; }
+}

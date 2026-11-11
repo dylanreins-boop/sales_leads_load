@@ -330,12 +330,17 @@ async function loadCalendar() {
   const { from, to } = range();
   const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
   const days = new URLSearchParams({ from: ShopTime.dayKey(from), to: ShopTime.dayKey(to) });
-  const [jobs, unscheduled, sheet, off] = await Promise.all([
+  // The cards at the top look at the shop now (the last month to the next week), whatever's on screen.
+  const now = startOfDay(new Date());
+  const around = new URLSearchParams({ from: new Date(now.getTime() - 45 * 86400000).toISOString(), to: new Date(now.getTime() + 8 * 86400000).toISOString() });
+  const [jobs, unscheduled, sheet, off, nearby] = await Promise.all([
     api(`/api/jobs?${params}`),
     isAdmin() ? api('/api/jobs/unscheduled') : Promise.resolve([]),
     cal.view === 'sheet' ? api(`/api/jobs/day-sheet?date=${ShopTime.dayKey(cal.anchor)}`) : null,
     api(`/api/time-off/calendar?${days}`).catch(() => []),
+    api(`/api/jobs?${around}`).catch(() => null),
   ]);
+  cal.nearby = nearby;
   cal.off = off;
   cal.jobs = jobs;
   cal.sheet = sheet;
@@ -490,6 +495,41 @@ function renderList(body) {
   if (ownScroll && cal.anchor.getMonth() === today.getMonth()) $('#calToday')?.scrollIntoView({ block: 'start' });
 }
 
+// The shop at a glance: what's in the building, ready to go, coming in, and how full this week is.
+function renderCalStats() {
+  const box = $('#calStats');
+  const jobs = cal.nearby;
+  if (!jobs) { box.hidden = true; return; }
+  box.hidden = false;
+  const today = startOfDay(new Date());
+  const week = new Date(today.getTime() + 7 * 86400000);
+  const inShop = jobs.filter((j) => j.status === 'in_shop');
+  const ready = jobs.filter((j) => j.status === 'ready');
+  const coming = jobs.filter((j) => j.status === 'scheduled' && new Date(j.start_at) >= today && new Date(j.start_at) < week);
+  // This week's booked hours against the hours the shop is open (Monday to Sunday).
+  const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const load = ShopTime.loadByDay(jobs, shopHours());
+  const s = shopHours() || {};
+  let booked = 0;
+  let open = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday); d.setDate(monday.getDate() + i);
+    if (!ShopTime.isWorkDay(d, s)) continue;
+    open += Number(s.hours_per_day || 8);
+    booked += load.get(ShopTime.dayKey(d))?.hours || 0;
+  }
+  const pct = open ? Math.round((booked / open) * 100) : null;
+  const names = (list) => list.slice(0, 3).map((j) => customer(j)).join(', ') + (list.length > 3 ? ` +${list.length - 3}` : '');
+  const card = (label, value, sub, cls = '', onclick = null) => h(onclick ? 'button' : 'div', { class: `ov-card cal-stat ${cls}`, ...(onclick && { type: 'button', onclick }) },
+    h('span', { class: 'cal-stat-label' }, label), h('b', { class: 'cal-stat-value' }, value), h('span', { class: 'cal-stat-sub' }, sub));
+  fill(box,
+    card('In the shop now', String(inShop.length), inShop.length ? names(inShop) : 'Nothing in the building', 'status-in_shop', inShop[0] ? () => openJob(inShop[0].id) : null),
+    card('Ready for pickup', String(ready.length), ready.length ? names(ready) : 'Nothing waiting', 'status-ready', ready[0] ? () => openJob(ready[0].id) : null),
+    card('Drop-offs next 7 days', String(coming.length), coming.length ? `Next: ${customer(coming.sort((a, b) => a.start_at.localeCompare(b.start_at))[0])}, ${fmtWhen(coming[0].start_at)}` : 'None booked yet', 'status-scheduled'),
+    card('Shop booked this week', pct == null ? '–' : `${pct}%`, `${Math.round(booked * 10) / 10} of ${open} work hours`, pct > 100 ? 'over' : pct >= 85 ? 'full' : '',
+      null));
+}
+
 function renderCalendar() {
   $('#calTitle').textContent = title();
   document.querySelectorAll('#calViews button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === cal.view)));
@@ -504,6 +544,7 @@ function renderCalendar() {
         `${leadName(l)}${l.vehicle_type ? ` · ${l.vehicle_type}` : ''}`)));
   }
 
+  renderCalStats();
   cal.load = ShopTime.loadByDay(cal.jobs, shopHours());
   const body = $('#calBody');
   body.dataset.view = cal.view;

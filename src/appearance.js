@@ -47,6 +47,12 @@ function lookVars(a, prefix) {
     v.push(`--panel: ${panel}`, `--text: ${t}`, `--muted: color-mix(in srgb, ${t} 62%, ${panel})`);
   }
   if (a[`${prefix}border`]) v.push(`--border: ${a[`${prefix}border`]}`);
+  // The side menu (and the dark cards that match it) follow the look: the top bar's color when it's
+  // dark, else a deep shade of the button color, so a preset like Carbon or Forest isn't left navy.
+  const side = prefix
+    ? a.dark_bar || (a.accent ? `color-mix(in srgb, ${a.accent} 18%, #05080d)` : null)
+    : bar && textOn(bar) === '#ffffff' ? bar : a.accent ? `color-mix(in srgb, ${a.accent} 28%, #070b12)` : null;
+  if (side) v.push(`--side: ${side}`, `--side-2: color-mix(in srgb, ${side} 90%, ${a.accent || '#ffffff'})`);
   return v;
 }
 
