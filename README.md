@@ -1030,6 +1030,12 @@ remembered on that device). Filter by search, import file, stage, where it is an
 **Select all**) to **Put on the board** (to work them now), **Move to stage**, or **Take off the board**;
 each lead's history notes the move. Tap a row to open the lead. **Export to Excel** downloads the tab.
 
+**Mark as sold (admins).** For imported leads that already bought: tick them and tap **🤝 Mark as sold**.
+Pick when they were sold (when each came in, from the file; today; or a date), who sold them (or not
+recorded) and, for one lead, the amount if you know it. They move to Booked and show on the **Sold** page
+with that date, rep and amount (and in Past Customers if they're off the board); the rep sees them under
+My sales. Each lead's history notes it. Moving one back to another stage takes it off the Sold page.
+
 Created Time is read in the shop's time zone (`TZ`), as Zoho writes it. Leads already in the app (same phone or
 email) are skipped, so importing Leads and then Contacts won't double up people who are in both.
 
@@ -1207,7 +1213,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 |---|---|---|
 | GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead, `customers`, `imported` for every imported lead) |
 | GET | `/api/sold` | Already-sold leads with when, who and the job (admins: everyone's; sales: their own) |
-| POST | `/api/leads/bulk` | `{ ids, action: board\|stage\|off, stage }`: put leads on the board, move them to a stage, or take them off the board |
+| POST | `/api/leads/bulk` | `{ ids, action: board\|stage\|off\|sold, stage, sold_on, sold_by, amount }`: put leads on the board, move them to a stage, take them off the board, or (admins) mark them sold |
 | GET | `/api/leads/search?q=` | The search box: every lead, best matches first |
 | POST | `/api/leads/:id/restore` | Put an old or dead lead back on its board |
 | GET | `/api/export.xlsx?…same filters…` | Excel download |

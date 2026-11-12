@@ -2649,3 +2649,14 @@ table.sold-table { min-width: 980px; table-layout: auto; }
   body.app-page .sold { overflow: visible; }
   .sold-periods button { padding: 6px 8px; font-size: 12px; }
 }
+
+/* Mark as sold (Imported leads, admins) */
+.imp-sold-btn { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); color: var(--ok); font-weight: 600; }
+.sold-dialog { border: 0; border-radius: 16px; padding: 20px; width: min(460px, calc(100vw - 32px)); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
+.sold-dialog::backdrop { background: rgba(0, 10, 25, 0.45); }
+.sold-dialog form { display: grid; gap: 12px; }
+.sold-dialog h3 { margin: 0; }
+.sold-dialog p { margin: 0; font-size: 13.5px; }
+.sold-dialog label { display: grid; gap: 6px; margin: 0; font-weight: 600; font-size: 13px; color: var(--muted); }
+.sold-dialog input[type="date"][hidden] { display: none; }
+.sold-dialog-actions { justify-content: flex-end; }

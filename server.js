@@ -389,7 +389,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     leads.archiveOldLeads();
     return insights.decorate(leads.listLeads(leadFilters(query)));
   });
-  route('POST', '/api/leads/bulk', ({ body, actor }) => leads.bulkUpdate(body, actor));
+  route('POST', '/api/leads/bulk', ({ body, actor }) => leads.bulkUpdate(body, { user: actor.user, role: actor.role }));
   // Already sold: admins see everyone's; sales see the ones they sold.
   route('GET', '/api/sold', ({ actor }) => ({
     leads: leads.soldLeads({ rep: actor.role === 'admin' ? null : actor.user }),

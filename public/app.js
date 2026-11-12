@@ -741,6 +741,7 @@ function renderImported() {
       h('button', { type: 'button', class: 'primary', onclick: () => bulkImported('board') }, 'Put on the board'),
       stageSel,
       h('button', { type: 'button', onclick: () => bulkImported('off') }, 'Take off the board'),
+      isAdmin() && h('button', { type: 'button', class: 'imp-sold-btn', onclick: markImportedSold }, '🤝 Mark as sold'),
       h('button', { type: 'button', class: 'link-btn', onclick: () => { sel.clear(); renderImported(); } }, 'Clear'));
   }
 
@@ -783,6 +784,55 @@ function sortImported(key) {
   else Object.assign(s, { key, dir: ['received_at', 'last_contacted_at', 'imported'].includes(key) ? 'desc' : 'asc' });
   try { localStorage.setItem('importedSort', JSON.stringify(s)); } catch { /* storage unavailable */ }
   renderImported();
+}
+
+// Admins: mark the ticked leads as sold (Booked), so they show on the Sold page: when they were sold (when they
+// came in, today, or a date), who sold them and, for one lead, the amount.
+async function markImportedSold() {
+  const ids = [...state.importedSel];
+  const n = ids.length;
+  const one = n === 1 ? state.imported.find((l) => l.id === ids[0]) : null;
+  let team = [];
+  try { team = (await api('/api/users')).users.filter((u) => u.active && u.role !== 'shop').map((u) => u.name); } catch { /* list it without names */ }
+  const today = new Date();
+  const local = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const when = h('select', { name: 'when' },
+    h('option', { value: 'received' }, n === 1 && one?.received_at ? `When they came in (${shortDate(one.received_at)})` : 'When each came in (the date in the file)'),
+    h('option', { value: 'today' }, 'Today'),
+    h('option', { value: 'date' }, 'On a date…'));
+  const date = h('input', { type: 'date', name: 'date', max: local(today), hidden: true });
+  when.addEventListener('change', () => { date.hidden = when.value !== 'date'; });
+  const rep = h('select', { name: 'rep' }, h('option', { value: '' }, 'Not recorded'), ...team.map((name) => h('option', { value: name }, name)));
+  const amount = h('input', { name: 'amount', inputmode: 'decimal', placeholder: 'e.g. 1895', autocomplete: 'off' });
+  const result = await new Promise((resolve) => {
+    const dialog = h('dialog', { class: 'sold-dialog' },
+      h('form', { method: 'dialog', onsubmit: (e) => {
+        e.preventDefault();
+        if (when.value === 'date' && !date.value) { toast('Pick the date they were sold', 'error'); return; }
+        dialog.close();
+        resolve({ sold_on: when.value === 'date' ? date.value : when.value, sold_by: rep.value || null, amount: n === 1 ? amount.value : null });
+      } },
+      h('h3', {}, n === 1 ? `Mark ${leadName(one)} as sold?` : `Mark ${n} leads as sold?`),
+      h('p', { class: 'muted' }, 'They move to Booked and show on the Sold page (and in Past Customers if they\'re off the board). Each lead\'s history notes it.'),
+      h('label', {}, 'When were they sold?', when, date),
+      h('label', {}, 'Sold by', rep),
+      n === 1 && h('label', {}, 'Amount (if you know it)', amount),
+      h('div', { class: 'form-actions sold-dialog-actions' },
+        h('button', { type: 'button', onclick: () => { dialog.close(); resolve(null); } }, 'Cancel'),
+        h('button', { type: 'submit', class: 'primary' }, n === 1 ? 'Mark as sold' : `Mark ${n} as sold`))));
+    dialog.addEventListener('cancel', () => resolve(null));
+    dialog.addEventListener('close', () => setTimeout(() => dialog.remove(), 0));
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+  if (!result) return;
+  try {
+    const r = await api('/api/leads/bulk', { method: 'POST', body: { ids, action: 'sold', ...result } });
+    toast(`${r.changed} lead${r.changed === 1 ? '' : 's'} marked as sold. They're on the Sold page.`);
+    state.importedSel.clear();
+    sold.data = null;
+    await loadLeads();
+  } catch (err) { fail(err); }
 }
 
 async function bulkImported(action, stage) {

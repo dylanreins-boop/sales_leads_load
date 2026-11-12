@@ -61,3 +61,27 @@ test('Sold: booked leads with when, who and the job; admins see all, sales their
   assert.deepEqual([cyRow.sold_by, cyRow.job_status, cyRow.amount_cents], ['Sam', null, null]);
   assert.ok(cyRow.sold_at);
 });
+
+test('Mark as sold (admins): imported leads move to Booked with when, who and the amount', async () => {
+  const mk = async (name, phone, received) => (await call('POST', '/api/leads', { full_name: name, phone, received_at: received })).data.lead;
+  const old = await mk('Dee Old', '702-555-0401', '2025-03-10T17:00:00.000Z');
+  const two = await mk('Eve Two', '702-555-0402');
+  const three = await mk('Fay Three', '702-555-0403');
+  assert.equal((await call('POST', '/api/leads/bulk', { ids: [old.id], action: 'sold' }, SAM)).status, 403, 'admins only');
+  assert.match((await call('POST', '/api/leads/bulk', { ids: [two.id, three.id], action: 'sold', amount: '900' })).data.error, /one lead at a time/);
+  assert.match((await call('POST', '/api/leads/bulk', { ids: [two.id], action: 'sold', sold_on: '2099-01-01' })).data.error, /future/);
+
+  assert.equal((await call('POST', '/api/leads/bulk', { ids: [old.id], action: 'sold', sold_by: 'Lee', amount: '$2,150' })).data.changed, 1);
+  assert.equal((await call('POST', '/api/leads/bulk', { ids: [two.id, three.id], action: 'sold', sold_on: '2026-06-15', sold_by: 'Sam' })).data.changed, 2);
+
+  const rows = Object.fromEntries((await call('GET', '/api/sold')).data.leads.map((l) => [l.full_name, l]));
+  const oldReceived = (await call('GET', `/api/leads/${old.id}`)).data.lead?.received_at ?? (await call('GET', `/api/leads/${old.id}`)).data.received_at;
+  assert.deepEqual([rows['Dee Old'].sold_by, rows['Dee Old'].amount_cents, rows['Dee Old'].sold_at], ['Lee', 215000, oldReceived], 'sold when it came in');
+  assert.deepEqual([rows['Eve Two'].sold_by, rows['Eve Two'].sold_at.slice(0, 10), rows['Eve Two'].amount_cents], ['Sam', '2026-06-15', null]);
+  assert.ok(rows['Fay Three'], 'both marked');
+  // Sam sees the ones marked as his.
+  const mine = (await call('GET', '/api/sold', undefined, SAM)).data.leads.map((l) => l.full_name);
+  assert.ok(mine.includes('Eve Two') && mine.includes('Fay Three') && !mine.includes('Dee Old'));
+  const notes = (await call('GET', `/api/leads/${old.id}`)).data.activities.map((a) => a.note || '').join(' | ');
+  assert.match(notes, /Marked as sold by Lee \(sold \d{4}-\d\d-\d\d, \$2,150\)/);
+});

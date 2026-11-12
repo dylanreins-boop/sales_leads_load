@@ -502,6 +502,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   function soldLeads({ rep = null } = {}) {
     const rows = stmt(`SELECT l.id, l.full_name, l.first_name, l.last_name, l.phone, l.email, l.source, l.vehicle_year, l.vehicle_make, l.vehicle_model,
         l.vehicle_color, l.vehicle_type, l.booked_services, l.archived_at, l.import_batch, l.received_at, l.stage,
+        l.sold_at AS marked_sold_at, l.sold_by AS marked_sold_by, l.sold_cents AS marked_sold_cents,
         (SELECT MAX(a.created_at) FROM activities a WHERE a.lead_id = l.id AND (a.to_stage = 'booked' OR a.disposition = 'booked')) AS booked_activity_at,
         (SELECT a.user_name FROM activities a WHERE a.lead_id = l.id AND (a.to_stage = 'booked' OR a.disposition = 'booked') ORDER BY a.id DESC LIMIT 1) AS booked_by,
         (SELECT MIN(j.created_at) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled') AS first_job_at,
@@ -515,9 +516,11 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     const out = rows.map((r) => ({
       ...r,
       booked_services: parseServices(r.booked_services),
-      // Sold = when the job was first put on the calendar (or the lead marked Booked); an imported sale, when it came in.
-      sold_at: r.first_job_at || r.booked_activity_at || r.received_at,
-      sold_by: r.job_rep || r.booked_by || null,
+      // Sold = when the job was first put on the calendar, or the sale an admin recorded (Mark as sold), or
+      // when the lead was marked Booked; an imported sale, when it came in.
+      sold_at: r.first_job_at || r.marked_sold_at || r.booked_activity_at || r.received_at,
+      sold_by: r.job_rep || r.marked_sold_by || r.booked_by || null,
+      amount_cents: r.amount_cents ?? r.marked_sold_cents ?? null,
       imported: Boolean(r.import_batch),
       pipeline: pipelineFor(r.vehicle_type),
     }));
@@ -526,19 +529,50 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
 
   // Several leads at once (the Imported tab): put them on the board, move them to a stage, or take them
   // off the board (to Old & Dead Leads, or Past Customers if booked). Each lead's history notes it.
-  function bulkUpdate({ ids, action, stage } = {}, { user } = {}) {
+  // `sold` (admins only): mark them sold (Booked), with when (`sold_on`: 'received' = when each came in, 'today',
+  // or a YYYY-MM-DD date), who sold them and, for one lead, the amount. They then show on the Sold page.
+  function bulkUpdate({ ids, action, stage, sold_on: soldOn = 'received', sold_by: soldByIn = null, amount = null } = {}, { user, role } = {}) {
     const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger))];
     if (!list.length) throw new HttpError(400, 'Pick some leads first.');
     if (list.length > 5000) throw new HttpError(400, 'Pick 5,000 or fewer at a time.');
-    if (!['board', 'stage', 'off'].includes(action)) throw new HttpError(400, 'Pick what to do with them.');
+    if (!['board', 'stage', 'off', 'sold'].includes(action)) throw new HttpError(400, 'Pick what to do with them.');
     if (action === 'stage' && !STAGE_IDS.has(stage)) throw new HttpError(400, `Unknown stage: ${stage}`);
+    let soldCents = null;
+    let soldDate = null;
+    let soldBy = null;
+    if (action === 'sold') {
+      if (role !== 'admin') throw new HttpError(403, 'Only admins can mark leads as sold.');
+      if (!['received', 'today'].includes(soldOn)) {
+        const d = new Date(`${soldOn}T12:00:00`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(soldOn)) || Number.isNaN(d.getTime())) throw new HttpError(400, 'Pick when they were sold.');
+        if (d.getTime() > Date.now() + 86400000) throw new HttpError(400, 'The sold date can\'t be in the future.');
+        soldDate = d.toISOString();
+      }
+      if (amount !== null && amount !== undefined && String(amount).trim() !== '') {
+        const dollars = Number(String(amount).replace(/[$,\s]/g, ''));
+        if (!Number.isFinite(dollars) || dollars < 0 || dollars > 1000000) throw new HttpError(400, 'Type the amount in dollars, like 1895.');
+        if (list.length > 1) throw new HttpError(400, 'An amount can only be set on one lead at a time.');
+        soldCents = Math.round(dollars * 100);
+      }
+      soldBy = soldByIn ? String(soldByIn).trim().slice(0, 80) || null : null;
+    }
     let changed = 0;
     transaction(db, () => {
       const ts = now();
       for (const id of list) {
         const lead = stmt('SELECT id, stage, archived_at FROM leads WHERE id = ?').get(id);
         if (!lead) continue;
-        if (action === 'board') {
+        if (action === 'sold') {
+          const { received_at: receivedAt } = stmt('SELECT received_at FROM leads WHERE id = ?').get(id);
+          const at = soldOn === 'today' ? ts : soldDate || receivedAt || ts;
+          stmt("UPDATE leads SET stage = 'booked', sold_at = ?, sold_by = ?, sold_cents = ?, updated_at = ? WHERE id = ?").run(at, soldBy, soldCents, ts, id);
+          logActivity(id, 'stage_change', {
+            from_stage: lead.stage,
+            to_stage: 'booked',
+            note: `Marked as sold${soldBy ? ` by ${soldBy}` : ''} (sold ${at.slice(0, 10)}${soldCents != null ? `, $${(soldCents / 100).toLocaleString('en-US')}` : ''})`,
+            user,
+          });
+        } else if (action === 'board') {
           if (!lead.archived_at) continue;
           bringBack(lead, { note: 'Put on the board (from the Imported leads)', user });
         } else if (action === 'off') {
