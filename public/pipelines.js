@@ -109,7 +109,7 @@ async function savePipelines() {
     await api('/api/pipelines', { method: 'PUT', body: { pipelines: body } });
     state.meta = await api('/api/meta');
     fillPipelineSelects();
-    if (!state.meta.pipelines.some((p) => p.id === state.pipeline) && !['old', 'customers'].includes(state.pipeline)) state.pipeline = state.meta.pipelines[0].id;
+    if (!state.meta.pipelines.some((p) => p.id === state.pipeline) && !['old', 'customers', 'imported'].includes(state.pipeline)) state.pipeline = state.meta.pipelines[0].id;
     await loadLeads();
     showPanel(null);
     toast('Pipelines saved. Leads are on their new boards.');

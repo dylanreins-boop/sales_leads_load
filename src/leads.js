@@ -184,6 +184,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     if (view === 'active') where.push('l.archived_at IS NULL');
     if (view === 'old') where.push("l.archived_at IS NOT NULL AND l.stage != 'booked'");
     if (view === 'customers') where.push("l.archived_at IS NOT NULL AND l.stage = 'booked'");
+    if (view === 'imported') where.push('l.import_batch IS NOT NULL');
     if (status === 'dead') where.push("l.stage = 'waste'");
     if (status === 'old') where.push("l.stage != 'waste'");
     if (vehicleType === 'none') where.push("coalesce(l.vehicle_type, '') = ''");
@@ -213,7 +214,9 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                         l.campaign, l.form_name, l.message, l.heard_about, l.last_disposition, l.last_contacted_at,
                         l.last_contact_by, l.last_contact_kind, l.last_opened_at, l.last_opened_by,
                         l.welcome_due_at, l.welcome_sent_at, l.best_time, l.best_time_note, l.best_time_by,
-                        l.received_at, l.updated_at, l.archived_at, l.first_contacted_at, l.referrer_id,
+                        l.received_at, l.updated_at, l.archived_at, l.first_contacted_at, l.referrer_id, l.import_batch,
+                        (SELECT b.file FROM import_batches b WHERE b.id = l.import_batch) AS import_file,
+                        (SELECT b.created_at FROM import_batches b WHERE b.id = l.import_batch) AS imported_at,
                         (SELECT MIN(due_at) FROM reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL) AS next_reminder_at,
                         ${LAST_REPLY_SQL} AS last_reply_at,
                         (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS jobs_done,
@@ -494,6 +497,39 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     return getLead(id);
   }
 
+  // Several leads at once (the Imported tab): put them on the board, move them to a stage, or take them
+  // off the board (to Old & Dead Leads, or Past Customers if booked). Each lead's history notes it.
+  function bulkUpdate({ ids, action, stage } = {}, { user } = {}) {
+    const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger))];
+    if (!list.length) throw new HttpError(400, 'Pick some leads first.');
+    if (list.length > 5000) throw new HttpError(400, 'Pick 5,000 or fewer at a time.');
+    if (!['board', 'stage', 'off'].includes(action)) throw new HttpError(400, 'Pick what to do with them.');
+    if (action === 'stage' && !STAGE_IDS.has(stage)) throw new HttpError(400, `Unknown stage: ${stage}`);
+    let changed = 0;
+    transaction(db, () => {
+      const ts = now();
+      for (const id of list) {
+        const lead = stmt('SELECT id, stage, archived_at FROM leads WHERE id = ?').get(id);
+        if (!lead) continue;
+        if (action === 'board') {
+          if (!lead.archived_at) continue;
+          bringBack(lead, { note: 'Put on the board (from the Imported leads)', user });
+        } else if (action === 'off') {
+          if (lead.archived_at) continue;
+          stmt('UPDATE leads SET archived_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, id);
+          stmt('UPDATE reminders SET done_at = ? WHERE lead_id = ? AND done_at IS NULL').run(ts, id);
+          logActivity(id, 'archived', { note: `Taken off the board (from the Imported leads) to ${lead.stage === 'booked' ? 'Past Customers' : 'Old & Dead Leads'}`, user });
+        } else {
+          if (lead.stage === stage) continue;
+          stmt('UPDATE leads SET stage = ?, updated_at = ? WHERE id = ?').run(stage, ts, id);
+          logActivity(id, 'stage_change', { from_stage: lead.stage, to_stage: stage, note: `Moved to ${stageLabel(stage)} (from the Imported leads)`, user });
+        }
+        changed += 1;
+      }
+    });
+    return { changed, unchanged: list.length - changed };
+  }
+
   // ---- Updates feed for admins: every change by anyone, newest first ----
   const seenKey = (user) => `updates_seen:${user || 'admin'}`;
   const lastActivityId = () => stmt('SELECT MAX(id) AS id FROM activities').get().id || 0;
@@ -632,7 +668,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     searchLeads, ingest, listLeads, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
-    archiveOldLeads, restoreLead, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,
+    archiveOldLeads, restoreLead, bulkUpdate, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,
   };
 }
 

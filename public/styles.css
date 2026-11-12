@@ -2596,3 +2596,36 @@ body.signing .toasts { z-index: 1001; }
 .import-howto summary { cursor: pointer; font-weight: 600; color: var(--link); }
 .import-howto ol { margin: 10px 0 2px; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; }
 .import-booked { margin: 6px 0 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+
+/* ---- Imported leads: sortable table, filters, bulk bar ---- */
+.imp-filters .imp-search { flex: 1 1 260px; }
+.imp-sort { border: 0; background: none; padding: 0; font: inherit; color: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.imp-sort.on { color: var(--accent); }
+.imp-arrow { font-size: 10px; opacity: 0.55; }
+.imp-sort.on .imp-arrow { opacity: 1; }
+table.imported-table { min-width: 1100px; table-layout: auto; }
+.imported-table th.imp-check, .imported-table td.imp-check { width: 36px; text-align: center; }
+.imported-table input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
+.imported-table tr.picked td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.imp-stage { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: color-mix(in srgb, var(--muted) 13%, transparent); }
+.imp-stage.stage-booked { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.imp-stage.stage-waste { color: var(--muted); }
+.imp-stage.stage-new { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+.imp-where { font-size: 12px; font-weight: 600; }
+.imp-where.board { color: var(--ok); }
+.imp-where.dead, .imp-where.old { color: var(--muted); }
+.imp-bulk { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border-radius: 12px;
+  background: var(--panel); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); box-shadow: var(--card-shadow); }
+.imp-bulk[hidden] { display: none; }
+.imp-bulk select { width: auto; }
+.imp-more { display: flex; justify-content: center; }
+@media (max-width: 640px) {
+  .imp-bulk { gap: 6px; padding: 8px; }
+  .imp-bulk button, .imp-bulk select { font-size: 13px; }
+}
+@media (max-width: 640px) {
+  .imp-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .imp-filters label { min-width: 0; font-size: 12px; }
+  .imp-filters .imp-search { grid-column: 1 / -1; }
+  #importedView #importedIntro { display: none; }
+}

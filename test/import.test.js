@@ -137,3 +137,27 @@ test('Zoho deal stages and negative statuses', () => {
   assert.deepEqual(['Not Contacted', 'Not Qualified', 'Attempted to Contact', 'Contact in Future', 'Pre-Qualified', 'Closed Won', 'Closed Lost', 'Proposal/Price Quote', 'Junk Lead']
     .map(stageFrom), ['new', 'waste', 'voicemail', 'contacted', 'contacted', 'booked', 'waste', 'contacted', 'waste']);
 });
+
+test('Imported leads: listed wherever they are, and moved in bulk (on the board, a stage, off the board)', async () => {
+  const csv = fs.readFileSync(path.join(__dirname, 'fixtures', 'zoho-leads.csv'));
+  const up = (await upload(csv, 'zoho-again.csv')).data;
+  const done = (await call('POST', '/api/import/commit', { token: up.token, mapping: up.mapping, placement: 'archive' })).data;
+  let list = (await call('GET', '/api/leads?view=imported', undefined, SAM)).data.filter((l) => l.import_batch === done.batch);
+  assert.equal(list.length, done.created);
+  assert.ok(list.every((l) => l.archived_at && l.import_file === 'zoho-again.csv' && l.imported_at), 'all off the board, with the file they came from');
+  const [a, b2, c] = list;
+  assert.equal((await call('POST', '/api/leads/bulk', { ids: [a.id, b2.id], action: 'board' }, SAM)).data.changed, 2);
+  assert.equal((await call('POST', '/api/leads/bulk', { ids: [a.id, b2.id, c.id], action: 'stage', stage: 'contacted' }, SAM)).data.changed,
+    [a, b2, c].filter((l) => l.stage !== 'contacted').length);
+  assert.match((await call('POST', '/api/leads/bulk', { ids: [a.id], action: 'stage', stage: 'nope' })).data.error, /Unknown stage/);
+  assert.match((await call('POST', '/api/leads/bulk', { ids: [], action: 'board' })).data.error, /Pick some leads/);
+  const off = (await call('POST', '/api/leads/bulk', { ids: [a.id, b2.id, c.id], action: 'off' }, SAM)).data;
+  assert.deepEqual([off.changed, off.unchanged], [2, 1], 'c was already off the board');
+  list = (await call('GET', '/api/leads?view=imported')).data;
+  const after = Object.fromEntries(list.map((l) => [l.id, l]));
+  assert.ok([a, b2, c].every((l) => after[l.id].stage === 'contacted' && after[l.id].archived_at));
+  const history = (await call('GET', `/api/leads/${a.id}`)).data.activities.map((x) => x.note || '').join(' | ');
+  assert.match(history, /Put on the board \(from the Imported leads\)/);
+  assert.match(history, /Taken off the board/);
+  await call('POST', `/api/import/batches/${done.batch}/undo`);
+});

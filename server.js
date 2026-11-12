@@ -389,6 +389,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     leads.archiveOldLeads();
     return insights.decorate(leads.listLeads(leadFilters(query)));
   });
+  route('POST', '/api/leads/bulk', ({ body, actor }) => leads.bulkUpdate(body, actor));
   // ---- Overview (the home screen) and lead scoring ----
   route('GET', '/api/overview', ({ actor }) => {
     const o = insights.overview({ role: actor.role });
@@ -589,7 +590,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     leads.archiveOldLeads();
     const filters = leadFilters(query);
     const rows = leads.exportLeads(filters);
-    const label = { active: 'Active Leads', old: 'Old & Dead Leads', customers: 'Past Customers' }[filters.view] || 'All Leads';
+    const label = { active: 'Active Leads', old: 'Old & Dead Leads', customers: 'Past Customers', imported: 'Imported Leads' }[filters.view] || 'All Leads';
     const stamp = new Date().toISOString().slice(0, 10);
     res.writeHead(200, {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

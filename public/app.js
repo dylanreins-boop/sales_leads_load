@@ -17,6 +17,11 @@ const state = {
   customerVehicle: '',
   customerDue: '',
   oldFilters: { vehicle: '', source: '', status: '' },
+  imported: [],
+  importedFilters: { q: '', file: '', stage: '', where: '', source: '' },
+  importedSort: { key: 'received_at', dir: 'desc' },
+  importedSel: new Set(),
+  importedShow: 200,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -217,9 +222,12 @@ async function loadLeads() {
   const customerParams = new URLSearchParams(params);
   customerParams.set('view', 'customers');
   if (source) params.set('source', source);
-  [state.leads, state.oldLeads, state.customers] = await Promise.all([
-    api(`/api/leads?${params}`), api(`/api/leads?${oldParams}`), api(`/api/leads?${customerParams}`),
+  [state.leads, state.oldLeads, state.customers, state.imported] = await Promise.all([
+    api(`/api/leads?${params}`), api(`/api/leads?${oldParams}`), api(`/api/leads?${customerParams}`), api('/api/leads?view=imported'),
   ]);
+  // Leads no longer there (an import undone) drop out of the selection.
+  const ids = new Set(state.imported.map((l) => l.id));
+  for (const id of state.importedSel) if (!ids.has(id)) state.importedSel.delete(id);
   renderBoard();
 }
 
@@ -229,7 +237,7 @@ function pickPipeline() {
   const fromLink = location.hash.slice(1);
   let saved = null;
   try { saved = localStorage.getItem('pipeline'); } catch { /* storage unavailable */ }
-  state.pipeline = [fromLink, saved].find((id) => ids.includes(id) || id === 'old' || id === 'customers') || 'other';
+  state.pipeline = [fromLink, saved].find((id) => ids.includes(id) || ['old', 'customers', 'imported'].includes(id)) || 'other';
 }
 
 // ---------- sections: Leads / Calendar ----------
@@ -296,7 +304,7 @@ function setPipeline(id) {
 
 function renderTabs() {
   // Phones show the short names so all tabs and the export button fit.
-  const SHORT = { rv: 'RVs', other: 'Other', customers: 'Customers', old: 'Old & Dead' };
+  const SHORT = { rv: 'RVs', other: 'Other', customers: 'Customers', old: 'Old & Dead', imported: 'Imported' };
   // The short names only fit the built-in names; a renamed pipeline shows its own name.
   const DEFAULT_NAMES = { rv: 'RV Pipeline', other: 'All Other Vehicles' };
   const tab = (id, label, count, extra = '') => h('button', {
@@ -311,6 +319,7 @@ function renderTabs() {
     ...state.meta.pipelines.map((p) => tab(p.id, p.label, state.leads.filter((l) => l.pipeline === p.id).length)),
     tab('customers', 'Past Customers', state.customers.length, 'old-tab'),
     tab('old', 'Old & Dead Leads', state.oldLeads.length, 'old-tab'),
+    ...(state.imported.length || state.pipeline === 'imported' ? [tab('imported', 'Imported', state.imported.length, 'old-tab')] : []),
     h('span', { class: 'spacer' }),
     ...(isAdmin() ? [h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
       h('span', { class: 'long-label' }, 'Export to Excel'), h('span', { class: 'short-label' }, 'Excel'))] : []),
@@ -320,7 +329,9 @@ function renderTabs() {
 // The Excel download matches the tab and filters on screen.
 function exportUrl() {
   const params = new URLSearchParams();
-  if (state.pipeline === 'customers') {
+  if (state.pipeline === 'imported') {
+    params.set('view', 'imported');
+  } else if (state.pipeline === 'customers') {
     params.set('view', 'customers');
     if (state.customerVehicle) params.set('vehicle_type', state.customerVehicle);
   } else if (state.pipeline === 'old') {
@@ -343,16 +354,20 @@ function renderBoard() {
   renderTabs();
   const showingOld = state.pipeline === 'old';
   const showingCustomers = state.pipeline === 'customers';
-  $('#board').hidden = showingOld || showingCustomers;
+  const showingImported = state.pipeline === 'imported';
+  const notBoard = showingOld || showingCustomers || showingImported;
+  $('#board').hidden = notBoard;
   $('#oldView').hidden = !showingOld;
   $('#customersView').hidden = !showingCustomers;
-  $('#sourceFilter').hidden = showingOld || showingCustomers;
-  $('#boardTitle').textContent = showingOld ? 'Old & Dead Leads' : showingCustomers ? 'Past Customers' : pipelineLabel(state.pipeline);
-  $('#boardSub').textContent = showingOld || showingCustomers ? '' : 'Drag a card to move it. Click to open, double-click for full screen.';
-  $('#boardSub').hidden = showingOld || showingCustomers;
-  $('#boardStats').hidden = showingOld || showingCustomers;
+  $('#importedView').hidden = !showingImported;
+  $('#sourceFilter').hidden = notBoard;
+  $('#boardTitle').textContent = showingOld ? 'Old & Dead Leads' : showingCustomers ? 'Past Customers' : showingImported ? 'Imported leads' : pipelineLabel(state.pipeline);
+  $('#boardSub').textContent = notBoard ? '' : 'Drag a card to move it. Click to open, double-click for full screen.';
+  $('#boardSub').hidden = notBoard;
+  $('#boardStats').hidden = notBoard;
   if (showingOld) return renderOld();
   if (showingCustomers) return renderCustomers();
+  if (showingImported) return renderImported();
   const board = $('#board');
   board.setAttribute('aria-label', pipelineLabel(state.pipeline));
   const inPipeline = state.leads.filter((l) => l.pipeline === state.pipeline);
@@ -636,6 +651,151 @@ function renderCustomers() {
     ? `No past customers yet. Booked customers show up here ${state.meta.archiveDays} days after their job is picked up.`
     : state.customerDue ? `Nobody here is due for maintenance yet. Customers are flagged ${state.meta.recoatMonths} months after pick-up.`
       : 'No past customers with that vehicle type.')))]));
+}
+
+// ---------- imported leads ----------
+// Every lead brought in with Import leads, wherever it is now, in a table that sorts by any column, with
+// filters, and tick boxes to sort them in bulk: put them on the board, move them to a stage, or take them
+// off the board.
+const IMPORTED_COLUMNS = [
+  { key: 'name', label: 'Name', get: (l) => leadName(l).toLowerCase() },
+  { key: 'phone', label: 'Phone', get: (l) => l.phone || '' },
+  { key: 'vehicle', label: 'Vehicle', get: (l) => [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ').toLowerCase() },
+  { key: 'source', label: 'Lead type', get: (l) => (sourceLabel[l.source] || l.source || '').toLowerCase() },
+  { key: 'received_at', label: 'Came in', get: (l) => l.received_at || '' },
+  { key: 'stage', label: 'Stage', get: (l) => state.meta.stages.findIndex((s) => s.id === l.stage) },
+  { key: 'where', label: 'Where', get: (l) => importedWhere(l).order },
+  { key: 'before', label: 'Status before', get: (l) => importedBefore(l).toLowerCase() },
+  { key: 'last_contacted_at', label: 'Last contact', get: (l) => l.last_contacted_at || '' },
+  { key: 'imported', label: 'Imported from', get: (l) => `${l.imported_at || ''} ${l.import_file || ''}` },
+];
+function importedWhere(l) {
+  if (!l.archived_at) return { key: 'board', text: 'On the board', order: 0 };
+  if (l.stage === 'booked') return { key: 'customers', text: 'Past customer', order: 1 };
+  if (l.stage === 'waste') return { key: 'dead', text: 'Dead', order: 3 };
+  return { key: 'old', text: 'Old', order: 2 };
+}
+// "Status before the app: Contacted" from the import notes.
+const importedBefore = (l) => (/Status before the app: ([^\n]+)/.exec(l.message || '') || [])[1] || '';
+
+function importedRows() {
+  const f = state.importedFilters;
+  const q = f.q.trim().toLowerCase();
+  const digits = q.replace(/\D/g, '');
+  const col = IMPORTED_COLUMNS.find((c) => c.key === state.importedSort.key) || IMPORTED_COLUMNS[4];
+  const dir = state.importedSort.dir === 'asc' ? 1 : -1;
+  return state.imported
+    .filter((l) => !f.file || l.import_batch === f.file)
+    .filter((l) => !f.stage || l.stage === f.stage)
+    .filter((l) => !f.source || l.source === f.source)
+    .filter((l) => !f.where || importedWhere(l).key === f.where || (f.where === 'off' && l.archived_at))
+    .filter((l) => !q || [leadName(l), l.email, [l.vehicle_year, l.vehicle_make, l.vehicle_model].join(' ')].some((v) => String(v || '').toLowerCase().includes(q))
+      || (digits.length >= 3 && String(l.phone || '').replace(/\D/g, '').includes(digits)))
+    .sort((a, b) => {
+      const x = col.get(a);
+      const y = col.get(b);
+      // Blanks last, either way.
+      if ((x === '' || x == null) !== (y === '' || y == null)) return x === '' || x == null ? 1 : -1;
+      return (x < y ? -1 : x > y ? 1 : 0) * dir || String(b.received_at).localeCompare(String(a.received_at));
+    });
+}
+
+function renderImported() {
+  const f = state.importedFilters;
+  const all = state.imported;
+  $('#importedIntro').textContent = 'Every lead brought in with Import leads, wherever it is now. Tap a column to sort by it (tap again to flip it), '
+    + 'tick leads to put them on the board, move them to a stage or take them off the board, and tap a row to open the lead.';
+  // Filter choices from what's there.
+  const files = [...new Map(all.map((l) => [l.import_batch, { id: l.import_batch, name: l.import_file || 'Import', at: l.imported_at }])).values()]
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const fill2 = (sel, opts, value) => {
+    sel.replaceChildren(...opts.map(([v, t]) => h('option', { value: v }, t)));
+    sel.value = value;
+    if (sel.value !== value) sel.value = '';
+  };
+  fill2($('#importedFile'), [['', `All imports (${files.length})`], ...files.map((b) => [b.id, `${b.name} · ${shortDate(b.at)}`])], f.file);
+  fill2($('#importedStage'), [['', 'All stages'], ...state.meta.stages.map((s) => [s.id, `${s.label} (${all.filter((l) => l.stage === s.id).length})`])], f.stage);
+  const sources = [...new Set(all.map((l) => l.source))];
+  fill2($('#importedSource'), [['', 'All lead types'], ...sources.map((s) => [s, sourceLabel[s] || s])], f.source);
+  $('#importedWhere').value = f.where;
+  $('#importedSearch').value = f.q;
+
+  const rows = importedRows();
+  const shown = rows.slice(0, state.importedShow);
+  const sel = state.importedSel;
+  const onBoard = rows.filter((l) => !l.archived_at).length;
+  $('#importedSummary').replaceChildren(h('span', {}, h('strong', {}, `${rows.length} lead${rows.length === 1 ? '' : 's'}`),
+    rows.length !== all.length ? ` of ${all.length}` : '', ` · ${onBoard} on the board · ${rows.length - onBoard} off it`));
+
+  // The bulk bar: shows once something is ticked.
+  const bulk = $('#importedBulk');
+  bulk.hidden = !sel.size;
+  if (sel.size) {
+    const stageSel = h('select', { 'aria-label': 'Move to stage' }, h('option', { value: '' }, 'Move to stage…'),
+      ...state.meta.stages.map((s) => h('option', { value: s.id }, s.label)));
+    stageSel.addEventListener('change', () => { if (stageSel.value) bulkImported('stage', stageSel.value); });
+    bulk.replaceChildren(
+      h('strong', {}, `${sel.size} selected`),
+      sel.size < rows.length && h('button', { type: 'button', class: 'link-btn', onclick: () => { rows.forEach((l) => sel.add(l.id)); renderImported(); } }, `Select all ${rows.length}`),
+      h('button', { type: 'button', class: 'primary', onclick: () => bulkImported('board') }, 'Put on the board'),
+      stageSel,
+      h('button', { type: 'button', onclick: () => bulkImported('off') }, 'Take off the board'),
+      h('button', { type: 'button', class: 'link-btn', onclick: () => { sel.clear(); renderImported(); } }, 'Clear'));
+  }
+
+  const allShownOn = shown.length > 0 && shown.every((l) => sel.has(l.id));
+  const head = h('tr', {},
+    h('th', { class: 'imp-check' }, h('input', { type: 'checkbox', 'aria-label': 'Select all shown', checked: allShownOn,
+      onchange: (e) => { shown.forEach((l) => (e.target.checked ? sel.add(l.id) : sel.delete(l.id))); renderImported(); } })),
+    ...IMPORTED_COLUMNS.map((c) => {
+      const on = state.importedSort.key === c.key;
+      return h('th', { 'aria-sort': on ? (state.importedSort.dir === 'asc' ? 'ascending' : 'descending') : 'none' },
+        h('button', { type: 'button', class: `imp-sort ${on ? 'on' : ''}`, onclick: () => sortImported(c.key) },
+          c.label, h('span', { class: 'imp-arrow', 'aria-hidden': 'true' }, on ? (state.importedSort.dir === 'asc' ? '▲' : '▼') : '↕')));
+    }));
+  const body = shown.map((l) => {
+    const where = importedWhere(l);
+    return h('tr', { class: sel.has(l.id) ? 'picked' : '', title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(l.id, e) },
+      h('td', { class: 'imp-check', onclick: (e) => e.stopPropagation() }, h('input', { type: 'checkbox', 'aria-label': `Select ${leadName(l)}`, checked: sel.has(l.id),
+        onchange: (e) => { if (e.target.checked) sel.add(l.id); else sel.delete(l.id); renderImported(); } })),
+      h('td', {}, h('strong', {}, leadName(l))),
+      h('td', {}, l.phone || ''),
+      h('td', {}, [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ')),
+      h('td', {}, sourceLabel[l.source] || l.source || ''),
+      h('td', {}, shortDate(l.received_at)),
+      h('td', {}, h('span', { class: `imp-stage stage-${l.stage}` }, stageLabel(l.stage))),
+      h('td', {}, h('span', { class: `imp-where ${where.key}` }, where.text)),
+      h('td', { class: 'muted' }, importedBefore(l)),
+      h('td', {}, l.last_contacted_at ? shortDate(l.last_contacted_at) : h('span', { class: 'muted' }, 'Never')),
+      h('td', { class: 'muted' }, `${l.import_file || ''}${l.imported_at ? ` · ${shortDate(l.imported_at)}` : ''}`));
+  });
+  $('#importedTable').replaceChildren(h('thead', {}, head),
+    h('tbody', {}, ...(body.length ? body : [h('tr', {}, h('td', { colspan: IMPORTED_COLUMNS.length + 1, class: 'muted' },
+      all.length ? 'No imported leads match these filters.' : 'Nothing imported yet. Use Import leads (Settings in the menu) to bring in leads from a spreadsheet or another CRM.'))])));
+  $('#importedMore').replaceChildren(...(rows.length > shown.length ? [h('button', { type: 'button', onclick: () => { state.importedShow += 200; renderImported(); } },
+    `Show more (${rows.length - shown.length} more)`)] : []));
+}
+
+function sortImported(key) {
+  const s = state.importedSort;
+  if (s.key === key) s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+  else Object.assign(s, { key, dir: ['received_at', 'last_contacted_at', 'imported'].includes(key) ? 'desc' : 'asc' });
+  try { localStorage.setItem('importedSort', JSON.stringify(s)); } catch { /* storage unavailable */ }
+  renderImported();
+}
+
+async function bulkImported(action, stage) {
+  const ids = [...state.importedSel];
+  const n = ids.length;
+  const what = { board: `Put ${n} lead${n === 1 ? '' : 's'} on the board?`, off: `Take ${n} lead${n === 1 ? '' : 's'} off the board?`, stage: `Move ${n} lead${n === 1 ? '' : 's'} to ${stageLabel(stage)}?` }[action];
+  const detail = { board: 'The ones not on the board go back on their pipeline for another two weeks, to work now.', off: 'The ones on the board move to Old & Dead Leads (or Past Customers if booked). They stay here too.', stage: 'Each lead\'s history notes the move.' }[action];
+  if (!await askConfirm(what, detail, { ok: 'Yes' })) { renderImported(); return; }
+  try {
+    const r = await api('/api/leads/bulk', { method: 'POST', body: { ids, action, stage } });
+    toast(`${r.changed} lead${r.changed === 1 ? '' : 's'} updated${r.unchanged ? ` · ${r.unchanged} already that way` : ''}`);
+    state.importedSel.clear();
+    await loadLeads();
+  } catch (err) { fail(err); renderImported(); }
 }
 
 async function restoreLead(id) {
@@ -1739,6 +1899,15 @@ async function init() {
   $('#stageSelect').addEventListener('change', (e) => moveStage(state.openLeadId, e.target.value));
   $('#noteForm').addEventListener('submit', addNote);
   $('#customerVehicle').addEventListener('change', (e) => { state.customerVehicle = e.target.value; renderBoard(); });
+  try { Object.assign(state.importedSort, JSON.parse(localStorage.getItem('importedSort') || '{}')); } catch { /* storage unavailable */ }
+  for (const [id, key] of [['#importedFile', 'file'], ['#importedStage', 'stage'], ['#importedWhere', 'where'], ['#importedSource', 'source']]) {
+    $(id).addEventListener('change', (e) => { state.importedFilters[key] = e.target.value; state.importedShow = 200; renderImported(); });
+  }
+  let importedTimer = null;
+  $('#importedSearch').addEventListener('input', (e) => {
+    clearTimeout(importedTimer);
+    importedTimer = setTimeout(() => { state.importedFilters.q = e.target.value; state.importedShow = 200; renderImported(); }, 200);
+  });
   for (const [id, key] of [['#oldVehicle', 'vehicle'], ['#oldSource', 'source'], ['#oldStatus', 'status']]) {
     $(id).addEventListener('change', (e) => { state.oldFilters[key] = e.target.value; renderBoard(); });
   }
@@ -1787,7 +1956,7 @@ async function init() {
   await Promise.all([loadLeads(), loadReminders()]);
   const linked = location.hash.slice(1);
   // Opens on Overview, or the screen in the address (#calendar, #rv, …).
-  const isPipeline = state.meta.pipelines.some((p) => p.id === linked) || ['customers', 'old'].includes(linked);
+  const isPipeline = state.meta.pipelines.some((p) => p.id === linked) || ['customers', 'old', 'imported'].includes(linked);
   showSection(['calendar', 'overview', 'commissions'].includes(linked) || (isAdmin() && ['revenue', 'analytics', 'time', 'leaderboard'].includes(linked)) ? linked
     : isPipeline ? 'leads' : 'overview');
   // Opened from a phone alert: /?lead=12 opens that lead.

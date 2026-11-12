@@ -230,6 +230,34 @@
     <div id="oldGroups"></div>
   </section>
 
+  <!-- Imported leads: everything brought in with Import leads, sortable, with bulk moves -->
+  <section id="importedView" class="old-view" aria-labelledby="importedTitle" hidden>
+    <div class="old-head">
+      <h2 id="importedTitle">Imported leads</h2>
+      <p id="importedIntro" class="muted"></p>
+    </div>
+    <div class="old-filters imp-filters">
+      <label class="imp-search">Search <input id="importedSearch" type="search" placeholder="Name, phone, email or vehicle" autocomplete="off"></label>
+      <label>Import <select id="importedFile"></select></label>
+      <label>Stage <select id="importedStage"></select></label>
+      <label>Where
+        <select id="importedWhere">
+          <option value="">Anywhere</option>
+          <option value="board">On the board</option>
+          <option value="off">Off the board (all)</option>
+          <option value="old">Old</option>
+          <option value="dead">Dead</option>
+          <option value="customers">Past customers</option>
+        </select>
+      </label>
+      <label>Lead type <select id="importedSource"></select></label>
+    </div>
+    <p id="importedSummary" class="customers-summary"></p>
+    <div id="importedBulk" class="imp-bulk" role="toolbar" aria-label="With the selected leads" hidden></div>
+    <div class="table-scroll"><table id="importedTable" class="old-table imported-table"></table></div>
+    <div id="importedMore" class="imp-more"></div>
+  </section>
+
   </div>
 
   <!-- Commissions: each rep sees their own; admins see everyone, deposits, and mark commissions paid -->

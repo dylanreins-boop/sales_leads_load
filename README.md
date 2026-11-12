@@ -1007,6 +1007,14 @@ Up to 20,000 rows a file.
    **Everyone in this file already booked**, so they're marked Booked and the older ones land in Past
    Customers.
 
+**The Imported tab.** Once anything's been imported, the Leads screen gets an **Imported** tab (next to Past
+Customers and Old & Dead) listing every imported lead wherever it is now: name, phone, vehicle, lead type,
+when it came in, stage, where it is (on the board, Old, Dead, Past customer), its status in the old CRM, last
+contact and which file it came from. Tap any column heading to sort by it (tap again to flip it; the sort is
+remembered on that device). Filter by search, import file, stage, where it is and lead type. Tick leads (or
+**Select all**) to **Put on the board** (to work them now), **Move to stage**, or **Take off the board**;
+each lead's history notes the move. Tap a row to open the lead. **Export to Excel** downloads the tab.
+
 Created Time is read in the shop's time zone (`TZ`), as Zoho writes it. Leads already in the app (same phone or
 email) are skipped, so importing Leads and then Contacts won't double up people who are in both.
 
@@ -1182,7 +1190,8 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead) |
+| GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead, `customers`, `imported` for every imported lead) |
+| POST | `/api/leads/bulk` | `{ ids, action: board\|stage\|off, stage }`: put leads on the board, move them to a stage, or take them off the board |
 | GET | `/api/leads/search?q=` | The search box: every lead, best matches first |
 | POST | `/api/leads/:id/restore` | Put an old or dead lead back on its board |
 | GET | `/api/export.xlsx?…same filters…` | Excel download |
