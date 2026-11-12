@@ -242,7 +242,7 @@ function pickPipeline() {
 
 // ---------- sections: Leads / Calendar ----------
 const SECTION_TITLES = {
-  overview: 'Overview', leaderboard: 'Leaderboard', leads: 'Lead Pipeline', calendar: 'Shop Calendar', revenue: 'Revenue',
+  overview: 'Overview', leaderboard: 'Leaderboard', sold: 'Sold', leads: 'Lead Pipeline', calendar: 'Shop Calendar', revenue: 'Revenue',
   analytics: 'Analytics', commissions: 'Commissions', time: 'Time & Pay',
 };
 
@@ -269,7 +269,7 @@ function showSection(name) {
   const section = state.meta.currentRole === 'shop' ? 'calendar' : name === 'leaderboard' && !isAdmin() ? 'overview' : name;
   state.section = section;
   document.body.dataset.section = section;
-  for (const [id, name] of [['#overviewSection', 'overview'], ['#leaderboardSection', 'leaderboard'], ['#leadsSection', 'leads'], ['#calendarSection', 'calendar'],
+  for (const [id, name] of [['#overviewSection', 'overview'], ['#leaderboardSection', 'leaderboard'], ['#soldSection', 'sold'], ['#leadsSection', 'leads'], ['#calendarSection', 'calendar'],
     ['#revenueSection', 'revenue'], ['#analyticsSection', 'analytics'], ['#commissionsSection', 'commissions'], ['#timeSection', 'time']]) {
     $(id).hidden = section !== name;
   }
@@ -287,6 +287,7 @@ function showSection(name) {
   shown?.classList.add('section-in');
   if (section === 'overview') loadOverview().catch(fail);
   else if (section === 'leaderboard') loadLeaderboard().catch(fail);
+  else if (section === 'sold') loadSold().catch(fail);
   else if (section === 'calendar') loadCalendar().catch(fail);
   else if (section === 'revenue') loadRevenue().catch(fail);
   else if (section === 'analytics') loadAnalytics().catch(fail);
@@ -1957,7 +1958,7 @@ async function init() {
   const linked = location.hash.slice(1);
   // Opens on Overview, or the screen in the address (#calendar, #rv, …).
   const isPipeline = state.meta.pipelines.some((p) => p.id === linked) || ['customers', 'old', 'imported'].includes(linked);
-  showSection(['calendar', 'overview', 'commissions'].includes(linked) || (isAdmin() && ['revenue', 'analytics', 'time', 'leaderboard'].includes(linked)) ? linked
+  showSection(['calendar', 'overview', 'commissions', 'sold'].includes(linked) || (isAdmin() && ['revenue', 'analytics', 'time', 'leaderboard'].includes(linked)) ? linked
     : isPipeline ? 'leads' : 'overview');
   // Opened from a phone alert: /?lead=12 opens that lead.
   const fromAlert = Number(new URLSearchParams(location.search).get('lead'));

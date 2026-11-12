@@ -497,6 +497,33 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     return getLead(id);
   }
 
+  // Already sold: every lead at Booked, on the board or in Past Customers (imported ones too), with when it
+  // was sold, who sold it and its job. `rep`: only that rep's sales (sales logins see their own).
+  function soldLeads({ rep = null } = {}) {
+    const rows = stmt(`SELECT l.id, l.full_name, l.first_name, l.last_name, l.phone, l.email, l.source, l.vehicle_year, l.vehicle_make, l.vehicle_model,
+        l.vehicle_color, l.vehicle_type, l.booked_services, l.archived_at, l.import_batch, l.received_at, l.stage,
+        (SELECT MAX(a.created_at) FROM activities a WHERE a.lead_id = l.id AND (a.to_stage = 'booked' OR a.disposition = 'booked')) AS booked_activity_at,
+        (SELECT a.user_name FROM activities a WHERE a.lead_id = l.id AND (a.to_stage = 'booked' OR a.disposition = 'booked') ORDER BY a.id DESC LIMIT 1) AS booked_by,
+        (SELECT MIN(j.created_at) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled') AS first_job_at,
+        (SELECT COUNT(*) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled') AS job_count,
+        (SELECT SUM(j.amount_cents) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled') AS amount_cents,
+        (SELECT j.id FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled' ORDER BY j.start_at DESC LIMIT 1) AS job_id,
+        (SELECT j.start_at FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled' ORDER BY j.start_at DESC LIMIT 1) AS job_start,
+        (SELECT j.status FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled' ORDER BY j.start_at DESC LIMIT 1) AS job_status,
+        (SELECT coalesce(j.commission_rep, j.created_by) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled' ORDER BY j.created_at LIMIT 1) AS job_rep
+      FROM leads l WHERE l.stage = 'booked' ORDER BY l.received_at DESC`).all();
+    const out = rows.map((r) => ({
+      ...r,
+      booked_services: parseServices(r.booked_services),
+      // Sold = when the job was first put on the calendar (or the lead marked Booked); an imported sale, when it came in.
+      sold_at: r.first_job_at || r.booked_activity_at || r.received_at,
+      sold_by: r.job_rep || r.booked_by || null,
+      imported: Boolean(r.import_batch),
+      pipeline: pipelineFor(r.vehicle_type),
+    }));
+    return rep ? out.filter((r) => r.sold_by === rep) : out;
+  }
+
   // Several leads at once (the Imported tab): put them on the board, move them to a stage, or take them
   // off the board (to Old & Dead Leads, or Past Customers if booked). Each lead's history notes it.
   function bulkUpdate({ ids, action, stage } = {}, { user } = {}) {
@@ -668,7 +695,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     searchLeads, ingest, listLeads, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
-    archiveOldLeads, restoreLead, bulkUpdate, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,
+    archiveOldLeads, restoreLead, bulkUpdate, soldLeads, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,
   };
 }
 

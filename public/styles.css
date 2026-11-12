@@ -2629,3 +2629,23 @@ table.imported-table { min-width: 1100px; table-layout: auto; }
   .imp-filters .imp-search { grid-column: 1 / -1; }
   #importedView #importedIntro { display: none; }
 }
+
+/* ---- Sold (left menu): already-sold leads ---- */
+.sold { overflow-y: auto; }
+.sold-periods { flex-wrap: wrap; }
+.sold-stats { margin-top: -2px; }
+table.sold-table { min-width: 980px; table-layout: auto; }
+.sold-table td { vertical-align: top; white-space: normal; }
+.sold-table td.num, .sold-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sold-table th.num .imp-sort { flex-direction: row-reverse; }
+.sold-sub { font-size: 12px; margin-top: 2px; }
+.sold-services { max-width: 260px; }
+.sold-job { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; background: color-mix(in srgb, var(--muted) 13%, transparent); }
+.sold-job.scheduled { background: color-mix(in srgb, #1f63c6 13%, transparent); color: #1f63c6; }
+.sold-job.in_shop { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+.sold-job.ready { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.sold-job.picked_up { color: var(--muted); }
+@media (max-width: 640px) {
+  body.app-page .sold { overflow: visible; }
+  .sold-periods button { padding: 6px 8px; font-size: 12px; }
+}

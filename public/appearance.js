@@ -49,7 +49,7 @@ async function setTheme(choice) {
 // ---------- menu icons: an emoji for each menu item, each with its own little animation ----------
 // Keyed by the item's data-section, data-open or id. [emoji, animation]
 const MENU_ICONS = {
-  overview: ['📊', 'pop'], leads: ['🎯', 'hit'], calendar: ['📅', 'flip'], callsBtn: ['📞', 'ring'], updatesBtn: ['🔔', 'bell'],
+  overview: ['📊', 'pop'], leads: ['🎯', 'hit'], sold: ['🤝', 'jump'], calendar: ['📅', 'flip'], callsBtn: ['📞', 'ring'], updatesBtn: ['🔔', 'bell'],
   leaderboard: ['🏆', 'jump'], analytics: ['📈', 'rise'], commissions: ['💵', 'sway'], revenue: ['💰', 'jingle'],
   time: ['⏰', 'ring'], socialBtn: ['📸', 'flash'],
   messagesBtn: ['💬', 'pop'], emailSettingsBtn: ['✉️', 'fly'], winbackBtn: ['🔁', 'spin'], referralsBtn: ['🎁', 'jump'], automationsBtn: ['⚡', 'zap'],

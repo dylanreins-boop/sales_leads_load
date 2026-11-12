@@ -377,6 +377,21 @@ vehicle usually comes to here (the middle job price over the last year, or the p
 jobs), marked "est.". The card's left edge shows **how long it has waited** since the last call or text
 (or since it came in): green under 24 hours, then yellow, orange, and red after 3 days.
 
+## Sold
+
+**Workspace → Sold** (🤝 in the menu) lists every lead that's already sold: everything at **Booked**, still on the
+board, moved to Past Customers, or imported as already sold. Cards up top for the period picked (this month,
+last month, the last 3 months, this year, last year, all time): how many sold, sales (job prices), the average
+sale, and how many jobs are still to do. Below, a table that sorts by any column (tap a heading; again to flip
+it; remembered on that device): customer, vehicle, services, **when it was sold** (when the job went on the
+calendar, or the lead was marked Booked; for an imported sale, when it came in), **who sold it** (the job's
+commission rep, or whoever booked it), the job date, the job's status (scheduled, in the shop, ready, picked
+up, or no job on file), the amount and the lead type. Filter by search, who sold it, job status and lead type.
+Tap a row to open the lead.
+
+Admins see everyone's sales. **Sales logins see the ones they sold** (titled My sales, without the Sold by
+column). Shop logins don't have it.
+
 ## Leaderboard and goals
 
 **Performance → Leaderboard** (admins only; sales logins don't see it) ranks the reps for this or last week, this or last month, the last 3 months or
@@ -1191,6 +1206,7 @@ Any host that runs Node 22 works, such as Render, Railway, Fly.io or a small VPS
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/leads?q=&source=&pipeline=&view=&vehicle_type=&status=` | List leads (`view=old` for Old & Dead, `customers`, `imported` for every imported lead) |
+| GET | `/api/sold` | Already-sold leads with when, who and the job (admins: everyone's; sales: their own) |
 | POST | `/api/leads/bulk` | `{ ids, action: board\|stage\|off, stage }`: put leads on the board, move them to a stage, or take them off the board |
 | GET | `/api/leads/search?q=` | The search box: every lead, best matches first |
 | POST | `/api/leads/:id/restore` | Put an old or dead lead back on its board |

@@ -390,6 +390,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     return insights.decorate(leads.listLeads(leadFilters(query)));
   });
   route('POST', '/api/leads/bulk', ({ body, actor }) => leads.bulkUpdate(body, actor));
+  // Already sold: admins see everyone's; sales see the ones they sold.
+  route('GET', '/api/sold', ({ actor }) => ({
+    leads: leads.soldLeads({ rep: actor.role === 'admin' ? null : actor.user }),
+    mine_only: actor.role !== 'admin',
+  }));
   // ---- Overview (the home screen) and lead scoring ----
   route('GET', '/api/overview', ({ actor }) => {
     const o = insights.overview({ role: actor.role });

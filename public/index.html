@@ -32,6 +32,7 @@
       <symbol id="i-todo" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></symbol>
       <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></symbol>
       <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+      <symbol id="i-sold" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/></symbol>
       <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></symbol>
       <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></symbol>
       <symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
@@ -68,6 +69,7 @@
       <div class="side-group staff-only">Workspace</div>
       <button type="button" class="side-item staff-only" data-section="overview"><svg class="ico"><use href="#i-overview"/></svg><span>Overview</span></button>
       <button type="button" class="side-item staff-only" data-section="leads"><svg class="ico"><use href="#i-leads"/></svg><span>Leads</span><span id="navLeadsBadge" class="badge" hidden></span></button>
+      <button type="button" class="side-item staff-only" data-section="sold"><svg class="ico"><use href="#i-sold"/></svg><span>Sold</span></button>
       <button type="button" class="side-item" data-section="calendar"><svg class="ico"><use href="#i-calendar"/></svg><span>Calendar</span></button>
       <button type="button" id="callsBtn" class="side-item admin-only dialer-only" hidden><svg class="ico"><use href="#i-phone"/></svg><span>Calls</span></button>
       <button type="button" id="updatesBtn" class="side-item admin-only"><svg class="ico"><use href="#i-bell"/></svg><span>Updates</span><span id="updatesBadge" class="badge" hidden></span></button>
@@ -160,6 +162,11 @@
   <!-- Overview: the home screen (admins and sales). -->
   <section id="overviewSection" class="section overview" aria-label="Overview" hidden>
     <div id="overviewBody" class="ov"></div>
+  </section>
+
+  <!-- Sold: every lead that's already sold (Booked), sortable, with filters. -->
+  <section id="soldSection" class="section sold" aria-label="Sold" hidden>
+    <div id="soldBody" class="ov"></div>
   </section>
 
   <!-- Leaderboard: each rep's calls, appointments and sales for a week or month. -->
@@ -1364,6 +1371,7 @@
   <script src="timeclock.js"></script>
   <script src="social.js"></script>
   <script src="overview.js"></script>
+  <script src="sold.js"></script>
   <script src="leaderboard.js"></script>
   <script src="admin.js"></script>
 </body>
