@@ -70,6 +70,11 @@ async function api(path, options = {}) {
     throw new Error('Sign in to continue.');
   }
   const data = await res.json().catch(() => ({}));
+  // Signed in with a password an admin picked: the sign-in page asks for their own first.
+  if (res.status === 403 && data.code === 'password_change') {
+    location.href = '/login';
+    throw new Error(data.error);
+  }
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.status = res.status; // set when the server answered (no status = the connection dropped)
@@ -1552,7 +1557,7 @@ function teamPerson(u) {
     const input = h('input', { type: 'text', minlength: 8, placeholder: 'New password (8+ characters)', 'aria-label': `New password for ${u.name}`, autocomplete: 'new-password' });
     const save = h('button', { type: 'button', class: 'primary', onclick: () => {
       if (input.value.length < 8) return toast('Passwords need at least 8 characters.', 'error');
-      changeUser(u, { password: input.value }, me ? 'Password changed. Your browser will ask you to sign in again.' : `New password saved for ${u.name}. Let them know.`);
+      changeUser(u, { password: input.value }, me ? 'Password changed. Your browser will ask you to sign in again.' : `New password saved for ${u.name}. Let them know: they'll pick their own right after they sign in with it.`);
     } }, 'Save');
     tools.replaceChildren(input, save, h('button', { type: 'button', onclick: showTools }, 'Cancel'));
     input.focus();
@@ -1572,6 +1577,7 @@ function teamPerson(u) {
       h('span', { class: 'name' }, u.name),
       h('span', { class: `level level-${u.role}` }, LEVEL_LABEL[u.role]),
       me && h('span', { class: 'muted' }, '(you)'),
+      u.must_change_password && u.active && h('span', { class: 'muted', title: 'They pick their own password the next time they sign in.' }, 'Picks own password at next sign-in'),
       !u.active && h('span', { class: 'muted' }, 'Deactivated')),
     h('div', { class: 'muted' }, meta, !fromServer && ` · ${u.last_seen_at ? `last in the app ${timeAgo(u.last_seen_at)}` : 'hasn\'t signed in yet'}`),
     tools);

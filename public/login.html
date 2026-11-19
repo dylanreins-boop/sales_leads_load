@@ -67,6 +67,27 @@
         <p>Ask an admin to reset it. They can do that from the Team button in the app, and you'll sign in with the new one.</p>
       </details>
     </form>
+    <form class="login-card" id="changeForm" novalidate hidden>
+      <h1>Pick your own password</h1>
+      <p class="muted" id="changeIntro">You signed in with a password your admin set up. Choose your own now. Only you will know it.</p>
+      <p class="login-error" id="changeError" role="alert" hidden></p>
+      <input type="text" id="changeName" autocomplete="username" hidden>
+      <label id="currentRow" hidden>Password your admin gave you
+        <input id="currentPassword" type="password" autocomplete="current-password">
+      </label>
+      <label>New password
+        <span class="pass-row">
+          <input id="newPassword" type="password" autocomplete="new-password" required>
+          <button type="button" id="showNew" aria-pressed="false">Show</button>
+        </span>
+      </label>
+      <label>Type it again
+        <input id="newConfirm" type="password" autocomplete="new-password" required>
+      </label>
+      <p class="muted" style="margin:0 0 6px">At least 8 characters. Something you don't use anywhere else.</p>
+      <button type="submit" class="primary" id="changeBtn">Save and continue</button>
+      <button type="button" id="changeSignOut" class="link-btn" style="width:100%;margin-top:10px;background:none;border:0;color:var(--link);font-weight:600;cursor:pointer">Sign out</button>
+    </form>
   </main>
   <script>
     const form = document.getElementById('loginForm');
@@ -78,6 +99,62 @@
       e.target.textContent = show ? 'Hide' : 'Show';
       e.target.setAttribute('aria-pressed', String(show));
     });
+    // A password an admin picked works once: right after signing in with it, the person picks their own.
+    const changeForm = document.getElementById('changeForm');
+    const changeError = document.getElementById('changeError');
+    const newPass = document.getElementById('newPassword');
+    let givenPassword = null;
+    function askForNewPassword(name, current) {
+      givenPassword = current;
+      form.hidden = true;
+      changeForm.hidden = false;
+      document.getElementById('changeName').value = name || '';
+      document.getElementById('currentRow').hidden = current != null;
+      if (name) document.getElementById('changeIntro').textContent = `Welcome, ${name}. You signed in with a password your admin set up. Choose your own now. Only you will know it.`;
+      (current != null ? newPass : document.getElementById('currentPassword')).focus();
+    }
+    document.getElementById('showNew').addEventListener('click', (e) => {
+      const show = newPass.type === 'password';
+      newPass.type = show ? 'text' : 'password';
+      document.getElementById('newConfirm').type = newPass.type;
+      e.target.textContent = show ? 'Hide' : 'Show';
+      e.target.setAttribute('aria-pressed', String(show));
+    });
+    document.getElementById('changeSignOut').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+      location.replace('/login');
+    });
+    changeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      changeError.hidden = true;
+      const current = givenPassword ?? document.getElementById('currentPassword').value;
+      const confirm = document.getElementById('newConfirm').value;
+      const say = (msg) => { changeError.textContent = msg; changeError.hidden = false; };
+      if (!current) return say('Enter the password your admin gave you.');
+      if (newPass.value.length < 8) return say('Your new password needs at least 8 characters.');
+      if (newPass.value !== confirm) return say('The two new passwords don\'t match.');
+      if (newPass.value === current) return say('Pick a new password, not the one you were given.');
+      const btn = document.getElementById('changeBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        const res = await fetch('/api/me/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current, password: newPass.value, confirm }) });
+        if (res.ok) { location.replace('/'); return; }
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) { location.replace('/login'); return; }
+        say(data.error || 'That didn\'t save. Try again.');
+        if (/current password/i.test(data.error || '')) { givenPassword = null; document.getElementById('currentRow').hidden = false; }
+      } catch {
+        say('Can\'t reach the server. Check your connection and try again.');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Save and continue';
+    });
+    // Already signed in but still on the admin's password (came back later, or another device).
+    fetch('/api/session').then((r) => r.json()).then((s) => {
+      if (s.signed_in && s.must_change_password) askForNewPassword(s.name, null);
+    }).catch(() => {});
+
     // First run on a new server: set up the admin login instead of signing in.
     let setup = false;
     fetch('/api/setup').then((r) => r.json()).then((s) => {
@@ -118,8 +195,9 @@
         const res = await fetch('/api/login', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password: pass.value }),
         });
-        if (res.ok) { location.replace('/'); return; }
         const data = await res.json().catch(() => ({}));
+        if (res.ok && data.must_change_password) { askForNewPassword(data.name, pass.value); return; }
+        if (res.ok) { location.replace('/'); return; }
         error.textContent = data.error || 'Sign-in didn\'t work. Try again.';
       } catch {
         error.textContent = 'Can\'t reach the server. Check your connection and try again.';

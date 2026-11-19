@@ -549,6 +549,8 @@ function migrate(db) {
     if (!has('quotes', column)) db.exec(`ALTER TABLE quotes ADD COLUMN ${column} TEXT`);
   }
   if (!has('user_prefs', 'appearance')) db.exec('ALTER TABLE user_prefs ADD COLUMN appearance TEXT');
+  // Set when an admin picks someone's password; they choose their own on their next sign-in.
+  if (!has('users', 'must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
   if (!has('user_prefs', 'call_phone')) db.exec('ALTER TABLE user_prefs ADD COLUMN call_phone TEXT');
   // Why a punch ended: 'lunch' for a lunch break (the next punch is them coming back).
   // The customer said photos of their vehicle may be posted on social media (at the drop-off sign-off).

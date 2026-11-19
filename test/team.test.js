@@ -29,14 +29,21 @@ let samId;
 let annaId;
 
 test('an admin adds logins with a name, password and level', async () => {
-  const sam = await call('POST', '/api/users', { name: '  Sam   Ortega ', password: 'sam-password', role: 'sales' });
+  const sam = await call('POST', '/api/users', { name: '  Sam   Ortega ', password: 'sam-temp-pass', role: 'sales' });
   assert.equal(sam.status, 201);
   assert.equal(sam.data.name, 'Sam Ortega');
   assert.equal(sam.data.created_by, 'Owner');
   assert.equal(sam.data.password_hash, undefined, 'password hashes never leave the server');
   samId = sam.data.id;
-  annaId = (await call('POST', '/api/users', { name: 'Anna', password: 'anna-password', role: 'admin' })).data.id;
-  await call('POST', '/api/users', { name: 'Mike', password: 'mike-password', role: 'shop' });
+  annaId = (await call('POST', '/api/users', { name: 'Anna', password: 'anna-temp-pass', role: 'admin' })).data.id;
+  await call('POST', '/api/users', { name: 'Mike', password: 'mike-temp-pass', role: 'shop' });
+  // Each one picks their own password the first time they sign in.
+  assert.equal((await call('GET', '/api/meta', undefined, login('Mike', 'mike-temp-pass'))).data.code, 'password_change');
+  for (const who of ['Sam Ortega', 'Anna', 'Mike']) {
+    const first = who.split(' ')[0].toLowerCase();
+    const res = await call('POST', '/api/me/password', { current: `${first}-temp-pass`, password: `${first}-password` }, login(who, `${first}-temp-pass`));
+    assert.equal(res.status, 200, who);
+  }
 
   for (const [body, pattern] of [
     [{ name: 'sam ortega', password: 'whatever-123', role: 'sales' }, /already a login named/],
@@ -78,22 +85,24 @@ test('admins change levels, reset passwords and deactivate, and every change is 
 
   await call('PATCH', `/api/users/${samId}`, { password: 'new-sam-password' }, ANNA);
   assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'sam-password'))).status, 401, 'old password stops working');
-  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'new-sam-password'))).status, 200);
+  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'new-sam-password'))).status, 403, 'a reset password only lets them pick their own');
+  await call('POST', '/api/me/password', { current: 'new-sam-password', password: 'sam-own-password' }, login('Sam Ortega', 'new-sam-password'));
+  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'sam-own-password'))).status, 200);
 
   await call('PATCH', `/api/users/${samId}`, { active: false }, ANNA);
-  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'new-sam-password'))).status, 401, 'deactivated logins are locked out');
+  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'sam-own-password'))).status, 401, 'deactivated logins are locked out');
   await call('PATCH', `/api/users/${samId}`, { active: true });
-  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'new-sam-password'))).status, 200);
+  assert.equal((await call('GET', '/api/meta', undefined, login('Sam Ortega', 'sam-own-password'))).status, 200);
 
   const { history } = (await call('GET', '/api/users')).data;
   assert.deepEqual(history.slice(0, 5).map((h) => [h.user_name, h.action, h.by_user]), [
     ['Sam Ortega', 'reactivated', 'Owner'],
     ['Sam Ortega', 'deactivated', 'Anna'],
+    ['Sam Ortega', 'password', 'Sam Ortega'],
     ['Sam Ortega', 'password', 'Anna'],
     ['Sam Ortega', 'level', 'Anna'],
-    ['Mike', 'created', 'Owner'],
   ]);
-  assert.equal(history[3].detail, 'Sales → Admin');
+  assert.equal(history[4].detail, 'Sales → Admin');
 });
 
 test('admins can\'t lock themselves out or remove the last admin', async () => {

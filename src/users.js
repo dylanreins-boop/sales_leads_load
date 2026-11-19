@@ -62,13 +62,13 @@ function createUserService(db, { serverUsers = [] } = {}) {
       seen.set(user.id, Date.now());
       stmt('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), user.id);
     }
-    return { name: user.name, role: user.role };
+    return { name: user.name, role: user.role, mustChange: Boolean(user.must_change_password) };
   }
 
   function list() {
-    const added = stmt(`SELECT id, name, role, active, created_at, created_by, updated_at, last_seen_at
+    const added = stmt(`SELECT id, name, role, active, must_change_password, created_at, created_by, updated_at, last_seen_at
                         FROM users ORDER BY active DESC, name_norm`).all()
-      .map((u) => ({ ...u, active: Boolean(u.active), source: 'app' }));
+      .map(({ must_change_password: mustChange, ...u }) => ({ ...u, active: Boolean(u.active), must_change_password: Boolean(mustChange), source: 'app' }));
     const server = serverUsers.map((u) => ({ id: null, name: u.name, role: u.role, active: true, source: 'server' }));
     return [...server, ...added];
   }
@@ -101,8 +101,10 @@ function createUserService(db, { serverUsers = [] } = {}) {
     // Without any logins the app is open; the first one added has to be able to manage the rest.
     if (!anyLogins() && role !== 'admin') throw new HttpError(400, 'The first login has to be an Admin.');
     const ts = now();
-    const { lastInsertRowid } = stmt(`INSERT INTO users (name, name_norm, password_hash, role, active, created_at, created_by, updated_at)
-                                      VALUES (?, ?, ?, ?, 1, ?, ?, ?)`).run(clean, norm(clean), hashPassword(password), role, ts, by ?? null, ts);
+    // A password someone else picked is only for the first sign-in: they choose their own right after.
+    const mustChange = by != null && norm(by) !== norm(clean) ? 1 : 0;
+    const { lastInsertRowid } = stmt(`INSERT INTO users (name, name_norm, password_hash, role, active, must_change_password, created_at, created_by, updated_at)
+                                      VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`).run(clean, norm(clean), hashPassword(password), role, mustChange, ts, by ?? null, ts);
     log(clean, 'created', `Added as ${ROLE_LABEL[role]}`, by);
     return list().find((u) => u.id === Number(lastInsertRowid));
   }
@@ -134,8 +136,8 @@ function createUserService(db, { serverUsers = [] } = {}) {
     }
     if ('password' in patch) {
       validPassword(patch.password);
-      sets.push('password_hash = ?');
-      params.push(hashPassword(patch.password));
+      sets.push('password_hash = ?', 'must_change_password = ?');
+      params.push(hashPassword(patch.password), self ? 0 : 1);
       events.push(['password', self ? 'Changed their password' : 'Password reset']);
     }
     if (!sets.length) return list().find((u) => u.id === id);
@@ -149,6 +151,21 @@ function createUserService(db, { serverUsers = [] } = {}) {
     return list().find((u) => u.id === id);
   }
 
+  // Someone signed in with a password an admin picked chooses their own. Checks the one they have now.
+  function changeOwnPassword(name, { current, password, confirm } = {}) {
+    const user = findByName(name);
+    if (!user || !user.active) throw new HttpError(404, 'Only logins added in the app can change their password here.');
+    if (!checkPassword(String(current ?? ''), user.password_hash)) throw new HttpError(400, 'Your current password isn\'t right.');
+    validPassword(password);
+    if (confirm != null && String(confirm) !== password) throw new HttpError(400, 'The two new passwords don\'t match.');
+    if (password === String(current)) throw new HttpError(400, 'Pick a new password, not the one you were given.');
+    stmt('UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?').run(hashPassword(password), now(), user.id);
+    log(user.name, 'password', 'Changed their password', user.name);
+    // Signs out every other device using the old password; the caller starts a fresh session.
+    endSessionsFor(user.name);
+    return { name: user.name, role: user.role };
+  }
+
   // ---- Sign-in sessions (the sign-in page) ----
   const SESSION_DAYS = 30;
   const tokenHash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -158,7 +175,7 @@ function createUserService(db, { serverUsers = [] } = {}) {
     const server = serverUsers.find((u) => norm(u.name) === norm(name));
     if (server) return { name: server.name, role: server.role };
     const user = findByName(name);
-    return user && user.active ? { name: user.name, role: user.role } : null;
+    return user && user.active ? { name: user.name, role: user.role, mustChange: Boolean(user.must_change_password) } : null;
   }
 
   function createSession(name) {
@@ -192,7 +209,7 @@ function createUserService(db, { serverUsers = [] } = {}) {
     return stmt('SELECT * FROM user_events ORDER BY id DESC LIMIT ?').all(Math.min(Math.max(Number(limit) || 50, 1), 200));
   }
 
-  return { authenticate, anyLogins, list, create, update, history, lookup, createSession, sessionUser, endSession };
+  return { authenticate, anyLogins, list, create, update, changeOwnPassword, history, lookup, createSession, sessionUser, endSession };
 }
 
 module.exports = { createUserService, ROLES, MIN_PASSWORD, hashPassword, checkPassword };

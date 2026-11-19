@@ -672,8 +672,20 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     loginFailures.delete(key);
     audit.write({ user: user.name, role: user.role, ip: clientIp(req), area: 'signin', action: 'Signed in' });
     const { token, maxAge } = users.createSession(user.name);
-    send(res, 200, { name: user.name, role: user.role }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
+    send(res, 200, { name: user.name, role: user.role, must_change_password: Boolean(user.mustChange) }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
   }, { isPublic: true });
+  // Who is signed in, and whether they still have to pick their own password (the sign-in page asks).
+  route('GET', '/api/session', ({ req }) => {
+    const user = users.anyLogins() ? authenticate(req) : null;
+    return user ? { signed_in: true, name: user.name, role: user.role, must_change_password: Boolean(user.mustChange) } : { signed_in: false };
+  }, { isPublic: true });
+  // Change your own password (required right after signing in with one an admin picked).
+  route('POST', '/api/me/password', ({ req, res, body, actor }) => {
+    const user = users.changeOwnPassword(actor.user, body || {});
+    audit.write({ user: user.name, role: user.role, ip: clientIp(req), area: 'signin', action: 'Changed their password' });
+    const { token, maxAge } = users.createSession(user.name);
+    send(res, 200, { name: user.name, role: user.role, must_change_password: false }, { 'Set-Cookie': sessionCookie(req, token, maxAge) });
+  }, { roles: ANY_LOGIN });
   // First run on the live server: the sign-in page sets up the first admin login.
   route('GET', '/api/setup', () => ({ needed: needsSetup(), code_required: Boolean(config.setupCode) }), { isPublic: true });
   route('POST', '/api/setup', ({ req, res, body }) => {
@@ -1189,7 +1201,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
         if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
           // The sign-in page and what it needs load without signing in.
           if (url.pathname === '/login') {
-            if (users.anyLogins() && authenticate(req)) return send(res, 302, '', { Location: '/' });
+            const signedIn = users.anyLogins() ? authenticate(req) : null;
+            if (signedIn && !signedIn.mustChange) return send(res, 302, '', { Location: '/' });
             return serveStatic(req, res, '/login.html');
           }
           // Customers' booking pages are public; the link itself is the key.
@@ -1197,7 +1210,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
           if (/^\/r\/[a-z0-9]+\/?$/i.test(url.pathname)) return serveStatic(req, res, '/refer.html');
           const openAsset = url.pathname.startsWith('/icons/') || url.pathname.startsWith('/brand/')
             || ['/styles.css', '/login.html', '/manifest.webmanifest'].includes(url.pathname);
-          if (!openAsset && !authenticate(req)) return send(res, 302, '', { Location: '/login' });
+          if (!openAsset) {
+            const viewer = authenticate(req);
+            // No login, or a password an admin picked that hasn't been changed yet: the sign-in page.
+            if (!viewer || (viewer.mustChange && /^\/(index\.html)?$/.test(url.pathname))) return send(res, 302, '', { Location: '/login' });
+          }
           return serveStatic(req, res, url.pathname);
         }
         return send(res, 404, { error: 'Not found' });
@@ -1205,6 +1222,10 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
       const user = match.isPublic ? null : authenticate(req);
       if (!match.isPublic && !user) {
         return send(res, 401, { error: 'Sign in to continue.' });
+      }
+      // Until they pick their own password, the only thing a login can do is change it.
+      if (!match.isPublic && user.mustChange && url.pathname !== '/api/me/password') {
+        return send(res, 403, { error: 'Pick your own password first.', code: 'password_change' });
       }
       if (!match.isPublic && !match.roles.includes(user.role)) {
         return send(res, 403, { error: `A ${user.role} login can't do that.` });

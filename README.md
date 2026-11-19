@@ -533,6 +533,12 @@ Admins open **Team** to:
 - See **who added each person and when**, when each person was last in the app, and a **Team changes**
   log of every add, level change, password reset and deactivation, with the admin who did it.
 
+**Everyone picks their own password.** The password an admin types when adding someone (or resetting it)
+only works once: right after signing in with it, the person sees **Pick your own password** and can't do
+anything else in the app until they've chosen one (8+ characters, not the one they were given). Until
+then their row on the Team panel says "Picks own password at next sign-in". Changing it signs out any
+other device still using the old one. The first admin, set up on the sign-in page, already picked their own.
+
 Names can't be changed after a login is created, so the activity history always points to the right
 person. Two people can't share a name (add a last initial). Admins can't change their own level or
 deactivate themselves, and there is always at least one admin. Passwords are stored hashed (scrypt), never

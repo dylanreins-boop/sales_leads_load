@@ -115,7 +115,7 @@ test('the sign-in page sets a session; wrong passwords are refused and slowed do
 
   const ok = await call('POST', '/api/login', { name: 'sam', password: 'sales-pass' }, null);
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.data, { name: 'Sam', role: 'sales' });
+  assert.deepEqual(ok.data, { name: 'Sam', role: 'sales', must_change_password: false });
   const cookie = ok.headers.get('set-cookie');
   assert.match(cookie, /^bm_session=[^;]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000/);
   const session = cookie.split(';')[0];
@@ -133,12 +133,44 @@ test('the sign-in page sets a session; wrong passwords are refused and slowed do
   assert.match(locked.data.error, /Too many wrong tries/);
 });
 
+test('a new login picks their own password right after signing in with the one the admin set', async () => {
+  const added = (await call('POST', '/api/users', { name: 'Lisa', password: 'lisa-temp-1', role: 'sales' }, ADMIN)).data;
+  assert.equal(added.must_change_password, true);
+  const first = await call('POST', '/api/login', { name: 'Lisa', password: 'lisa-temp-1' }, null);
+  assert.equal(first.data.must_change_password, true);
+  const temp = first.headers.get('set-cookie').split(';')[0];
+  // Until then: only the sign-in page, and every API call says to change it.
+  const blocked = await call('GET', '/api/meta', undefined, null, { Cookie: temp });
+  assert.deepEqual([blocked.status, blocked.data.code], [403, 'password_change']);
+  assert.equal((await call('GET', '/', undefined, null, { Cookie: temp })).headers.get('location'), '/login');
+  assert.equal((await call('GET', '/login', undefined, null, { Cookie: temp })).status, 200, 'the sign-in page asks for a new password');
+  assert.equal((await call('GET', '/api/session', undefined, null, { Cookie: temp })).data.must_change_password, true);
+  for (const [body, pattern] of [
+    [{ current: 'wrong-pass', password: 'lisa-own-pass' }, /current password/],
+    [{ current: 'lisa-temp-1', password: 'short' }, /at least 8/],
+    [{ current: 'lisa-temp-1', password: 'lisa-temp-1' }, /not the one you were given/],
+    [{ current: 'lisa-temp-1', password: 'lisa-own-pass', confirm: 'lisa-own-pas' }, /don't match/],
+  ]) assert.match((await call('POST', '/api/me/password', body, null, { Cookie: temp })).data.error, pattern);
+
+  const changed = await call('POST', '/api/me/password', { current: 'lisa-temp-1', password: 'lisa-own-pass', confirm: 'lisa-own-pass' }, null, { Cookie: temp });
+  assert.equal(changed.status, 200);
+  assert.equal((await call('GET', '/api/meta', undefined, null, { Cookie: temp })).status, 401, 'the old session ends');
+  const session = changed.headers.get('set-cookie').split(';')[0];
+  assert.equal((await call('GET', '/api/meta', undefined, null, { Cookie: session })).data.currentUser, 'Lisa');
+  assert.equal((await call('POST', '/api/login', { name: 'Lisa', password: 'lisa-temp-1' }, null)).status, 401, 'the admin\'s password stops working');
+  const users = (await call('GET', '/api/users', undefined, ADMIN)).data.users;
+  assert.equal(users.find((u) => u.name === 'Lisa').must_change_password, false);
+  assert.equal((await call('POST', '/api/me/password', { current: 'x', password: 'whatever-123' }, ADMIN)).status, 404, 'server logins are set on the server');
+});
+
 test('resetting a password or deactivating someone signs them out', async () => {
-  const added = (await call('POST', '/api/users', { name: 'Lisa', password: 'lisa-pass-1', role: 'sales' }, ADMIN)).data;
-  const session = (await call('POST', '/api/login', { name: 'Lisa', password: 'lisa-pass-1' }, null)).headers.get('set-cookie').split(';')[0];
+  const lisa = (await call('GET', '/api/users', undefined, ADMIN)).data.users.find((u) => u.name === 'Lisa');
+  const session = (await call('POST', '/api/login', { name: 'Lisa', password: 'lisa-own-pass' }, null)).headers.get('set-cookie').split(';')[0];
   assert.equal((await call('GET', '/api/meta', undefined, null, { Cookie: session })).status, 200);
-  await call('PATCH', `/api/users/${added.id}`, { password: 'lisa-pass-2' }, ADMIN);
+  await call('PATCH', `/api/users/${lisa.id}`, { password: 'lisa-pass-2' }, ADMIN);
   assert.equal((await call('GET', '/api/meta', undefined, null, { Cookie: session })).status, 401);
+  const again = await call('POST', '/api/login', { name: 'Lisa', password: 'lisa-pass-2' }, null);
+  assert.equal(again.data.must_change_password, true, 'a reset password is only for the next sign-in too');
 });
 
 test('lead source report: leads, bookings and revenue for each lead in the range', async () => {
