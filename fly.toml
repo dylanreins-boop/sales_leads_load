@@ -21,7 +21,7 @@ primary_region = "lax"   # Los Angeles, the closest Fly region to Las Vegas
   CORS_ORIGINS = "https://bobmosescc.com,https://www.bobmosescc.com"
   NODE_ENV = "production"
   # The app's web address, for links in texts, emails and booking pages (change if you use another domain).
-  PUBLIC_URL = "https://leads.bobmosescc.com"
+  PUBLIC_URL = "https://leads.bobmosescclasvegas.com"
   # Passwords and keys (SETUP_CODE, EMAIL_API_KEY, TWILIO_*, FB_*) go in `fly secrets set`, not here.
 
 # The lead database lives on this disk so it survives deploys and restarts.
