@@ -82,13 +82,13 @@ function setup() {
 }
 const at = (day, hour, minute = 0) => { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d, hour, minute); };
 
-test('a new lead pings the sales team; 15 minutes with nobody calling pings the admins', async () => {
+test('a new lead pings the sales team and the admins; 15 minutes with nobody calling pings the admins', async () => {
   const { db, leads, alerts, sent, texts } = setup();
   alerts.savePrefs('Sam', { alert_phone: '(702) 555-0199' });
   const { lead } = leads.ingest({ source: 'facebook', first_name: 'Ana', last_name: 'Cruz', phone: '702-555-0101', vehicle_type: 'Car', received_at: at('2026-11-10', 9).toISOString() });
   alerts.leadArrived(lead, at('2026-11-10', 9));
   await alerts.process({ at: at('2026-11-10', 9), baseUrl: 'https://leads.example.com' });
-  assert.deepEqual(sent.map((s) => [s.names, s.title, s.body]), [[['Sam'], 'New lead: Ana Cruz', 'Car · from Facebook · Call 702-555-0101']]);
+  assert.deepEqual(sent.map((s) => [s.names, s.title, s.body]), [[['Dylan', 'Sam'], 'New lead: Ana Cruz', 'Car · from Facebook · Call 702-555-0101']]);
   assert.equal(texts[0].to, '(702) 555-0199');
   assert.match(texts[0].body, /^New lead: Ana Cruz: Car · from Facebook · Call 702-555-0101 https:\/\/leads\.example\.com\/\?lead=\d+$/);
 
@@ -135,4 +135,11 @@ test('a customer text reply pings the rep who last worked the lead', async () =>
   await alerts.replied(leads.getLead(lead.id), 'Tuesday works!');
   assert.deepEqual([sent[0].names, sent[0].title, sent[0].body], [['Sam'], 'Text from Cy Long', 'Tuesday works!']);
   assert.throws(() => alerts.savePrefs('Sam', { alert_phone: '12' }), /mobile number/);
+});
+
+test('a car marked ready for pickup pings the admins', async () => {
+  const { leads, alerts, sent } = setup();
+  const { lead } = leads.ingest({ source: 'manual', full_name: 'Rae Lopez', phone: '702-555-0110', vehicle_year: '2024', vehicle_make: 'Tesla', vehicle_model: 'Model Y' });
+  await alerts.jobReady({ id: 7, lead_id: lead.id });
+  assert.deepEqual(sent.map((s) => [s.names, s.title, s.body]), [[['Dylan'], 'Ready for pickup: Rae Lopez', '2024 Tesla Model Y · The shop marked it done. · Customer: 702-555-0110']]);
 });

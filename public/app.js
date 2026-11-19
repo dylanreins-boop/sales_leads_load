@@ -2005,6 +2005,11 @@ async function init() {
   initAdminScreens();
   initWinback();
   initAppearance();
+  // Opened from the "time to clock out" reminder: /?mytime=1 opens My time.
+  if (new URLSearchParams(location.search).get('mytime')) {
+    setTimeout(() => openMyTime(), 300);
+    try { history.replaceState(null, '', '/'); } catch { /* not allowed in some previews */ }
+  }
   if (shop) return showSection('calendar');
   if (isAdmin()) {
     loadUpdatesCount();

@@ -594,9 +594,23 @@ by default; a moved job gets a fresh one). The rep can untick "Send the customer
 for a single booking. Admins edit the wording and turn either message on or off under **Texts & reminders**.
 Email works with the email settings above; texts need Twilio.
 
-## New-lead alerts (speed to lead)
+## Phone alerts and reminders
 
-A new Facebook, website, Google, referral, missed-call or text lead sends a **phone alert** to the sales team right away; tapping it opens
+| Who | Gets | When |
+|---|---|---|
+| Sales and admins | **New lead** | Right away, 7 AM to 8 PM (overnight leads in the morning) |
+| Admins | **Nobody has called** a new lead | 15 minutes after the alert, if nobody worked it |
+| The rep on the lead | **Customer texted back** | Right away |
+| Admins | **Ready for pickup** | When the shop marks a car Ready for pickup |
+| Shop logins | **Update the vehicle sheet** (status, checklist, photos) | Every hour on the clock (`SHEET_REMINDER_MINUTES`, 0 = off). Lunch pauses it; it starts again an hour after they're back |
+| Everyone on the clock | **Time to clock out** | Once a day at 7.5 hours worked, lunch not counted (`CLOCK_OUT_REMINDER_HOURS`, 0 = off). Tapping it opens My time |
+
+Shop logins turn reminders on in **My time** (the Clock in button) → **Phone reminders**; sales and admins
+can use that too, or **To do → My phone alerts**. The shift reminders are phone alerts only, never texts.
+
+### New-lead alerts (speed to lead)
+
+A new Facebook, website, Google, referral, missed-call or text lead sends a **phone alert** to the sales team and the admins right away; tapping it opens
 the lead. If nobody has called, texted or logged anything on it within **15 minutes**, the admins get an
 alert too. Alerts go out 7 AM to 8 PM (`ALERT_HOURS`); overnight leads are alerted in the morning.
 

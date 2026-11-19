@@ -200,7 +200,7 @@ async function loadMyAlerts() {
   const a = msg.alerts;
   const hoursText = `${new Date(2026, 0, 1, a.hours.start).toLocaleTimeString([], { hour: 'numeric' })} to ${new Date(2026, 0, 1, a.hours.end).toLocaleTimeString([], { hour: 'numeric' })}`;
   $('#alertsIntro').textContent = state.meta.currentRole === 'admin'
-    ? `Get an alert when a new lead comes in or a customer texts back, and when nobody has worked a new lead within ${a.minutes} minutes. Alerts go out ${hoursText}.`
+    ? `Get an alert when a new lead comes in, a customer texts back, a car is ready for pickup, and when nobody has worked a new lead within ${a.minutes} minutes. Lead alerts go out ${hoursText}.`
     : `Get an alert the moment a new Facebook or website lead comes in, and when a customer texts back. Alerts go out ${hoursText}.`;
   $('#alertPhoneForm').alert_phone.value = a.alert_phone || '';
   $('#alertPhoneForm').hidden = !a.texting;
@@ -225,7 +225,7 @@ async function turnOnAlerts() {
     await api('/api/alerts/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
     toast('Alerts are on for this device');
   } catch (err) { toast(`Couldn't turn on alerts on this device: ${err.message}`, 'error'); }
-  loadMyAlerts();
+  if (state.meta.currentRole !== 'shop') loadMyAlerts();
 }
 
 async function testAlert() {

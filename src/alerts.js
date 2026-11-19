@@ -1,4 +1,4 @@
-// Speed to lead: a new Facebook, website or text lead pings the sales team's phones right away. If
+// Speed to lead: a new Facebook, website or text lead pings the sales team's and admins' phones right away. If
 // nobody has called, texted or logged anything on it within a few minutes, the admins get pinged.
 // Alerts only go out during alert hours (7 AM to 8 PM by default); a lead that comes in overnight
 // is alerted when alert hours start. Customer text replies ping the rep working that lead.
@@ -81,9 +81,7 @@ function createAlertService(db, { leads, users, push, texter, minutes = 15, hour
     for (const lead of due) {
       stmt('UPDATE leads SET alerted_at = ? WHERE id = ?').run(ts, lead.id);
       if (worked(lead, lead.received_at)) continue;
-      const team = people(['sales']);
-      const to = team.length ? team : people(['admin']);
-      const reached = await deliver(to, {
+      const reached = await deliver(people(['sales', 'admin']), {
         title: `New lead: ${leadName(lead)}`,
         body: [vehicle(lead), `from ${SOURCE[lead.source] || lead.source}`, lead.phone && `Call ${lead.phone}`].filter(Boolean).join(' · '),
         url: `/?lead=${lead.id}`,
@@ -125,7 +123,21 @@ function createAlertService(db, { leads, users, push, texter, minutes = 15, hour
     });
   }
 
-  return { prefs, savePrefs, leadArrived, process, replied, inHours, notify: deliver };
+  // A car is done: the admins hear it's ready for pickup (push only).
+  async function jobReady(job, { baseUrl = '' } = {}) {
+    const lead = job.lead_id ? stmt('SELECT * FROM leads WHERE id = ?').get(job.lead_id) : null;
+    const who = lead ? leadName(lead) : (job.customer_name || 'A customer');
+    const car = (lead && vehicle(lead)) || job.vehicle || '';
+    return push.sendTo(people(['admin']), {
+      title: `Ready for pickup: ${who}`,
+      body: [car, 'The shop marked it done.', lead?.phone && `Customer: ${lead.phone}`].filter(Boolean).join(' · '),
+      url: lead ? `/?lead=${lead.id}` : '/#calendar',
+      link: baseUrl ? `${baseUrl}/#calendar` : '',
+      tag: `ready-${job.id}`,
+    });
+  }
+
+  return { prefs, savePrefs, leadArrived, process, replied, jobReady, inHours, notify: deliver };
 }
 
 module.exports = { createAlertService, ALERT_SOURCES };

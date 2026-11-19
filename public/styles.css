@@ -2660,3 +2660,6 @@ table.sold-table { min-width: 980px; table-layout: auto; }
 .sold-dialog label { display: grid; gap: 6px; margin: 0; font-weight: 600; font-size: 13px; color: var(--muted); }
 .sold-dialog input[type="date"][hidden] { display: none; }
 .sold-dialog-actions { justify-content: flex-end; }
+
+/* My time: what the phone reminders are */
+.tc-alert-list { margin: 4px 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }

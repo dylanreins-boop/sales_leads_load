@@ -37,6 +37,7 @@ const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/c
 const { createTexter, toE164 } = require('./src/sms');
 const { createMessageService } = require('./src/messages');
 const { createPush } = require('./src/push');
+const { createWorkReminders } = require('./src/workreminders');
 const { createAlertService } = require('./src/alerts');
 const { createBookingService } = require('./src/bookings');
 const { createDaySheetMailer } = require('./src/daysheet');
@@ -293,6 +294,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
       title: `⚠ ${msg.title}`, body: msg.body, link: `${config.publicUrl || ''}/#time`, tag: 'clock-alert',
     }),
   });
+  const workReminders = createWorkReminders(db, { users, push, sheetMinutes: config.sheetReminderMinutes, clockOutHours: config.clockOutReminderHours });
   const importer = createImportService(db, { leads, archiveDays: config.archiveDays });
   const audit = createAuditLog(db);
   const automations = createAutomations({ messages, campaigns, reviews, daySheets, social, timeClock, leads, calls, texter, mailer, config });
@@ -528,6 +530,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     if (job.status === 'ready' && before.status !== 'ready') {
       await messages.sendReady(job.id, { user: actor.user, balanceCents: figures.amount_due_cents })
         .catch((err) => console.error('Ready-for-pickup message failed:', err.message));
+      alerts.jobReady(job, { baseUrl: config.publicUrl }).catch((err) => console.error('Ready-for-pickup alert failed:', err.message));
     }
     return { ...figures, shop_time: jobs.capacityFor(job), work: workTime.summary(job.id) };
   }, { roles: CALENDAR });
@@ -805,25 +808,27 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   }, { isPublic: true });
   route('POST', '/api/public/booking/:token', ({ params, body }) => bookings.book(params.token, body), { isPublic: true });
 
-  // ---- Phone alerts (new leads, customer replies) ----
+  // ---- Phone alerts (new leads, customer replies, ready for pickup, shop and clock-out reminders) ----
   route('GET', '/api/alerts/me', ({ actor }) => ({
     ...alerts.prefs(actor.user || 'admin'),
     // null where this Node build can't make push keys (phone alerts then can't be turned on).
     publicKey: (() => { try { return push.publicKey(); } catch { return null; } })(),
     minutes: config.speedToLeadMinutes,
     hours: config.alertHours,
-  }));
+    sheet_minutes: config.sheetReminderMinutes,
+    clock_out_hours: config.clockOutReminderHours,
+  }), { roles: ANY_LOGIN });
   route('PUT', '/api/alerts/me', ({ body, actor }) => alerts.savePrefs(actor.user || 'admin', body));
-  route('POST', '/api/alerts/subscribe', ({ req, body, actor }) => push.subscribe(actor.user || 'admin', body.subscription, req.headers['user-agent']));
+  route('POST', '/api/alerts/subscribe', ({ req, body, actor }) => push.subscribe(actor.user || 'admin', body.subscription, req.headers['user-agent']), { roles: ANY_LOGIN });
   route('POST', '/api/alerts/unsubscribe', ({ body }) => {
     push.unsubscribe(body.endpoint);
     return { ok: true };
-  });
+  }, { roles: ANY_LOGIN });
   route('POST', '/api/alerts/test', async ({ actor }) => {
     const name = actor.user || 'admin';
-    const reached = await push.sendTo([name], { title: 'Alerts are on', body: 'New leads will show up here like this.', url: '/', tag: 'test' });
+    const reached = await push.sendTo([name], { title: 'Alerts are on', body: 'Your reminders and alerts will show up here like this.', url: '/', tag: 'test' });
     return { delivered: reached.length > 0 };
-  });
+  }, { roles: ANY_LOGIN });
 
   // ---- Importing leads from a spreadsheet (admins) ----
   // Card payments from the processor's export (Talech / Elavon): upload, check the matches, record.
@@ -1177,6 +1182,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   const sendWelcomes = () => messages.sendWelcomes().catch((err) => console.error('Welcome texts failed:', err.message));
   const alertTimer = setInterval(() => {
     runAlerts(); sendCampaigns(); sendWelcomes();
+    workReminders.run().catch((err) => console.error('Shift reminders failed:', err.message));
     timeClock.sendWeeklyDue().catch((err) => console.error('Weekly payroll email failed:', err.message));
     // Scheduled social posts: approved ones go out at their time; ones not approved in time go back to Drafts.
     social.runSchedule().catch((err) => console.error('Scheduled social posts failed:', err.message));
@@ -1247,7 +1253,7 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     }
   };
   // For tests: the services behind the routes (e.g. to run the social schedule at a set time).
-  handler.services = { social };
+  handler.services = { social, workReminders, alerts };
   return handler;
 }
 

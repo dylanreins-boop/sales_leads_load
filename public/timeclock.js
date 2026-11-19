@@ -286,6 +286,7 @@ function renderMyTime() {
           h('div', { class: 'tc-wd-d' }, tcKeyDate(d.date).toLocaleDateString([], { weekday: 'short' }))))))),
 
     h('section', { class: 'tc-card tc-timecard', id: 'tcCard' }),
+    h('section', { class: 'tc-card tc-alerts', id: 'tcAlerts' }),
 
     h('div', { class: 'tc-grid' },
       h('section', { class: 'tc-card' },
@@ -310,6 +311,37 @@ function renderMyTime() {
           r.status === 'pending' && h('button', { type: 'button', class: 'link-btn', onclick: () => cancelOff(r.id) }, 'Cancel request'))))
           : h('p', { class: 'muted' }, 'No time off asked for yet.')))));
   renderTimecard();
+  renderPhoneReminders().catch(() => {});
+}
+
+// ---------- phone reminders (in My time, for everyone: the only place shop logins can turn them on) ----------
+async function renderPhoneReminders() {
+  const box = $('#tcAlerts');
+  if (!box) return;
+  const a = msg.alerts || (msg.alerts = await api('/api/alerts/me'));
+  const role = state.meta.currentRole;
+  const what = [
+    role === 'shop' && a.sheet_minutes > 0 && `a reminder every ${a.sheet_minutes === 60 ? 'hour' : `${a.sheet_minutes} minutes`} on the clock to update the vehicle sheet`,
+    a.clock_out_hours > 0 && `a reminder at ${a.clock_out_hours} hours worked to clock out`,
+    role !== 'shop' && 'new leads',
+    role === 'admin' && 'cars marked ready for pickup',
+  ].filter(Boolean);
+  const sub = await currentSubscription().catch(() => null);
+  const on = Boolean(sub) && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  let note = '';
+  if (on) note = 'On for this phone.';
+  else if (isIos() && !installedApp()) note = 'On iPhone: tap Share, then "Add to Home Screen". Open the app from your Home Screen and turn reminders on there.';
+  else if (!pushSupported() || !a.publicKey) note = 'Reminders can\'t be turned on here. Open the app in Chrome or Safari on your phone (on iPhone, from your Home Screen).';
+  else if (Notification.permission === 'denied') note = 'Notifications are blocked for this site. Allow them in your browser\'s site settings, then try again.';
+  const canTurnOn = !on && pushSupported() && a.publicKey && !(isIos() && !installedApp()) && Notification.permission !== 'denied';
+  fill(box,
+    h('div', { class: 'tc-card-head' }, h('h3', {}, '🔔 Phone reminders'), on && h('span', { class: 'tc-badge approved' }, 'On')),
+    h('p', { class: 'hint' }, 'Turn these on to get them on this phone:'),
+    h('ul', { class: 'tc-alert-list' }, ...what.map((w) => h('li', {}, w[0].toUpperCase() + w.slice(1)))),
+    note && h('p', { class: 'muted' }, note),
+    h('div', { class: 'alert-actions' },
+      canTurnOn && h('button', { type: 'button', class: 'primary', onclick: async () => { await turnOnAlerts(); renderPhoneReminders(); } }, 'Turn on reminders on this phone'),
+      on && h('button', { type: 'button', onclick: testAlert }, 'Send a test')));
 }
 
 // The clock on the page and in the confirmation ticks every second while they're open.

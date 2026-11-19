@@ -118,6 +118,10 @@ module.exports = {
   // minutes, the admins get pinged too.
   speedToLeadMinutes: Number(process.env.SPEED_TO_LEAD_MINUTES ?? 15),
   // Alerts only go out between these hours (shop time); overnight leads are alerted at the start.
+  // Shop logins get a phone reminder to update the vehicle sheet this often while on the clock (0 = off),
+  // and everyone on the clock gets a "time to clock out" reminder at this many hours worked (0 = off).
+  sheetReminderMinutes: Math.max(0, Number(process.env.SHEET_REMINDER_MINUTES ?? 60) || 0),
+  clockOutReminderHours: Math.max(0, Number(process.env.CLOCK_OUT_REMINDER_HOURS ?? 7.5) || 0),
   alertHours: (() => {
     const [start, end] = String(process.env.ALERT_HOURS || '7-20').split('-').map(Number);
     return start >= 0 && end > start && end <= 24 ? { start, end } : { start: 7, end: 20 };
