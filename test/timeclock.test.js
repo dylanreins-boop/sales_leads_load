@@ -104,7 +104,10 @@ test('Time & Pay adds up regular, overtime and paid time off at each hourly rate
   assert.equal(mike.pto_hours, 8, 'the approved vacation day');
   assert.equal(mike.rate_cents, 2000);
   assert.equal(mike.gross_cents, 47 * 2000 + 5 * 3000 + 8 * 2000);
-  assert.equal(mike.punches.length, 7, 'the clock-in test punch plus the six added');
+  // The clock-in test above punched in at the real time, so it's in this Nov 1–14 report only when the
+  // tests run in those two weeks.
+  const liveInRange = new Date() >= new Date(2026, 10, 1) && new Date() < new Date(2026, 10, 15) ? 1 : 0;
+  assert.equal(mike.punches.length, 6 + liveInRange, 'the six added (plus the clock-in test punch, when it falls in the range)');
   const sam = report.rows.find((r) => r.name === 'Sam');
   assert.equal(sam.rate_cents, null);
   assert.ok(sam.regular_hours >= 4);

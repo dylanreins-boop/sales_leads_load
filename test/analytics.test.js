@@ -30,6 +30,10 @@ async function call(method, url, body, a = SAM) {
 test('the analytics report adds up leads, bookings, speed, reps, sources, money and lost reasons', async () => {
   const now = Date.now();
   const iso = (ms) => new Date(ms).toISOString();
+  // The job is booked for the next weekday at 8 AM, so all 4 hours fall inside shop hours whatever time
+  // the tests run (the shop is closed weekends and after 2:30 PM).
+  const dropOff = new Date(now); dropOff.setDate(dropOff.getDate() + 1); dropOff.setHours(8, 0, 0, 0);
+  while ([0, 6].includes(dropOff.getDay())) dropOff.setDate(dropOff.getDate() + 1);
   const add = async (name, phone, type, source) => {
     const { lead } = (await call('POST', '/api/leads', { full_name: name, phone, vehicle_type: type })).data;
     if (source) db.prepare('UPDATE leads SET source = ? WHERE id = ?').run(source, lead.id);
@@ -42,7 +46,7 @@ test('the analytics report adds up leads, bookings, speed, reps, sources, money 
   // Ana was reached 30 minutes after she came in, quoted and booked; she paid the rest at pickup.
   db.prepare('UPDATE leads SET received_at = ? WHERE id IN (?, ?, ?, ?)').run(iso(now - 3600000), ana.id, bo.id, cy.id, di.id);
   await call('POST', `/api/leads/${ana.id}/quotes`, { base: 'pkg1300' });
-  await call('POST', `/api/leads/${ana.id}/disposition`, { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'], job_start: iso(now + 86400000), job_hours: 4, job_amount: '1300', deposit_taken: true, deposit_method: 'Card', send_confirmation: false });
+  await call('POST', `/api/leads/${ana.id}/disposition`, { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'], job_start: dropOff.toISOString(), job_hours: 4, job_amount: '1300', deposit_taken: true, deposit_method: 'Card', send_confirmation: false });
   db.prepare("UPDATE activities SET created_at = ? WHERE lead_id = ? AND user_name IS NOT NULL").run(iso(now - 1800000), ana.id);
   const job = (await call('GET', `/api/leads/${ana.id}`)).data.jobs[0];
   await call('POST', `/api/jobs/${job.id}/payments`, { method: 'Zelle' });
@@ -52,7 +56,7 @@ test('the analytics report adds up leads, bookings, speed, reps, sources, money 
   const month = `${new Date(now).getFullYear()}-${String(new Date(now).getMonth() + 1).padStart(2, '0')}`;
   await call('PUT', '/api/ad-spend', { month, source: 'facebook', amount: '400' }, ADMIN);
 
-  const q = `from=${iso(now - 2 * 86400000)}&to=${iso(now + 3 * 86400000)}`;
+  const q = `from=${iso(now - 2 * 86400000)}&to=${iso(dropOff.getTime() + 86400000)}`;
   assert.equal((await call('GET', `/api/analytics?${q}`)).status, 403, 'admins only');
   assert.equal((await call('GET', '/api/analytics?from=x&to=y', undefined, ADMIN)).status, 400);
   const r = (await call('GET', `/api/analytics?${q}`, undefined, ADMIN)).data;
