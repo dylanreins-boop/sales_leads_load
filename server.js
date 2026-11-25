@@ -481,6 +481,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/holidays', () => ({ holidays: jobs.getHolidays() }), { roles: ANY_LOGIN });
   route('POST', '/api/holidays', ({ body, actor }) => ({ ...jobs.addHolidays(body, actor), shop_hours: jobs.getShopHours() }), { roles: ADMIN });
   route('DELETE', '/api/holidays/:date', ({ params }) => ({ ...jobs.removeHoliday(params.date), shop_hours: jobs.getShopHours() }), { roles: ADMIN });
+  // Yearly holidays: rules that put a day off on the calendar every year ("4th Thursday of November").
+  route('GET', '/api/holiday-rules', () => jobs.rulesView(), { roles: ADMIN });
+  route('POST', '/api/holiday-rules', ({ body, actor }) => jobs.addRule(body, actor), { roles: ADMIN });
+  route('DELETE', '/api/holiday-rules/:id', ({ params }) => jobs.removeRule(params.id), { roles: ADMIN });
+  route('POST', '/api/holiday-rules/:id/unskip', ({ params, body }) => jobs.unskipRule(params.id, String(body.date || '')), { roles: ADMIN });
   // Admins email the booking confirmation from the job (or send it again).
   route('POST', '/api/jobs/:id/confirmation-email', ({ params, body, actor }) => messages.emailConfirmation(Number(params.id), { to: body.to, user: actor.user }), { roles: ADMIN });
   route('POST', '/api/leads/:id/job', async ({ params, body, actor }) => {

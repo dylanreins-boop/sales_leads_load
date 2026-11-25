@@ -481,13 +481,39 @@
         <h3>Company holidays</h3>
         <p class="hint">The whole shop is off these days. Nothing can be dropped off or picked up, and the online booking page skips them.</p>
       </div>
-      <form id="holidayForm" class="holiday-form">
-        <label>Name <input name="name" maxlength="60" placeholder="e.g. Christmas" required></label>
-        <label>Day off <input name="date" type="date" required></label>
-        <label>Through (optional) <input name="end_date" type="date"></label>
-        <button type="submit" class="primary">Add holiday</button>
-      </form>
-      <ul id="holidayList" class="holiday-list"></ul>
+      <div class="hol-section">
+        <h4>Every year</h4>
+        <p class="hint">Set it once and the shop is closed that day every year. Tap a holiday to add it:</p>
+        <div id="holidayPresets" class="hol-presets"></div>
+        <ul id="holidayRules" class="holiday-list"></ul>
+        <details class="hol-custom">
+          <summary>Add your own yearly holiday</summary>
+          <form id="holidayRuleForm" class="holiday-form">
+            <label>Name <input name="name" maxlength="60" placeholder="e.g. Shop anniversary" required></label>
+            <label>Repeats <select name="kind"><option value="date">On a date</option><option value="weekday">On a weekday</option></select></label>
+            <label class="hol-weekday" hidden>Which <select name="nth"><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option><option value="5">5th</option><option value="-1">Last</option></select></label>
+            <label class="hol-weekday" hidden>Day <select name="weekday"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></label>
+            <label>Month <select name="month"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select></label>
+            <label class="hol-date">Day of the month <input name="day" type="number" min="1" max="31" value="1"></label>
+            <label>Close <select name="offset"><option value="0">That day</option><option value="1">The day after</option><option value="-1">The day before</option></select></label>
+            <label class="check"><input type="checkbox" name="observed"> On a weekend, close the Friday before or Monday after</label>
+            <button type="submit" class="primary">Add yearly holiday</button>
+          </form>
+        </details>
+      </div>
+      <div class="hol-section">
+        <h4>One-time days off</h4>
+        <form id="holidayForm" class="holiday-form">
+          <label>Name <input name="name" maxlength="60" placeholder="e.g. Shop trip" required></label>
+          <label>Day off <input name="date" type="date" required></label>
+          <label>Through (optional) <input name="end_date" type="date"></label>
+          <button type="submit" class="primary">Add days off</button>
+        </form>
+      </div>
+      <div class="hol-section">
+        <h4>Coming up (next 12 months)</h4>
+        <ul id="holidayList" class="holiday-list"></ul>
+      </div>
     </section>
     <div id="calLegend" class="cal-legend" aria-label="Job status colors"></div>
     <div id="calUnscheduled" class="cal-unscheduled" hidden></div>

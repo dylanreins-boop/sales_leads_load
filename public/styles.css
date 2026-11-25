@@ -2704,3 +2704,15 @@ table.sold-table { min-width: 980px; table-layout: auto; }
 .meta-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .meta-pick { display: grid; gap: 10px; min-width: min(420px, 90vw); }
 .meta-page { text-align: left; padding: 10px 12px; }
+
+/* Yearly holidays */
+.hol-section { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.hol-section h4 { margin: 0; font-size: 14px; }
+.hol-section .hint { margin: 0; }
+.hol-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.hol-preset { padding: 5px 10px; font-size: 13px; border-radius: 999px; }
+.hol-custom summary { cursor: pointer; color: var(--link); font-weight: 600; font-size: 13px; }
+.hol-custom form { margin-top: 10px; }
+.hol-tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.holiday-form [hidden] { display: none; }
+.holiday-form label.check { display: flex; align-items: center; gap: 6px; align-self: center; }

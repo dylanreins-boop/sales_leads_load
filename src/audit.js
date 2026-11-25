@@ -20,6 +20,8 @@ const RULES = [
   { area: 'settings', methods: ['PUT'], re: /^\/api\/meta-connect\/app$/, say: (b) => `Saved the Meta app (App ID ${b.app_id || ''})` },
   { area: 'settings', methods: ['POST'], re: /^\/api\/meta-connect\/pick$/, say: (b, r) => `Connected Facebook: ${r?.page?.name || 'Page'}` },
   { area: 'settings', methods: ['POST'], re: /^\/api\/meta-connect\/disconnect$/, say: () => 'Disconnected Facebook' },
+  { area: 'settings', methods: ['POST'], re: /^\/api\/holiday-rules$/, say: (b, r) => `Added the yearly holiday ${r?.added?.name || b.name || ''}${r?.added ? `: ${r.added.description}` : ''}` },
+  { area: 'settings', methods: ['DELETE'], re: /^\/api\/holiday-rules\/[\w-]+$/, say: () => 'Removed a yearly holiday' },
   { area: 'settings', methods: ['POST'], re: /^\/api\/holidays$/, say: (b) => `Added the company holiday ${b.name || 'Holiday'}: ${b.date}${b.end_date && b.end_date !== b.date ? ` to ${b.end_date}` : ''}` },
   { area: 'settings', methods: ['DELETE'], re: /^\/api\/holidays\/[\d-]+$/, say: (b, r, m, p) => `Removed the company holiday on ${p.split('/').pop()}` },
   { area: 'delete', methods: ['DELETE'], re: /^\/api\/leads\/\d+$/, say: (b, r) => `Deleted the lead ${r?.name || ''}${r?.phone ? ` (${r.phone})` : ''}`.trim() },

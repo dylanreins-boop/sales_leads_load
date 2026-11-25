@@ -1321,53 +1321,102 @@ function showJobOnCalendar(jobId, startAt) {
 }
 
 // ---------- company holidays (admins) ----------
+// Yearly rules ("4th Thursday of November") and one-time days off; the shop's hours carry the days.
 const holidayDay = (key) => ShopTime.fromKey(key).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-function toggleHolidays() {
+const hol = { rules: [], presets: [] };
+async function toggleHolidays() {
   const box = $('#holidaysBox');
   box.hidden = !box.hidden;
-  if (!box.hidden) renderHolidays();
+  if (box.hidden) return;
+  await loadHolidayRules();
+}
+async function loadHolidayRules() {
+  try { Object.assign(hol, await api('/api/holiday-rules')); } catch (err) { fail(err); }
+  renderHolidays();
+}
+async function holidaysChanged(r, message) {
+  if (r.shop_hours) state.meta.shopHours = r.shop_hours;
+  if (r.rules) Object.assign(hol, { rules: r.rules, presets: r.presets });
+  renderHolidays();
+  renderCalendar();
+  if (message) toast(message);
+  if (r.booked?.length) {
+    await ask({ title: 'Jobs already booked then', cancel: null, ok: 'Got it',
+      text: `${r.booked.map((j) => `${j.name} (drop-off ${fmtWhen(j.start_at)}, pick-up ${fmtWhen(j.end_at)})`).join('; ')}. Move them to another day from the calendar.` });
+  }
+}
+async function addHolidayRule(body) {
+  try {
+    const r = await api('/api/holiday-rules', { method: 'POST', body });
+    await holidaysChanged(r, `${r.added.name} added${r.added.next[0] ? `: closed ${holidayDay(r.added.next[0])}, and every year after` : ', every year'}.`);
+    return true;
+  } catch (err) { fail(err); return false; }
 }
 function renderHolidays() {
+  $('#holidayPresets').replaceChildren(...(hol.presets.length ? hol.presets.map((p) => h('button', {
+    type: 'button', class: 'hol-preset', title: p.description, onclick: () => addHolidayRule({ preset: p.id }),
+  }, `+ ${p.name}`)) : [h('span', { class: 'muted' }, 'All the usual holidays are on the list.')]));
+  $('#holidayRules').replaceChildren(...(hol.rules.length ? hol.rules.map((r) => h('li', {},
+    h('strong', {}, r.name),
+    h('span', { class: 'muted' }, `${r.description}${r.next[0] ? ` · next: ${holidayDay(r.next[0])}` : ''}`),
+    ...r.skip.map((d) => h('button', { type: 'button', class: 'link-btn', title: 'Put this year back', onclick: async () => {
+      try { await holidaysChanged(await api(`/api/holiday-rules/${r.id}/unskip`, { method: 'POST', body: { date: d } }), `${r.name} is back on ${holidayDay(d)}`); } catch (err) { fail(err); }
+    } }, `Skipped ${holidayDay(d)} · undo`)),
+    h('button', { type: 'button', class: 'link-btn danger-link', onclick: async () => {
+      if (!await askConfirm(`Stop closing for ${r.name} every year?`, 'The day goes back to a normal shop day this year and every year after.', { ok: 'Remove' })) return;
+      try { await holidaysChanged(await api(`/api/holiday-rules/${r.id}`, { method: 'DELETE' }), `${r.name} removed`); } catch (err) { fail(err); }
+    } }, 'Remove')))
+    : [h('li', { class: 'muted' }, 'No yearly holidays yet. Tap the ones the shop closes for above.')]));
+
+  // Every closed day in the next 12 months. Days in a row with the same name show as one line.
   const today = ShopTime.dayKey(new Date());
-  const list = (shopHours().holidays || []).filter((x) => x.date >= today);
-  // Days in a row with the same name show as one line ("Dec 24 to Dec 26").
+  const end = new Date(); end.setFullYear(end.getFullYear() + 1);
+  const list = (shopHours().holidays || []).filter((x) => x.date >= today && x.date <= ShopTime.dayKey(end));
   const groups = [];
   for (const x of list) {
     const last = groups.at(-1);
     const next = last && ShopTime.dayKey(new Date(ShopTime.fromKey(last.to).getTime() + 36 * 3600000));
-    if (last && last.name === x.name && next === x.date) { last.to = x.date; last.dates.push(x.date); } else groups.push({ name: x.name, from: x.date, to: x.date, dates: [x.date] });
+    if (last && last.name === x.name && next === x.date && Boolean(last.yearly) === Boolean(x.rule_id)) { last.to = x.date; last.dates.push(x.date); } else groups.push({ name: x.name, from: x.date, to: x.date, dates: [x.date], yearly: Boolean(x.rule_id) });
   }
   $('#holidayList').replaceChildren(...(groups.length ? groups.map((g) => h('li', {},
     h('strong', {}, g.name),
     h('span', { class: 'muted' }, g.from === g.to ? holidayDay(g.from) : `${holidayDay(g.from)} to ${holidayDay(g.to)}`),
-    h('button', { type: 'button', class: 'link-btn danger-link', onclick: () => removeHoliday(g) }, 'Remove')))
-    : [h('li', { class: 'muted' }, 'No holidays coming up. Add the days the whole shop is off.')]));
+    g.yearly && h('span', { class: 'hol-tag' }, 'Every year'),
+    h('button', { type: 'button', class: 'link-btn danger-link', onclick: () => removeHoliday(g) }, g.yearly ? 'Open that day this year' : 'Remove')))
+    : [h('li', { class: 'muted' }, 'No days off coming up.')]));
 }
 async function addHoliday(e) {
   e.preventDefault();
   const f = e.target;
   try {
     const r = await api('/api/holidays', { method: 'POST', body: { name: f.name.value, date: f.date.value, end_date: f.end_date.value || null } });
-    state.meta.shopHours = r.shop_hours;
     f.reset();
-    renderHolidays();
-    renderCalendar();
-    toast(`${r.added.length === 1 ? 'Holiday' : `${r.added.length} holiday days`} added. The shop is closed then.`);
-    if (r.booked.length) {
-      await ask({ title: 'Jobs already booked on those days', cancel: null, ok: 'Got it',
-        text: `${r.booked.map((j) => `${j.name} (drop-off ${fmtWhen(j.start_at)}, pick-up ${fmtWhen(j.end_at)})`).join('; ')}. Move them to another day from the calendar.` });
-    }
+    await holidaysChanged(r, `${r.added.length === 1 ? 'Day off' : `${r.added.length} days off`} added. The shop is closed then.`);
   } catch (err) { fail(err); }
 }
+async function addCustomRule(e) {
+  e.preventDefault();
+  const f = e.target;
+  const ok = await addHolidayRule({ name: f.name.value, kind: f.kind.value, month: Number(f.month.value), day: Number(f.day.value), nth: Number(f.nth.value),
+    weekday: Number(f.weekday.value), offset: Number(f.offset.value), observed: f.observed.checked });
+  if (ok) { f.reset(); syncRuleForm(); }
+}
+function syncRuleForm() {
+  const f = $('#holidayRuleForm');
+  const weekday = f.kind.value === 'weekday';
+  f.querySelectorAll('.hol-weekday').forEach((el) => { el.hidden = !weekday; });
+  f.querySelector('.hol-date').hidden = weekday;
+}
 async function removeHoliday(group) {
-  if (!await askConfirm(`Remove ${group.name}?`, group.dates.length > 1 ? `All ${group.dates.length} days go back to normal shop days.` : 'That day goes back to a normal shop day.', { ok: 'Remove' })) return;
+  const what = group.yearly
+    ? [`Open the shop on ${holidayDay(group.from)}?`, `${group.name} stays on the list for other years; just this one is skipped.`]
+    : [`Remove ${group.name}?`, group.dates.length > 1 ? `All ${group.dates.length} days go back to normal shop days.` : 'That day goes back to a normal shop day.'];
+  if (!await askConfirm(what[0], what[1], { ok: group.yearly ? 'Open that day' : 'Remove' })) return;
   try {
     let r;
     for (const d of group.dates) r = await api(`/api/holidays/${d}`, { method: 'DELETE' });
-    state.meta.shopHours = r.shop_hours;
-    renderHolidays();
-    renderCalendar();
-    toast(`${group.name} removed`);
+    if (group.yearly) await loadHolidayRules();
+    await holidaysChanged(r, group.yearly ? `The shop is open ${holidayDay(group.from)}` : `${group.name} removed`);
   } catch (err) { fail(err); }
 }
 
@@ -1425,6 +1474,8 @@ function initCalendar() {
   $('#shopHoursForm').addEventListener('submit', saveShopHours);
   $('#holidaysBtn').addEventListener('click', toggleHolidays);
   $('#holidayForm').addEventListener('submit', addHoliday);
+  $('#holidayRuleForm').addEventListener('submit', addCustomRule);
+  $('#holidayRuleForm').kind.addEventListener('change', syncRuleForm);
   $('#scheduleCancel').addEventListener('click', () => $('#scheduleDialog').close());
   // Keep the calendar fresh while it's on screen.
   setInterval(() => { if (state.section === 'calendar' && document.visibilityState === 'visible') loadCalendar().catch(() => {}); }, 60_000);

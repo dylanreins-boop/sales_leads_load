@@ -138,21 +138,86 @@ function createJobService(db, { leads, photosDir }) {
   }
 
   // ---- company holidays: days the whole shop is off; nothing can be dropped off or picked up ----
-  function getHolidays() {
-    const row = stmt("SELECT value FROM settings WHERE key = 'holidays'").get();
-    let list = [];
-    try { list = row ? JSON.parse(row.value) : []; } catch { /* none */ }
-    return (Array.isArray(list) ? list : []).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x?.date)).sort((a, b) => a.date.localeCompare(b.date));
+  // Two kinds: one-time days off (a date, or a run of dates) and yearly rules ("December 25",
+  // "4th Thursday of November"), which put the day on the calendar every year. The shop's list is the
+  // one-time days plus each rule's day from last year through the next few years.
+  const readJson = (key, fallback) => { try { const v = JSON.parse(stmt('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? 'null'); return v ?? fallback; } catch { return fallback; } };
+  const writeJson = (key, value) => stmt('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value));
+  const isDateKey = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(ShopTime.fromKey(String(v)).getTime());
+  const oneOffs = () => (Array.isArray(readJson('holidays', [])) ? readJson('holidays', []) : []).filter((x) => isDateKey(x?.date));
+  const saveHolidays = (list) => writeJson('holidays', list.sort((a, b) => a.date.localeCompare(b.date)));
+  const getRules = () => (Array.isArray(readJson('holiday_rules', [])) ? readJson('holiday_rules', []) : []);
+  const saveRules = (rules) => writeJson('holiday_rules', rules);
+
+  // The day a rule lands on in a year ("2026-11-26"), or null when it doesn't exist that year.
+  function ruleDate(rule, year) {
+    let d;
+    if (rule.kind === 'date') {
+      d = new Date(year, rule.month - 1, rule.day);
+      if (d.getMonth() !== rule.month - 1) return null; // e.g. Feb 29
+    } else if (rule.nth === -1) {
+      d = new Date(year, rule.month, 0);
+      while (d.getDay() !== rule.weekday) d.setDate(d.getDate() - 1);
+    } else {
+      d = new Date(year, rule.month - 1, 1);
+      while (d.getDay() !== rule.weekday) d.setDate(d.getDate() + 1);
+      d.setDate(d.getDate() + 7 * (rule.nth - 1));
+      if (d.getMonth() !== rule.month - 1) return null;
+    }
+    if (rule.offset) d.setDate(d.getDate() + rule.offset);
+    // Observed: a Saturday holiday closes the Friday before, a Sunday one the Monday after.
+    if (rule.observed && d.getDay() === 6) d.setDate(d.getDate() - 1);
+    else if (rule.observed && d.getDay() === 0) d.setDate(d.getDate() + 1);
+    return ShopTime.dayKey(d);
   }
-  const saveHolidays = (list) => stmt("INSERT INTO settings (key, value) VALUES ('holidays', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-    .run(JSON.stringify(list));
+  const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const NTH = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', '-1': 'Last' };
+  function describeRule(r) {
+    const base = r.kind === 'date' ? `${MONTH_NAMES[r.month - 1]} ${r.day}` : `${NTH[r.nth]} ${WEEKDAY_NAMES[r.weekday]} of ${MONTH_NAMES[r.month - 1]}`;
+    const shift = r.offset === 1 ? 'The day after the ' : r.offset === -1 ? 'The day before the ' : '';
+    return `${shift}${shift ? base.charAt(0).toLowerCase() + base.slice(1) : base}, every year${r.observed ? ' (on a weekend: the Friday before or Monday after)' : ''}`;
+  }
+
+  // The usual U.S. holidays, one tap each.
+  const HOLIDAY_PRESETS = [
+    { id: 'new_year', name: 'New Year\'s Day', kind: 'date', month: 1, day: 1, observed: true },
+    { id: 'mlk', name: 'Martin Luther King Jr. Day', kind: 'weekday', month: 1, nth: 3, weekday: 1 },
+    { id: 'presidents', name: 'Presidents\' Day', kind: 'weekday', month: 2, nth: 3, weekday: 1 },
+    { id: 'memorial', name: 'Memorial Day', kind: 'weekday', month: 5, nth: -1, weekday: 1 },
+    { id: 'independence', name: 'Independence Day', kind: 'date', month: 7, day: 4, observed: true },
+    { id: 'labor', name: 'Labor Day', kind: 'weekday', month: 9, nth: 1, weekday: 1 },
+    { id: 'thanksgiving', name: 'Thanksgiving', kind: 'weekday', month: 11, nth: 4, weekday: 4 },
+    { id: 'black_friday', name: 'Day after Thanksgiving', kind: 'weekday', month: 11, nth: 4, weekday: 4, offset: 1 },
+    { id: 'christmas_eve', name: 'Christmas Eve', kind: 'date', month: 12, day: 24 },
+    { id: 'christmas', name: 'Christmas Day', kind: 'date', month: 12, day: 25, observed: true },
+    { id: 'new_years_eve', name: 'New Year\'s Eve', kind: 'date', month: 12, day: 31 },
+  ];
+
+  // Every rule's day from last year through the next few years (skipped years left out).
+  function ruleDays(years = 3) {
+    const y = new Date().getFullYear();
+    const out = [];
+    for (const r of getRules()) {
+      for (let year = y - 1; year <= y + years; year++) {
+        const date = ruleDate(r, year);
+        if (date && !(r.skip || []).includes(date)) out.push({ date, name: r.name, rule_id: r.id });
+      }
+    }
+    return out;
+  }
+  function getHolidays() {
+    const byDate = new Map();
+    for (const x of ruleDays()) if (!byDate.has(x.date)) byDate.set(x.date, x);
+    for (const x of oneOffs()) byDate.set(x.date, x); // a one-time day off with its own name wins
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }
 
   // One day, or every day from date to end_date (up to 31), under one name.
   function addHolidays({ date, end_date: endDate, name } = {}, { user } = {}) {
-    const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(ShopTime.fromKey(String(v)).getTime());
-    if (!isDate(date)) throw new HttpError(400, 'Pick the holiday\'s date.');
+    if (!isDateKey(date)) throw new HttpError(400, 'Pick the holiday\'s date.');
     const last = endDate ? String(endDate) : String(date);
-    if (!isDate(last)) throw new HttpError(400, 'Pick the last day off.');
+    if (!isDateKey(last)) throw new HttpError(400, 'Pick the last day off.');
     if (last < date) throw new HttpError(400, 'The last day off has to be on or after the first.');
     const label = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 60) || 'Holiday';
     const days = [];
@@ -160,17 +225,88 @@ function createJobService(db, { leads, photosDir }) {
       days.push(ShopTime.dayKey(d));
       if (days.length > 31) throw new HttpError(400, 'Add up to 31 days at a time.');
     }
-    const list = getHolidays().filter((x) => !days.includes(x.date));
+    const list = oneOffs().filter((x) => !days.includes(x.date));
     list.push(...days.map((d) => ({ date: d, name: label, added_by: user ?? null, added_at: now() })));
-    saveHolidays(list.sort((a, b) => a.date.localeCompare(b.date)));
+    saveHolidays(list);
     return { holidays: getHolidays(), added: days, booked: jobsOnDays(days) };
   }
 
+  // Removes a one-time day off; a yearly rule's day is skipped for that year only (the rule stays).
   function removeHoliday(date) {
-    const list = getHolidays();
-    if (!list.some((x) => x.date === date)) throw new HttpError(404, 'That holiday isn\'t on the list.');
-    saveHolidays(list.filter((x) => x.date !== date));
-    return { holidays: getHolidays() };
+    const list = oneOffs();
+    if (list.some((x) => x.date === date)) {
+      saveHolidays(list.filter((x) => x.date !== date));
+      return { holidays: getHolidays() };
+    }
+    const fromRule = ruleDays().find((x) => x.date === date);
+    if (!fromRule) throw new HttpError(404, 'That holiday isn\'t on the list.');
+    saveRules(getRules().map((r) => (r.id === fromRule.rule_id ? { ...r, skip: [...new Set([...(r.skip || []), date])] } : r)));
+    return { holidays: getHolidays(), skipped: { date, name: fromRule.name } };
+  }
+
+  // ---- yearly rules ----
+  function rulesView() {
+    const today = ShopTime.dayKey(new Date());
+    const y = new Date().getFullYear();
+    const taken = new Set(getRules().map((r) => r.preset).filter(Boolean));
+    return {
+      rules: getRules().map((r) => {
+        const next = [y, y + 1, y + 2].map((year) => ruleDate(r, year)).filter((d) => d && d >= today && !(r.skip || []).includes(d));
+        return { id: r.id, name: r.name, kind: r.kind, month: r.month, day: r.day ?? null, nth: r.nth ?? null, weekday: r.weekday ?? null,
+          offset: r.offset || 0, observed: Boolean(r.observed), preset: r.preset || null, skip: (r.skip || []).filter((d) => d >= today),
+          description: describeRule(r), next: next.slice(0, 2) };
+      }).sort((a, b) => (a.next[0] || '9999').localeCompare(b.next[0] || '9999')),
+      presets: HOLIDAY_PRESETS.filter((p) => !taken.has(p.id)).map((p) => ({ id: p.id, name: p.name, description: describeRule(p) })),
+    };
+  }
+  function addRule(input = {}, { user } = {}) {
+    let rule;
+    if (input.preset) {
+      const p = HOLIDAY_PRESETS.find((x) => x.id === input.preset);
+      if (!p) throw new HttpError(400, 'Pick one of the holidays listed.');
+      if (getRules().some((r) => r.preset === p.id)) throw new HttpError(409, `${p.name} is already on the list.`);
+      const { id, ...rest } = p;
+      rule = { ...rest, preset: id };
+    } else {
+      const name = String(input.name ?? '').trim().replace(/\s+/g, ' ').slice(0, 60);
+      if (!name) throw new HttpError(400, 'Name the holiday.');
+      const month = Number(input.month);
+      if (!Number.isInteger(month) || month < 1 || month > 12) throw new HttpError(400, 'Pick the month.');
+      const offset = Number(input.offset || 0);
+      if (![-1, 0, 1].includes(offset)) throw new HttpError(400, 'Pick that day, the day before or the day after.');
+      if (input.kind === 'date') {
+        const day = Number(input.day);
+        if (!Number.isInteger(day) || day < 1 || day > new Date(2024, month, 0).getDate()) throw new HttpError(400, 'Pick a day that\'s in that month.');
+        rule = { name, kind: 'date', month, day };
+      } else if (input.kind === 'weekday') {
+        const nth = Number(input.nth);
+        const weekday = Number(input.weekday);
+        if (![1, 2, 3, 4, 5, -1].includes(nth)) throw new HttpError(400, 'Pick 1st, 2nd, 3rd, 4th, 5th or last.');
+        if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) throw new HttpError(400, 'Pick the day of the week.');
+        rule = { name, kind: 'weekday', month, nth, weekday };
+      } else throw new HttpError(400, 'Pick "on a date" or "on a weekday".');
+      if (offset) rule.offset = offset;
+      if (input.observed) rule.observed = true;
+    }
+    rule = { id: crypto.randomUUID().slice(0, 8), ...rule, added_by: user ?? null, added_at: now() };
+    saveRules([...getRules(), rule]);
+    const y = new Date().getFullYear();
+    const today = ShopTime.dayKey(new Date());
+    const upcoming = [y, y + 1].map((year) => ruleDate(rule, year)).filter((d) => d && d >= today);
+    return { ...rulesView(), added: { id: rule.id, name: rule.name, description: describeRule(rule), next: upcoming }, booked: jobsOnDays(upcoming.slice(0, 1)), shop_hours: getShopHours() };
+  }
+  function removeRule(id) {
+    const rules = getRules();
+    if (!rules.some((r) => r.id === id)) throw new HttpError(404, 'That yearly holiday isn\'t on the list.');
+    saveRules(rules.filter((r) => r.id !== id));
+    return { ...rulesView(), shop_hours: getShopHours() };
+  }
+  // Puts back a year that was skipped.
+  function unskipRule(id, date) {
+    const rules = getRules();
+    if (!rules.some((r) => r.id === id)) throw new HttpError(404, 'That yearly holiday isn\'t on the list.');
+    saveRules(rules.map((r) => (r.id === id ? { ...r, skip: (r.skip || []).filter((d) => d !== date) } : r)));
+    return { ...rulesView(), shop_hours: getShopHours() };
   }
 
   // Jobs already dropping off or picking up on these days (to warn the admin who adds the holiday).
@@ -581,7 +717,7 @@ function createJobService(db, { leads, photosDir }) {
   return {
     setEstimator, defaultWork,
     signOff, signOffImage, clearSignOff, setSocialOk,
-    getShopHours, saveShopHours, getHolidays, addHolidays, removeHoliday, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
+    getShopHours, saveShopHours, getHolidays, addHolidays, removeHoliday, rulesView, addRule, removeRule, unskipRule, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };
 }

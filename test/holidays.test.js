@@ -114,3 +114,53 @@ test('admins email the booking confirmation from the job', async () => {
   assert.equal(emails.filter((e) => e.label === 'Booking confirmation' || e.subject).length >= 2, true);
   assert.ok((await call('GET', `/api/jobs/${job.id}`)).data.confirm_sent_at, 'when it was last sent shows on the job');
 });
+
+test('yearly holidays: set once, closed every year, a year can be skipped', async () => {
+  const y = new Date().getFullYear();
+  const days = async () => (await call('GET', '/api/settings/shop-hours', undefined, SAM)).data.holidays;
+  const view = (await call('GET', '/api/holiday-rules')).data;
+  assert.ok(view.presets.some((p) => p.id === 'thanksgiving' && p.description === '4th Thursday of November, every year'));
+  assert.equal((await call('POST', '/api/holiday-rules', { preset: 'thanksgiving' }, SAM)).status, 403, 'admins only');
+
+  // Thanksgiving: the 4th Thursday of November, this year and the years after.
+  const thanks = (await call('POST', '/api/holiday-rules', { preset: 'thanksgiving' })).data;
+  const fourthThursday = (year) => { const d = new Date(year, 10, 1); while (d.getDay() !== 4) d.setDate(d.getDate() + 1); d.setDate(d.getDate() + 21); return ShopTime.dayKey(d); };
+  for (const year of [y, y + 1, y + 2]) assert.ok((await days()).some((x) => x.date === fourthThursday(year) && x.name === 'Thanksgiving'), `Thanksgiving ${year}`);
+  assert.equal((await call('POST', '/api/holiday-rules', { preset: 'thanksgiving' })).status, 409, 'once');
+  assert.ok(!thanks.presets.some((p) => p.id === 'thanksgiving'), 'no longer offered');
+
+  // The day after, and Christmas on a weekend moving to the Friday before (Dec 25, 2027 is a Saturday).
+  await call('POST', '/api/holiday-rules', { preset: 'black_friday' });
+  assert.ok((await days()).some((x) => x.date === ShopTime.dayKey(new Date(ShopTime.fromKey(fourthThursday(y + 1)).getTime() + 36 * 3600000)) && x.name === 'Day after Thanksgiving'));
+  await call('POST', '/api/holiday-rules', { preset: 'christmas' });
+  const all = await days();
+  assert.ok(all.some((x) => x.date === '2027-12-24' && x.name === 'Christmas Day'), 'observed on Friday');
+  assert.ok(!all.some((x) => x.date === '2027-12-25'));
+
+  // A custom one: the last Monday of May; and checks.
+  const custom = await call('POST', '/api/holiday-rules', { name: 'Shop picnic', kind: 'weekday', nth: -1, weekday: 1, month: 5 });
+  assert.equal(custom.data.added.description, 'Last Monday of May, every year');
+  assert.match((await call('POST', '/api/holiday-rules', { name: 'Bad', kind: 'date', month: 2, day: 30 })).data.error, /in that month/);
+  assert.match((await call('POST', '/api/holiday-rules', { name: '', kind: 'date', month: 2, day: 3 })).data.error, /Name/);
+
+  // Booking on a yearly holiday is refused like any other.
+  const { lead } = (await call('POST', '/api/leads', { full_name: 'Turkey Day', phone: '702-555-0808', vehicle_type: 'Car' })).data;
+  const next = fourthThursday(new Date() > ShopTime.fromKey(fourthThursday(y)) ? y + 1 : y);
+  const refused = await call('POST', `/api/leads/${lead.id}/disposition`, { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'], job_start: at(ShopTime.fromKey(next), 9), job_hours: 4, send_confirmation: false });
+  assert.equal(refused.status, 409);
+  assert.match(refused.data.error, /for Thanksgiving/);
+
+  // Open the shop one year: only that year is skipped; undo puts it back.
+  const skipped = (await call('DELETE', `/api/holidays/${fourthThursday(y + 1)}`)).data;
+  assert.deepEqual(skipped.skipped, { date: fourthThursday(y + 1), name: 'Thanksgiving' });
+  assert.ok(!(await days()).some((x) => x.date === fourthThursday(y + 1)));
+  assert.ok((await days()).some((x) => x.date === fourthThursday(y + 2)), 'other years stay');
+  await call('POST', `/api/holiday-rules/${thanks.added.id}/unskip`, { date: fourthThursday(y + 1) });
+  assert.ok((await days()).some((x) => x.date === fourthThursday(y + 1)));
+
+  // Removing the rule opens every year.
+  await call('DELETE', `/api/holiday-rules/${thanks.added.id}`);
+  assert.ok(!(await days()).some((x) => x.name === 'Thanksgiving'));
+  const log = (await call('GET', '/api/audit?area=settings')).data.map((r) => r.action);
+  assert.ok(log.includes('Added the yearly holiday Thanksgiving: 4th Thursday of November, every year'), log.join('\n'));
+});
