@@ -237,6 +237,23 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
       });
   }
 
+  // Admins delete a lead for good: its notes, texts, emails, reminders, quotes and calls go with it.
+  // A lead with real work on the calendar or money recorded can't be deleted (that's the shop's history):
+  // cancel the job, or mark the lead Dead instead.
+  function deleteLead(id) {
+    const lead = stmt('SELECT id, full_name, first_name, last_name, phone, email FROM leads WHERE id = ?').get(id);
+    if (!lead) throw new HttpError(404, 'Lead not found');
+    const open = stmt("SELECT COUNT(*) AS n FROM jobs WHERE lead_id = ? AND status != 'cancelled'").get(id).n;
+    if (open) throw new HttpError(409, `This lead has ${open === 1 ? 'a job' : `${open} jobs`} on the calendar, so it can't be deleted. Cancel the job first, or mark the lead Dead.`);
+    const paid = stmt('SELECT COUNT(*) AS n FROM job_payments p JOIN jobs j ON j.id = p.job_id WHERE j.lead_id = ?').get(id).n
+      + stmt('SELECT COUNT(*) AS n FROM jobs WHERE lead_id = ? AND deposit_cents > 0').get(id).n;
+    if (paid) throw new HttpError(409, 'This lead has payments recorded, so it can\'t be deleted. Mark it Dead instead.');
+    const photos = stmt('SELECT p.file FROM job_photos p JOIN jobs j ON j.id = p.job_id WHERE j.lead_id = ?').all(id).map((p) => p.file);
+    stmt('DELETE FROM leads WHERE id = ?').run(id);
+    const name = lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.phone || lead.email || `Lead ${id}`;
+    return { ok: true, id, name, phone: lead.phone || null, photos };
+  }
+
   // How many leads are in each list off the board, for the tab counts (without sending the lists).
   function listCounts() {
     return stmt(`SELECT
@@ -744,7 +761,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   return {
-    searchLeads, ingest, listLeads, listCounts, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
+    searchLeads, ingest, listLeads, listCounts, deleteLead, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
     archiveOldLeads, restoreLead, bulkUpdate, soldLeads, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,

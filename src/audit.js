@@ -17,6 +17,7 @@ const RULES = [
   { area: 'money', methods: ['DELETE'], re: /^\/api\/payments\/\d+$/, say: () => 'Removed a payment' },
   { area: 'settings', methods: ['PUT', 'PATCH'], re: /^\/api\/(settings\/[\w-]+|automations\/[\w-]+|goals|pipelines|social\/settings)$/, say: (b, r, m, p) => `Changed ${p.replace(/^\/api\/(settings\/)?/, '').replace(/[/-]/g, ' ')}${changed(b) ? `: ${changed(b)}` : ''}` },
   { area: 'export', methods: ['GET'], re: /^\/api\/export\.xlsx$/, say: () => 'Downloaded the leads spreadsheet' },
+  { area: 'delete', methods: ['DELETE'], re: /^\/api\/leads\/\d+$/, say: (b, r) => `Deleted the lead ${r?.name || ''}${r?.phone ? ` (${r.phone})` : ''}`.trim() },
   { area: 'delete', methods: ['DELETE'], re: /^\/api\//, say: (b, r, m, p) => `Deleted ${p.replace(/^\/api\//, '').replace(/\/\d+/g, '').replace(/[/-]/g, ' ')}` },
 ];
 const SECRET = /pass|secret|token|key|code/i;

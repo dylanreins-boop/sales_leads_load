@@ -187,3 +187,21 @@ test('big imports: tab counts without the lists, slim compressed lists, and bulk
   assert.equal(after.old - before.old, ids.length);
   assert.equal((await call('POST', '/api/leads/bulk', { ids: Array.from({ length: 20001 }, (_, i) => i + 1), action: 'off' })).data.error, 'Pick 20,000 or fewer at a time.');
 });
+
+test('admins delete a lead for good; not sales, and not a lead with a job or money on it', async () => {
+  const { lead } = (await call('POST', '/api/leads', { full_name: 'Wrong Number', phone: '702-555-0404' })).data;
+  await call('POST', `/api/leads/${lead.id}/notes`, { note: 'Bad lead' });
+  assert.equal((await call('DELETE', `/api/leads/${lead.id}`, undefined, SAM)).status, 403, 'admins only');
+  const gone = await call('DELETE', `/api/leads/${lead.id}`);
+  assert.deepEqual([gone.status, gone.data.name], [200, 'Wrong Number']);
+  assert.equal((await call('GET', `/api/leads/${lead.id}`)).status, 404);
+  assert.equal((await call('DELETE', `/api/leads/${lead.id}`)).status, 404);
+  const log = (await call('GET', '/api/audit?area=delete')).data;
+  assert.ok(log.some((r) => r.action === 'Deleted the lead Wrong Number (702-555-0404)'), 'in the admin log');
+
+  const { lead: booked } = (await call('POST', '/api/leads', { full_name: 'Has A Job', phone: '702-555-0405' })).data;
+  await call('POST', `/api/leads/${booked.id}/disposition`, { disposition: 'booked', note: 'Booked', services: ['full_decon_coat'], job_start: '2026-12-15T16:00:00Z', job_hours: 4, send_confirmation: false });
+  const refused = await call('DELETE', `/api/leads/${booked.id}`);
+  assert.equal(refused.status, 409);
+  assert.match(refused.data.error, /a job on the calendar/);
+});

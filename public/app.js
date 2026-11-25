@@ -961,6 +961,24 @@ function showPanel(panel) {
   }
 }
 
+// Admins: delete the open lead for good, after a confirm that names them.
+async function deleteOpenLead() {
+  const lead = state.openLead;
+  if (!lead) return;
+  const name = leadName(lead);
+  const ok = await askConfirm(`Delete ${name}?`,
+    'This removes the lead and its notes, texts, emails, reminders and quotes for good. It can\'t be undone. To keep the history, mark the lead Dead instead.',
+    { ok: 'Delete lead', danger: true });
+  if (!ok) return;
+  try {
+    await api(`/api/leads/${lead.id}`, { method: 'DELETE' });
+    showPanel(null);
+    state.importedSel.delete(lead.id);
+    toast(`${name} deleted`);
+    await Promise.all([loadLeads(), loadReminders()]);
+  } catch (err) { fail(err); }
+}
+
 async function openLead(id) {
   try {
     // Opening it fresh counts as "opened"; reloading the lead already on screen after a save doesn't.
@@ -1036,6 +1054,7 @@ function renderLead(lead) {
     lead.sms_opt_in === 1 && h('span', {}, h('span', { class: 'tag text-ok' }, 'OK to text')),
     lead.message && h('div', { class: 'message' }, lead.message),
   ].filter(Boolean));
+  $('#leadDelete').hidden = !isAdmin();
 
   fillInfoForm(lead);
   renderLeadJob(lead);
@@ -1987,6 +2006,7 @@ async function init() {
   $('#dueBanner').addEventListener('click', () => $('#remindersBtn').click());
   $('#scrim').addEventListener('click', () => showPanel(null));
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => showPanel(null)));
+  $('#leadDeleteBtn').addEventListener('click', deleteOpenLead);
   // Escape closes the side panel, unless a dialog (like the photo viewer) is open on top of it.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;

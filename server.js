@@ -402,6 +402,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     const c = leads.listCounts();
     return { old: c.old || 0, customers: c.customers || 0, imported: c.imported || 0 };
   });
+  // Admins only: delete a lead for good (refused when it has a job on the calendar or money recorded).
+  route('DELETE', '/api/leads/:id', ({ params }) => {
+    const { photos, ...gone } = leads.deleteLead(Number(params.id));
+    for (const file of photos) fs.rm(path.join(filesDir, path.basename(file)), { force: true }, () => {});
+    return gone;
+  }, { roles: ADMIN });
   route('POST', '/api/leads/bulk', ({ body, actor }) => leads.bulkUpdate(body, { user: actor.user, role: actor.role }));
   // Already sold: admins see everyone's; sales see the ones they sold.
   route('GET', '/api/sold', ({ actor }) => ({

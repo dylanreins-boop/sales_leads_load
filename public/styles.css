@@ -2663,3 +2663,7 @@ table.sold-table { min-width: 980px; table-layout: auto; }
 
 /* My time: what the phone reminders are */
 .tc-alert-list { margin: 4px 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
+
+/* Lead panel: delete (admins) */
+.lead-delete { border-top: 1px solid var(--border); }
+.lead-delete .hint { margin: 0 0 10px; }
