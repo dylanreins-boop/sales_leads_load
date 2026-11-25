@@ -2667,3 +2667,10 @@ table.sold-table { min-width: 980px; table-layout: auto; }
 /* Lead panel: delete (admins) */
 .lead-delete { border-top: 1px solid var(--border); }
 .lead-delete .hint { margin: 0 0 10px; }
+
+/* Add lead beside the board title (easy to find on phones, where the top-bar button is just a +) */
+.lp-title-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+.lp-title-row h1 { margin: 0; }
+.board-add { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 14px; font-weight: 600; border-radius: 9px; }
+.board-add .ico { width: 16px; height: 16px; }
+.lp-title-row + p { margin-top: 4px; }

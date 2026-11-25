@@ -1974,11 +1974,15 @@ async function init() {
   $('#syncGoogle').addEventListener('click', syncGoogle);
   fillVehicleTypes($('#addLeadForm').vehicle_type);
   fillHeardAbout($('#addLeadForm').heard_about);
-  $('#addLeadBtn').addEventListener('click', () => {
+  // Add lead: in the top bar, and beside the board's title.
+  const openAddLead = () => {
     // Adding from a pipeline's tab: start with that pipeline's first vehicle type.
     $('#addLeadForm').vehicle_type.value = (state.meta.allPipelines.find((p) => p.id === state.pipeline)?.types || [])[0] || '';
     $('#addLeadDialog').showModal();
-  });
+    $('#addLeadForm').first_name.focus();
+  };
+  $('#addLeadBtn').addEventListener('click', openAddLead);
+  $('#boardAddLead').addEventListener('click', openAddLead);
   $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
   $('#emailForm').addEventListener('submit', saveEmailSettings);
   $('#emailForm').addEventListener('input', renderEmailPreview);
