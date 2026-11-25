@@ -1309,6 +1309,8 @@ async function saveSchedule(e) {
       await loadCalendar();
     } else if (state.openLeadId) {
       await openLead(state.openLeadId);
+    } else {
+      await loadLeads();
     }
   } catch (err) { fail(err); }
 }

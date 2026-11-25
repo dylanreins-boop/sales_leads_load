@@ -533,10 +533,15 @@ function exactTime(iso) {
 
 async function moveStage(id, stage) {
   try {
-    await api(`/api/leads/${id}`, { method: 'PATCH', body: { stage } });
-    toast(`Moved to ${stageLabel(stage)}`);
+    const lead = await api(`/api/leads/${id}`, { method: 'PATCH', body: { stage } });
     await loadLeads();
     if (state.openLeadId === id) await openLead(id);
+    // Booked: put it on the shop calendar right away (unless it already has a job there).
+    const hasJob = (lead.jobs || []).some((j) => !['picked_up', 'cancelled'].includes(j.status));
+    if (stage === 'booked' && !hasJob && typeof openScheduleDialog === 'function') {
+      toast('Booked. Pick the drop-off time to put it on the calendar.');
+      openScheduleDialog(lead);
+    } else toast(`Moved to ${stageLabel(stage)}`);
   } catch (err) { fail(err); }
 }
 
