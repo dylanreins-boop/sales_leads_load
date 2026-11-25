@@ -108,7 +108,9 @@ function createAnalyticsService(db, { commissions, payments, jobs, users, estima
     const settings = jobs.getShopHours();
 
     // ---- the leads that came in ----
-    const cohortOf = (a, b) => allLeads.filter((l) => inRange(l.received_at, a, b) && (!pipeline || l.pipeline === pipeline) && (!source || l.source === source)).map((l) => {
+    // Imported leads are old records brought in from another system, not new inquiries: they never count here
+    // (an import with no dates in it would otherwise land thousands of "new leads" on the day of the import).
+    const cohortOf = (a, b) => allLeads.filter((l) => !l.import_batch && inRange(l.received_at, a, b) && (!pipeline || l.pipeline === pipeline) && (!source || l.source === source)).map((l) => {
       const mine = jobsByLead.get(l.id) || [];
       const touches = workByLead.get(l.id) || [];
       const first = touches.find((a2) => a2.created_at >= l.received_at);

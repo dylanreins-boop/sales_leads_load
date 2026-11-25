@@ -1563,8 +1563,10 @@ async function loadBackupStatus() {
   try {
     const s = await api('/api/backup-status');
     const stale = s.configured && Date.now() - new Date(s.at).getTime() > 36 * 3600000;
-    box.className = `backup-status ${!s.configured ? '' : !s.ok || stale ? 'bad' : 'ok'}`;
-    box.textContent = !s.configured
+    box.className = `backup-status ${!s.configured ? (s.host === 'fly' ? 'ok' : '') : !s.ok || stale ? 'bad' : 'ok'}`;
+    box.textContent = !s.configured && s.host === 'fly'
+      ? 'Backups: Fly.io saves a copy of the whole database drive every day and keeps the last 5 days. To get one back, ask whoever set up the app (or Fly support) to restore a snapshot.'
+      : !s.configured
       ? 'Off-server backups aren\'t set up yet. On the server, run: sudo bash /opt/bob-moses-leads/deploy/oracle/backup-setup.sh'
       : !s.ok ? `Last off-server backup FAILED ${fmtDateTime(s.at)}: ${s.error}`
         : `${stale ? 'No off-server backup since' : 'Last off-server backup:'} ${fmtDateTime(s.at)} · database and ${s.photos_total} photo${s.photos_total === 1 ? '' : 's'} saved`;

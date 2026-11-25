@@ -205,3 +205,21 @@ test('admins delete a lead for good; not sales, and not a lead with a job or mon
   assert.equal(refused.status, 409);
   assert.match(refused.data.error, /a job on the calendar/);
 });
+
+test('imported leads are old records, not new leads: Analytics and Overview leave them out', async () => {
+  const before = (await call('GET', '/api/overview')).data;
+  const from = new Date(Date.now() - 86400000).toISOString();
+  const to = new Date(Date.now() + 86400000).toISOString();
+  const analytics = (await call('GET', `/api/analytics?from=${from}&to=${to}`)).data;
+  // A file with no dates: every row would otherwise come in "today", as Facebook leads.
+  const csv = Buffer.from('First Name,Last Name,Mobile,Lead Source\nOld,One,7025558801,Facebook\nOld,Two,7025558802,Facebook\n');
+  const up = (await upload(csv, 'no-dates.csv')).data;
+  const done = (await call('POST', '/api/import/commit', { token: up.token, mapping: up.mapping, placement: 'archive' })).data;
+  assert.equal(done.created, 2);
+  const after = (await call('GET', '/api/overview')).data;
+  assert.equal(after.kpis.new_today.value, before.kpis.new_today.value, 'not new today');
+  const analytics2 = (await call('GET', `/api/analytics?from=${from}&to=${to}`)).data;
+  assert.equal(analytics2.kpis.leads, analytics.kpis.leads, 'not in the lead counts');
+  const report = (await call('GET', `/api/reports/sources?from=${from}&to=${to}`)).data;
+  assert.ok(!report.some((r) => r.source === 'facebook'), 'not in the lead source report');
+});

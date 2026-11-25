@@ -745,7 +745,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
     return stmt(`SELECT l.id, l.source, l.heard_about, l.stage, l.vehicle_type, l.received_at,
                    (l.stage = 'booked' OR EXISTS (SELECT 1 FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled')) AS booked,
                    (SELECT SUM(j.amount_cents) FROM jobs j WHERE j.lead_id = l.id AND j.status != 'cancelled') AS revenue_cents
-                 FROM leads l WHERE l.received_at >= ? AND l.received_at < ?
+                 FROM leads l WHERE l.received_at >= ? AND l.received_at < ? AND l.import_batch IS NULL
                  ORDER BY l.received_at`).all(start, end)
       .map((r) => ({ ...r, booked: Boolean(r.booked), pipeline: pipelineFor(r.vehicle_type) }));
   }

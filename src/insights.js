@@ -213,17 +213,18 @@ function createInsightService(db, { quotes, leads, roleOf = () => null, extraSug
       return { avg: Math.round(avg * 10) / 10, change: avg ? Math.round(((todayN - avg) / avg) * 100) : null };
     };
 
-    const newToday = count("SELECT COUNT(*) AS n FROM leads WHERE received_at >= ? AND source != 'import'", iso(today));
-    const newPrev = count("SELECT COUNT(*) AS n FROM leads WHERE received_at >= ? AND received_at < ? AND source != 'import'", iso(weekAgo), iso(today));
+    // Imported leads (old records from another system) aren't new leads.
+    const newToday = count("SELECT COUNT(*) AS n FROM leads WHERE received_at >= ? AND source != 'import' AND import_batch IS NULL", iso(today));
+    const newPrev = count("SELECT COUNT(*) AS n FROM leads WHERE received_at >= ? AND received_at < ? AND source != 'import' AND import_batch IS NULL", iso(weekAgo), iso(today));
 
     // Speed to first contact: the middle time from a lead coming in to the first call or text, this week vs last.
     const speed = (from, to) => median(stmt(`SELECT received_at, first_contacted_at FROM leads WHERE received_at >= ? AND received_at < ?
-        AND first_contacted_at IS NOT NULL AND source NOT IN ('import', 'manual')`).all(iso(from), iso(to))
+        AND first_contacted_at IS NOT NULL AND source NOT IN ('import', 'manual') AND import_batch IS NULL`).all(iso(from), iso(to))
       .map((r) => Math.max(0, Math.round((new Date(r.first_contacted_at) - new Date(r.received_at)) / 1000))));
     const speedNow = speed(new Date(now.getTime() - 7 * DAY), now);
     const speedBefore = speed(new Date(now.getTime() - 14 * DAY), new Date(now.getTime() - 7 * DAY));
     const waiting = count(`SELECT COUNT(*) AS n FROM leads WHERE stage = 'new' AND first_contacted_at IS NULL AND archived_at IS NULL
-                           AND received_at >= ?`, iso(new Date(now.getTime() - 7 * DAY)));
+                           AND import_batch IS NULL AND received_at >= ?`, iso(new Date(now.getTime() - 7 * DAY)));
 
     const bookedToday = count("SELECT COUNT(*) AS n FROM jobs WHERE created_at >= ? AND status != 'cancelled'", iso(today));
     const bookedPrev = count("SELECT COUNT(*) AS n FROM jobs WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'", iso(weekAgo), iso(today));

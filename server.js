@@ -604,7 +604,9 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     try {
       return { configured: true, ...JSON.parse(fs.readFileSync(config.backupStatusFile, 'utf8')) };
     } catch {
-      return { configured: false };
+      // On Fly.io the database drive has its own daily snapshots (set when the volume is made), so say that
+      // instead of the own-server backup script.
+      return { configured: false, host: process.env.FLY_APP_NAME ? 'fly' : null };
     }
   }, { roles: ADMIN });
   route('GET', '/api/users', () => ({ users: users.list(), history: users.history(), roles: ROLES, minPassword: MIN_PASSWORD }), { roles: ADMIN });
