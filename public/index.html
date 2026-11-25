@@ -465,6 +465,7 @@
         <button type="button" data-view="sheet">Day sheet</button>
       </div>
       <button type="button" id="shopHoursBtn" class="admin-only">Shop hours</button>
+      <button type="button" id="holidaysBtn" class="admin-only">Holidays</button>
     </div>
     <div id="calStats" class="cal-stats" aria-label="The shop at a glance"></div>
     <form id="shopHoursForm" class="com-settings" hidden>
@@ -475,6 +476,19 @@
       <label>Usual RV / trailer job <span class="pct-input"><input name="rv_days" type="number" min="1" max="10" step="1" required> days</span></label>
       <button type="submit" class="primary">Save shop hours</button>
     </form>
+    <section id="holidaysBox" class="com-settings holidays-box" hidden aria-label="Company holidays">
+      <div class="holidays-head">
+        <h3>Company holidays</h3>
+        <p class="hint">The whole shop is off these days. Nothing can be dropped off or picked up, and the online booking page skips them.</p>
+      </div>
+      <form id="holidayForm" class="holiday-form">
+        <label>Name <input name="name" maxlength="60" placeholder="e.g. Christmas" required></label>
+        <label>Day off <input name="date" type="date" required></label>
+        <label>Through (optional) <input name="end_date" type="date"></label>
+        <button type="submit" class="primary">Add holiday</button>
+      </form>
+      <ul id="holidayList" class="holiday-list"></ul>
+    </section>
     <div id="calLegend" class="cal-legend" aria-label="Job status colors"></div>
     <div id="calUnscheduled" class="cal-unscheduled" hidden></div>
     <div id="calBody" class="cal-body"></div>

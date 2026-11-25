@@ -2674,3 +2674,16 @@ table.sold-table { min-width: 980px; table-layout: auto; }
 .board-add { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 14px; font-weight: 600; border-radius: 9px; }
 .board-add .ico { width: 16px; height: 16px; }
 .lp-title-row + p { margin-top: 4px; }
+
+/* Company holidays (calendar, admins) */
+.holidays-box { display: grid; gap: 12px; }
+.holidays-head h3 { margin: 0 0 4px; }
+.holidays-head .hint { margin: 0; }
+.holiday-form { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; }
+.holiday-form label { display: grid; gap: 4px; font-size: 13px; }
+.holiday-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.holiday-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.holiday-list li .link-btn { margin-left: auto; }
+.load-tag.holiday { background: color-mix(in srgb, var(--accent, #0b4ea2) 12%, transparent); color: var(--text); font-weight: 600; }
+.load-tag.holiday.over { color: var(--danger); }
+.confirm-email { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }

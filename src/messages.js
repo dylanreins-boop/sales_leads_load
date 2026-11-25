@@ -386,6 +386,29 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
     return notify(jobId, 'ready', { user, extra: { balance_due: balance } });
   }
 
+  // An admin emails the booking confirmation (again) from the job: by email only, to the customer's address
+  // or one they type, whether or not automatic confirmations are on.
+  async function emailConfirmation(jobId, { to, user } = {}) {
+    const job = jobs.getJob(jobId);
+    const lead = leads.getLead(job.lead_id);
+    if (job.status === 'cancelled') throw Object.assign(new Error('This job is cancelled, so there\'s nothing to confirm.'), { status: 400 });
+    const address = String(to || lead.email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw Object.assign(new Error('Add the customer\'s email address first.'), { status: 400 });
+    if (!mailer.configured) throw Object.assign(new Error('Email sending isn\'t set up yet. An admin connects it on the server (Resend or another email service).'), { status: 400 });
+    const settings = getNotices();
+    const message = { to: address, subject: render(settings.confirm_subject, lead, { job, rep: user }), text: render(settings.confirm_email, lead, { job, rep: user }) };
+    try {
+      await mailer.send(message);
+      leads.recordEmail(lead.id, message, { status: 'sent', trigger: 'confirm', user, label: KINDS.confirm.email });
+    } catch (err) {
+      leads.recordEmail(lead.id, message, { status: 'failed', error: err.message, trigger: 'confirm', user, label: KINDS.confirm.email });
+      throw Object.assign(new Error(`The email didn't go out: ${err.message}`), { status: 502 });
+    }
+    const ts = now();
+    stmt('UPDATE jobs SET confirm_sent_at = ? WHERE id = ?').run(ts, jobId);
+    return { sent_to: address, sent_at: ts };
+  }
+
   async function sendConfirmation(jobId, options) {
     if (!getNotices().confirm_enabled) return { sent: [], problems: [], off: true };
     return notify(jobId, 'confirm', options);
@@ -449,7 +472,7 @@ function createMessageService(db, { leads, jobs, texter, mailer, brand = {}, onR
 
   return {
     getTemplates, saveTemplates, getNotices, saveNotices, render, valuesFor,
-    sendText, receiveText, missedCall, answeredCall, sendConfirmation, sendReady, sendDueReminders, sendCareMessages, jobMoved,
+    sendText, receiveText, missedCall, answeredCall, sendConfirmation, emailConfirmation, sendReady, sendDueReminders, sendCareMessages, jobMoved,
     queueWelcome, sendWelcomes,
   };
 }

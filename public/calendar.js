@@ -219,6 +219,12 @@ function loadBar(booked) {
 function loadTag(day, entries) {
   const per = shopHours().hours_per_day;
   const load = cal.load?.get(ShopTime.dayKey(day));
+  const holiday = ShopTime.holidayOn(day, shopHours());
+  if (holiday) {
+    const busy = entries.some((e) => (e.isFirst || e.isLast) && e.job.status !== 'cancelled');
+    return h('span', { class: `load-tag holiday ${busy ? 'over' : ''}`, title: `${holiday.name}: the shop is closed${busy ? '. A drop-off or pick-up is still set for this day.' : ''}` },
+      h('span', { class: 'lt-full' }, `${busy ? '⚠ ' : ''}${holiday.name}`), h('span', { class: 'lt-short' }, busy ? '⚠' : 'Off'));
+  }
   if (!isOpen(day)) {
     const busy = entries.some((e) => (e.isFirst || e.isLast) && e.job.status !== 'cancelled');
     return busy && h('span', { class: 'load-tag over', title: 'A drop-off or pick-up is set for a day the shop is closed' }, h('span', { class: 'lt-full' }, '⚠ Closed'), h('span', { class: 'lt-short' }, '⚠'));
@@ -466,7 +472,7 @@ function renderWeek(body) {
       h('header', { class: `week-head ${sameDay(day, today) ? 'today' : ''}`, style: at(1) }, h('span', { class: 'week-dow' }, dayName(day)), h('span', { class: 'week-date' }, day.getDate()), loadTag(day, entries)),
       h('div', { class: 'week-load', style: at(2) }, isOpen(day) && loadBar(booked)),
       h('div', { class: 'week-jobs', style: at(lanes + 3) }, singles.length ? singles.map((e) => jobCard(e))
-        : !covered && h('div', { class: 'week-empty' }, isOpen(day) ? 'No jobs' : 'Closed')),
+        : !covered && h('div', { class: 'week-empty' }, isOpen(day) ? 'No jobs' : ShopTime.holidayOn(day, shopHours())?.name || 'Closed')),
     ];
   });
   body.replaceChildren(h('div', { class: 'cal-week', style: `grid-template-rows:${rows}` },
@@ -662,6 +668,24 @@ async function patchJob(patch, message, { warn = false } = {}) {
 const canEditJobs = () => state.meta?.currentRole !== 'sales';
 const fmtWhen = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
+// Admins: email the booking confirmation from the job (or send it again), to the customer's email or another.
+function confirmEmailBox(job) {
+  const send = async () => {
+    const to = await ask({ title: 'Email the booking confirmation', text: 'It uses the booking confirmation email under Texts & reminders, with this job\'s drop-off time.',
+      input: { value: job.email || '', placeholder: 'customer@example.com' }, ok: 'Send email' });
+    if (!to) return;
+    try {
+      const r = await api(`/api/jobs/${job.id}/confirmation-email`, { method: 'POST', body: { to } });
+      cal.job = { ...cal.job, confirm_sent_at: r.sent_at };
+      toast(`Booking confirmation emailed to ${r.sent_to}`);
+      renderJob();
+    } catch (err) { fail(err); }
+  };
+  return h('div', { class: 'confirm-email' },
+    h('button', { type: 'button', onclick: send }, job.confirm_sent_at ? '✉ Email the confirmation again' : '✉ Email booking confirmation'),
+    h('span', { class: 'muted' }, job.confirm_sent_at ? `Last sent ${fmtWhen(job.confirm_sent_at)}` : 'Not sent yet'));
+}
+
 function renderJob() {
   const job = cal.job;
   const edit = canEditJobs();
@@ -730,6 +754,7 @@ function renderJob() {
       state.meta.currentRole !== 'shop' && amountEditor(job, { editable: isAdmin() }),
       state.meta.currentRole !== 'shop' && job.status !== 'cancelled' && depositEditor(job, { onSaved: (j) => { cal.job = { ...cal.job, ...j }; } }),
       state.meta.currentRole !== 'shop' && job.status !== 'cancelled' && paymentsBox(job, { onSaved: (j) => { cal.job = { ...cal.job, ...j }; } }),
+      isAdmin() && job.status !== 'cancelled' && confirmEmailBox(job),
       state.meta.currentRole !== 'shop' && h('button', { type: 'button', onclick: () => { showSection('leads'); openLead(job.lead_id); } }, 'Open lead')),
 
     // Notes
@@ -1295,6 +1320,57 @@ function showJobOnCalendar(jobId, startAt) {
   openJob(jobId);
 }
 
+// ---------- company holidays (admins) ----------
+const holidayDay = (key) => ShopTime.fromKey(key).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+function toggleHolidays() {
+  const box = $('#holidaysBox');
+  box.hidden = !box.hidden;
+  if (!box.hidden) renderHolidays();
+}
+function renderHolidays() {
+  const today = ShopTime.dayKey(new Date());
+  const list = (shopHours().holidays || []).filter((x) => x.date >= today);
+  // Days in a row with the same name show as one line ("Dec 24 to Dec 26").
+  const groups = [];
+  for (const x of list) {
+    const last = groups.at(-1);
+    const next = last && ShopTime.dayKey(new Date(ShopTime.fromKey(last.to).getTime() + 36 * 3600000));
+    if (last && last.name === x.name && next === x.date) { last.to = x.date; last.dates.push(x.date); } else groups.push({ name: x.name, from: x.date, to: x.date, dates: [x.date] });
+  }
+  $('#holidayList').replaceChildren(...(groups.length ? groups.map((g) => h('li', {},
+    h('strong', {}, g.name),
+    h('span', { class: 'muted' }, g.from === g.to ? holidayDay(g.from) : `${holidayDay(g.from)} to ${holidayDay(g.to)}`),
+    h('button', { type: 'button', class: 'link-btn danger-link', onclick: () => removeHoliday(g) }, 'Remove')))
+    : [h('li', { class: 'muted' }, 'No holidays coming up. Add the days the whole shop is off.')]));
+}
+async function addHoliday(e) {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    const r = await api('/api/holidays', { method: 'POST', body: { name: f.name.value, date: f.date.value, end_date: f.end_date.value || null } });
+    state.meta.shopHours = r.shop_hours;
+    f.reset();
+    renderHolidays();
+    renderCalendar();
+    toast(`${r.added.length === 1 ? 'Holiday' : `${r.added.length} holiday days`} added. The shop is closed then.`);
+    if (r.booked.length) {
+      await ask({ title: 'Jobs already booked on those days', cancel: null, ok: 'Got it',
+        text: `${r.booked.map((j) => `${j.name} (drop-off ${fmtWhen(j.start_at)}, pick-up ${fmtWhen(j.end_at)})`).join('; ')}. Move them to another day from the calendar.` });
+    }
+  } catch (err) { fail(err); }
+}
+async function removeHoliday(group) {
+  if (!await askConfirm(`Remove ${group.name}?`, group.dates.length > 1 ? `All ${group.dates.length} days go back to normal shop days.` : 'That day goes back to a normal shop day.', { ok: 'Remove' })) return;
+  try {
+    let r;
+    for (const d of group.dates) r = await api(`/api/holidays/${d}`, { method: 'DELETE' });
+    state.meta.shopHours = r.shop_hours;
+    renderHolidays();
+    renderCalendar();
+    toast(`${group.name} removed`);
+  } catch (err) { fail(err); }
+}
+
 // ---------- shop hours (admins) ----------
 function toggleShopHours() {
   const f = $('#shopHoursForm');
@@ -1347,6 +1423,8 @@ function initCalendar() {
   fillScheduleDialog = wireShopTime($('#scheduleForm'), { pipeline: () => cal.schedulePipeline });
   $('#shopHoursBtn').addEventListener('click', toggleShopHours);
   $('#shopHoursForm').addEventListener('submit', saveShopHours);
+  $('#holidaysBtn').addEventListener('click', toggleHolidays);
+  $('#holidayForm').addEventListener('submit', addHoliday);
   $('#scheduleCancel').addEventListener('click', () => $('#scheduleDialog').close());
   // Keep the calendar fresh while it's on screen.
   setInterval(() => { if (state.section === 'calendar' && document.visibilityState === 'visible') loadCalendar().catch(() => {}); }, 60_000);

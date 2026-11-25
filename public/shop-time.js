@@ -6,7 +6,8 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.ShopTime = factory();
 }(typeof self !== 'undefined' ? self : this, () => {
-  const DEFAULTS = { open: '08:00', hours_per_day: 8, work_days: [1, 2, 3, 4, 5], car_hours: 4, rv_days: 2 };
+  // holidays: company days off an admin adds ({ date: '2026-12-25', name: 'Christmas' }); the shop is closed then.
+  const DEFAULTS = { open: '08:00', hours_per_day: 8, work_days: [1, 2, 3, 4, 5], car_hours: 4, rv_days: 2, holidays: [] };
   const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const MIN = 60000;
 
@@ -17,7 +18,9 @@
   // Local calendar day, e.g. "2026-11-10".
   const dayKey = (d) => { const x = new Date(d); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
   const fromKey = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
-  const isWorkDay = (d, s) => settingsOf(s).work_days.includes(new Date(d).getDay());
+  // The company holiday on a day, if there is one.
+  const holidayOn = (d, s) => (settingsOf(s).holidays || []).find((x) => x.date === dayKey(d)) || null;
+  const isWorkDay = (d, s) => settingsOf(s).work_days.includes(new Date(d).getDay()) && !holidayOn(d, s);
   const round = (h) => Math.round(h * 100) / 100;
   const hrs = (h) => `${round(h)} hr${round(h) === 1 ? '' : 's'}`;
 
@@ -117,7 +120,10 @@
     const warnings = [];
     if (status === 'cancelled') return { hours: need, days, warnings, finish_at: finishAt(start, need, set).toISOString() };
     for (const [when, what] of [[start, 'Drop-off'], [end, 'Pick-up']]) {
-      if (when && !isWorkDay(when, set)) {
+      const holiday = when && holidayOn(when, set);
+      if (holiday) {
+        warnings.push({ type: 'closed', date: dayKey(when), text: `${what} is on ${shortDate(when)}, ${holiday.name}. The shop is closed for the holiday.` });
+      } else if (when && !isWorkDay(when, set)) {
         warnings.push({ type: 'closed', date: dayKey(when), text: `${what} is on a ${DAY_NAMES[new Date(when).getDay()]}. The shop is closed that day.` });
       }
     }
@@ -138,5 +144,5 @@
     return { hours: need, days, warnings, finish_at: finish.toISOString() };
   }
 
-  return { DEFAULTS, settingsOf, hrs, dayKey, fromKey, isWorkDay, windowOn, defaultHours, jobHours, label, options, allocate, finishAt, loadByDay, check };
+  return { DEFAULTS, settingsOf, hrs, dayKey, fromKey, isWorkDay, holidayOn, windowOn, defaultHours, jobHours, label, options, allocate, finishAt, loadByDay, check };
 }));

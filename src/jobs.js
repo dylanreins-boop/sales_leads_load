@@ -134,7 +134,67 @@ function createJobService(db, { leads, photosDir }) {
     const row = stmt("SELECT value FROM settings WHERE key = 'shop_hours'").get();
     let saved = {};
     try { saved = row ? JSON.parse(row.value) : {}; } catch { /* keep defaults */ }
-    return ShopTime.settingsOf(saved);
+    return ShopTime.settingsOf({ ...saved, holidays: getHolidays() });
+  }
+
+  // ---- company holidays: days the whole shop is off; nothing can be dropped off or picked up ----
+  function getHolidays() {
+    const row = stmt("SELECT value FROM settings WHERE key = 'holidays'").get();
+    let list = [];
+    try { list = row ? JSON.parse(row.value) : []; } catch { /* none */ }
+    return (Array.isArray(list) ? list : []).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x?.date)).sort((a, b) => a.date.localeCompare(b.date));
+  }
+  const saveHolidays = (list) => stmt("INSERT INTO settings (key, value) VALUES ('holidays', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    .run(JSON.stringify(list));
+
+  // One day, or every day from date to end_date (up to 31), under one name.
+  function addHolidays({ date, end_date: endDate, name } = {}, { user } = {}) {
+    const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(ShopTime.fromKey(String(v)).getTime());
+    if (!isDate(date)) throw new HttpError(400, 'Pick the holiday\'s date.');
+    const last = endDate ? String(endDate) : String(date);
+    if (!isDate(last)) throw new HttpError(400, 'Pick the last day off.');
+    if (last < date) throw new HttpError(400, 'The last day off has to be on or after the first.');
+    const label = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 60) || 'Holiday';
+    const days = [];
+    for (let d = ShopTime.fromKey(String(date)); ShopTime.dayKey(d) <= last; d.setDate(d.getDate() + 1)) {
+      days.push(ShopTime.dayKey(d));
+      if (days.length > 31) throw new HttpError(400, 'Add up to 31 days at a time.');
+    }
+    const list = getHolidays().filter((x) => !days.includes(x.date));
+    list.push(...days.map((d) => ({ date: d, name: label, added_by: user ?? null, added_at: now() })));
+    saveHolidays(list.sort((a, b) => a.date.localeCompare(b.date)));
+    return { holidays: getHolidays(), added: days, booked: jobsOnDays(days) };
+  }
+
+  function removeHoliday(date) {
+    const list = getHolidays();
+    if (!list.some((x) => x.date === date)) throw new HttpError(404, 'That holiday isn\'t on the list.');
+    saveHolidays(list.filter((x) => x.date !== date));
+    return { holidays: getHolidays() };
+  }
+
+  // Jobs already dropping off or picking up on these days (to warn the admin who adds the holiday).
+  function jobsOnDays(days) {
+    if (!days.length) return [];
+    const from = ShopTime.fromKey(days[0]).toISOString();
+    const to = new Date(ShopTime.fromKey(days.at(-1)).getTime() + 86400000).toISOString();
+    return stmt(`SELECT j.id, j.start_at, j.end_at, l.full_name, l.first_name, l.last_name FROM jobs j JOIN leads l ON l.id = j.lead_id
+                 WHERE j.status NOT IN ('cancelled', 'picked_up') AND ((j.start_at >= ? AND j.start_at < ?) OR (j.end_at >= ? AND j.end_at < ?))`)
+      .all(from, to, from, to)
+      .filter((j) => days.includes(ShopTime.dayKey(j.start_at)) || days.includes(ShopTime.dayKey(j.end_at)))
+      .map((j) => ({ id: j.id, name: j.full_name || [j.first_name, j.last_name].filter(Boolean).join(' ') || 'Customer', start_at: j.start_at, end_at: j.end_at }));
+  }
+
+  // Drop-off and pick-up can't land on a company holiday.
+  function assertNotHoliday(start, end) {
+    const settings = getShopHours();
+    for (const [when, what] of [[start, 'drop-off'], [end, 'pick-up']]) {
+      const holiday = when && ShopTime.holidayOn(when, settings);
+      if (holiday) {
+        const day = new Date(when).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        throw new HttpError(409, `The shop is closed ${day} for ${holiday.name}. Pick another ${what} day.`);
+      }
+    }
   }
 
   function saveShopHours(input = {}) {
@@ -157,9 +217,10 @@ function createJobService(db, { leads, photosDir }) {
     if (next.open.split(':').map(Number).reduce((h, m) => h + m / 60) + next.hours_per_day > 24) {
       throw new HttpError(400, 'The work day has to end by midnight.');
     }
+    const { holidays, ...hours } = next;
     stmt("INSERT INTO settings (key, value) VALUES ('shop_hours', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-      .run(JSON.stringify(next));
-    return next;
+      .run(JSON.stringify(hours));
+    return { ...hours, holidays };
   }
 
   // Work time in hours ("4", 16). Blank means the usual for the vehicle (null).
@@ -283,6 +344,7 @@ function createJobService(db, { leads, photosDir }) {
   function scheduleLead(leadId, { start, end, hours = null }, { user } = {}) {
     const lead = leads.getLead(leadId);
     const services = lead.booked_services;
+    assertNotHoliday(start, end);
     return transaction(db, () => {
       const ts = now();
       const open = stmt(`SELECT * FROM jobs WHERE lead_id = ? AND status NOT IN ('picked_up', 'cancelled')
@@ -338,6 +400,7 @@ function createJobService(db, { leads, photosDir }) {
       const end = 'end_at' in patch ? parseTime(patch.end_at, 'pick-up') : job.end_at;
       if (end <= start) throw new HttpError(400, 'Pick-up has to be after drop-off.');
       if (start !== job.start_at || end !== job.end_at) {
+        assertNotHoliday(start !== job.start_at ? start : null, end !== job.end_at ? end : null);
         sets.push('start_at = ?', 'end_at = ?');
         params.push(start, end);
         notes.push(`Job moved: drop-off ${when(start)}, pick-up ${when(end)}`);
@@ -518,7 +581,7 @@ function createJobService(db, { leads, photosDir }) {
   return {
     setEstimator, defaultWork,
     signOff, signOffImage, clearSignOff, setSocialOk,
-    getShopHours, saveShopHours, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
+    getShopHours, saveShopHours, getHolidays, addHolidays, removeHoliday, parseSchedule, capacity, capacityFor, daySheet, scheduleLead, listJobs, listUnscheduled, getJob, updateJob, setAmount, revenueJobs,
     addItem, updateItem, deleteItem, addPhoto, getPhoto, deletePhoto,
   };
 }
