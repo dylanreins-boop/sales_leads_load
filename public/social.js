@@ -724,8 +724,112 @@ function settingsCard() {
     h('h3', {}, 'AI help'),
     h('p', {}, ai.writer ? `✓ Claude writes captions${ai.reels ? ' and the words on the video' : ''} (Write it for me).` : 'Write it for me fills in a template. Add ANTHROPIC_API_KEY on the server for Claude to write them.'),
     ai.reels && h('p', {}, ai.video ? '✓ AI intro clips are on (Google Veo, paid per clip).' : 'AI intro clips are off. Add GEMINI_API_KEY on the server to turn them on (Google Veo, paid per clip).'),
-    h('p', { class: 'hint' }, ai.reels ? 'Facebook and Instagram post the photos or the Reel; TikTok a photo or video post; YouTube Shorts a video.' : 'Facebook and Instagram post the photos; TikTok a photo post; YouTube Shorts a short slideshow of the photos.', ' Each platform is connected once on the server (see the README). TikTok keeps posts private until it approves the app.'));
-  return h('div', { class: 'soc-settings-wrap' }, h('section', { class: 'card-section' }, form), ai.reels && music, aiCard);
+    h('p', { class: 'hint' }, ai.reels ? 'Facebook and Instagram post the photos or the Reel; TikTok a photo or video post; YouTube Shorts a video.' : 'Facebook and Instagram post the photos; TikTok a photo post; YouTube Shorts a short slideshow of the photos.', ' Facebook and Instagram connect with the Connect Facebook card above; TikTok and YouTube are set up on the server. TikTok keeps posts private until it approves the app.'));
+  const metaCard = h('section', { class: 'card-section meta-card', id: 'metaCard' }, h('h3', {}, 'Facebook & Instagram'), h('p', { class: 'muted' }, 'Loading…'));
+  setTimeout(() => renderMetaCard(), 0);
+  return h('div', { class: 'soc-settings-wrap' }, metaCard, h('section', { class: 'card-section' }, form), ai.reels && music, aiCard);
+}
+
+// ---------- Connect Facebook: log in once, the app keeps the Page's key ----------
+const META_PERMS = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'pages_manage_ads', 'leads_retrieval', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish', 'business_management'];
+async function connectFacebook() {
+  try {
+    const { url } = await api('/api/meta-connect/start', { method: 'POST' });
+    location.href = url;
+  } catch (err) { fail(err); }
+}
+function metaAppForm(st) {
+  return h('form', { class: 'meta-app-form', onsubmit: async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api('/api/meta-connect/app', { method: 'PUT', body: { app_id: f.app_id.value, app_secret: f.app_secret.value, config_id: f.config_id.value } });
+      toast('Meta app saved. Now tap Connect Facebook.');
+      renderMetaCard();
+    } catch (err) { fail(err); }
+  } },
+  h('label', {}, 'App ID', h('input', { name: 'app_id', inputmode: 'numeric', value: st.app_id || '', required: true, autocomplete: 'off' })),
+  h('label', {}, 'App Secret', h('input', { name: 'app_secret', type: 'password', autocomplete: 'off', placeholder: st.app_saved ? 'Saved (leave blank to keep it)' : '32 letters and numbers' })),
+  h('label', {}, 'Login configuration ID (if Meta gave you one)', h('input', { name: 'config_id', inputmode: 'numeric', value: st.config_id || '', autocomplete: 'off' })),
+  h('button', { type: 'submit', class: 'primary' }, 'Save the Meta app'));
+}
+const copyRow = (label, value) => h('div', { class: 'meta-copy' }, h('span', { class: 'muted' }, label), h('code', {}, value),
+  h('button', { type: 'button', class: 'link-btn', onclick: () => copyText(value, 'Copied') }, 'Copy'));
+
+async function renderMetaCard() {
+  const box = $('#metaCard');
+  if (!box) return;
+  let st;
+  try { st = await api('/api/meta-connect'); } catch (err) { fill(box, h('h3', {}, 'Facebook & Instagram'), h('p', { class: 'muted' }, err.message)); return; }
+  const head = h('h3', {}, 'Facebook & Instagram');
+  if (!st.app_saved) {
+    fill(box, head,
+      h('p', {}, 'Connect once and Facebook lead ads come straight onto the board, and approved posts go out to Facebook and Instagram. First, a one-time setup in Meta (about 5 minutes):'),
+      h('ol', { class: 'meta-steps' },
+        h('li', {}, 'Go to ', h('a', { href: 'https://developers.facebook.com/apps', target: '_blank', rel: 'noopener' }, 'developers.facebook.com/apps'), ', tap Create App, pick Other, then Business. Name it (e.g. "Bob Moses Leads").'),
+        h('li', {}, 'Add the product Facebook Login for Business. In its Settings, paste this under Valid OAuth Redirect URIs and save:', copyRow('Redirect', st.redirect_uri || 'Set PUBLIC_URL on the server first')),
+        h('li', {}, 'If it shows Configurations, create one: token type User access token, and tick these permissions: ', h('span', { class: 'meta-perms' }, META_PERMS.join(', ')), '. Copy its configuration ID.'),
+        h('li', {}, 'App settings > Basic: add your website\'s privacy policy address, save, then copy the App ID and App Secret into the boxes below.'),
+        h('li', {}, 'At the top of the Meta app, switch App Mode to Live.')),
+      metaAppForm(st));
+    return;
+  }
+  if (!st.connected || st.from_server) {
+    const change = h('details', { class: 'meta-change' }, h('summary', {}, 'Change the Meta app'), metaAppForm(st));
+    fill(box, head,
+      st.from_server ? h('p', {}, '✓ Connected with keys set on the server. Connect here to switch to a login the app keeps up itself.') : h('p', {}, 'The Meta app is saved. Tap Connect, log in to Facebook as an admin of the shop\'s Page, and allow everything it asks for (pick the Page and the Instagram account when it asks).'),
+      h('button', { type: 'button', class: 'primary meta-connect-btn', onclick: connectFacebook }, 'Connect Facebook'),
+      h('p', { class: 'hint' }, 'Facebook asks for: managing and posting to the Page, reading its lead ads, and posting to its Instagram business account.'),
+      change);
+    return;
+  }
+  const allOk = st.steps.every((x) => x.ok);
+  fill(box, head,
+    h('p', { class: 'meta-ok' }, '✓ Connected to ', h('strong', {}, st.page?.name || 'the Page')),
+    h('ul', { class: 'meta-facts' },
+      h('li', {}, 'Instagram: ', st.instagram ? h('strong', {}, `@${st.instagram.username}`) : h('span', { class: 'muted' }, 'none linked to this Page (link a business Instagram account to the Page, then reconnect)')),
+      h('li', {}, 'Lead forms: ', st.forms.length ? `${st.forms.length} (${st.forms.map((f) => f.name).join(', ')})` : h('span', { class: 'muted' }, 'none yet. New forms are picked up by Sync Facebook.')),
+      ...st.steps.map((x) => h('li', { class: x.ok ? '' : 'meta-bad' }, `${x.ok ? '✓' : '⚠'} ${x.name}${x.ok ? '' : `: ${x.error}`}`)),
+      h('li', { class: 'muted' }, `Connected by ${st.connected_by || 'an admin'} ${st.connected_at ? fmtDateTime(st.connected_at) : ''}${st.fb_user ? ` (Facebook login: ${st.fb_user})` : ''}`)),
+    !allOk && h('p', { class: 'hint' }, 'Something didn\'t finish. Check the Meta app is Live and has Facebook Login for Business and Webhooks, then tap Reconnect.'),
+    h('div', { class: 'meta-actions' },
+      h('button', { type: 'button', onclick: async () => {
+        try { const r = await api('/api/facebook/sync', { method: 'POST' }); toast(`Checked ${r.fetched} Facebook lead${r.fetched === 1 ? '' : 's'}: ${r.created} new`); renderMetaCard(); if (typeof loadLeads === 'function') loadLeads().catch(() => {}); } catch (err) { fail(err); }
+      } }, 'Sync Facebook leads now'),
+      h('button', { type: 'button', onclick: connectFacebook }, 'Reconnect'),
+      h('button', { type: 'button', class: 'link-btn danger-link', onclick: async () => {
+        if (!await askConfirm('Disconnect Facebook?', 'New Facebook leads stop coming in and posts stop going to Facebook and Instagram until someone connects again.', { ok: 'Disconnect', danger: true })) return;
+        try { await api('/api/meta-connect/disconnect', { method: 'POST' }); toast('Facebook disconnected'); renderMetaCard(); } catch (err) { fail(err); }
+      } }, 'Disconnect')));
+}
+
+// Back from Facebook's login (/?fb=…): open Social > Settings and finish up.
+async function finishFacebookReturn(params) {
+  await openSocial({ tab: 'settings', open: null });
+  const kind = params.get('fb');
+  if (kind === 'connected') toast('Facebook connected');
+  else if (kind === 'error') await ask({ title: 'Facebook didn\'t connect', text: params.get('msg') || 'Something went wrong. Try Connect Facebook again.', ok: 'OK', cancel: null });
+  else if (kind === 'pick') {
+    try {
+      const { pages } = await api(`/api/meta-connect/pick/${encodeURIComponent(params.get('pick'))}`);
+      const chosen = await new Promise((resolve) => {
+        const dialog = h('dialog', { class: 'meta-pick' },
+          h('h3', {}, 'Which Page is the shop\'s?'),
+          h('p', { class: 'muted' }, 'That Facebook login manages more than one Page.'),
+          ...pages.map((p) => h('button', { type: 'button', class: 'meta-page', onclick: () => { dialog.close(); resolve(p.id); } },
+            h('strong', {}, p.name), p.instagram && h('span', { class: 'muted' }, ` · Instagram @${p.instagram}`))),
+          h('button', { type: 'button', class: 'link-btn', onclick: () => { dialog.close(); resolve(null); } }, 'Cancel'));
+        dialog.addEventListener('close', () => setTimeout(() => dialog.remove(), 0));
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+      if (chosen) {
+        await api('/api/meta-connect/pick', { method: 'POST', body: { pick: params.get('pick'), page_id: chosen } });
+        toast('Facebook connected');
+      }
+    } catch (err) { fail(err); }
+  }
+  renderMetaCard();
 }
 
 // The job panel: the customer's OK (who recorded it, when and how), what's already posted from this job,

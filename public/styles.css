@@ -2687,3 +2687,20 @@ table.sold-table { min-width: 980px; table-layout: auto; }
 .load-tag.holiday { background: color-mix(in srgb, var(--accent, #0b4ea2) 12%, transparent); color: var(--text); font-weight: 600; }
 .load-tag.holiday.over { color: var(--danger); }
 .confirm-email { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+
+/* Connect Facebook (Social > Settings) */
+.meta-card { display: grid; gap: 10px; }
+.meta-card h3 { margin: 0; }
+.meta-steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; line-height: 1.45; }
+.meta-perms { font-family: ui-monospace, monospace; font-size: 12px; }
+.meta-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; }
+.meta-copy code { padding: 4px 8px; border-radius: 6px; background: var(--panel-2, rgba(0,0,0,.05)); word-break: break-all; }
+.meta-app-form { display: grid; gap: 10px; max-width: 460px; }
+.meta-app-form label { display: grid; gap: 4px; font-size: 13px; }
+.meta-connect-btn { justify-self: start; padding: 10px 18px; font-size: 15px; }
+.meta-ok { margin: 0; font-size: 15px; }
+.meta-facts { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.meta-bad { color: var(--danger); }
+.meta-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.meta-pick { display: grid; gap: 10px; min-width: min(420px, 90vw); }
+.meta-page { text-align: left; padding: 10px 12px; }

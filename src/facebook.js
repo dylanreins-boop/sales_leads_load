@@ -50,14 +50,16 @@ function mapFacebookLead(fbLead) {
   };
 }
 
+// pageAccessToken: the Page's key, or a function that returns it (it can change when an admin reconnects).
 function createFacebookClient({ pageAccessToken, graphVersion }, fetchImpl = (...a) => fetch(...a)) {
   const base = `https://graph.facebook.com/${graphVersion}`;
   const LEAD_FIELDS = 'id,created_time,field_data,form_id,ad_id,ad_name,campaign_name';
+  const token = () => (typeof pageAccessToken === 'function' ? pageAccessToken() : pageAccessToken);
 
   async function graphGet(url) {
-    if (!pageAccessToken) throw new Error('FB_PAGE_ACCESS_TOKEN is not configured');
+    if (!token()) throw new Error('Facebook isn\'t connected (Social > Settings > Connect Facebook).');
     const u = new URL(url);
-    if (!u.searchParams.has('access_token')) u.searchParams.set('access_token', pageAccessToken);
+    if (!u.searchParams.has('access_token')) u.searchParams.set('access_token', token());
     const res = await fetchImpl(u.toString());
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body.error) {

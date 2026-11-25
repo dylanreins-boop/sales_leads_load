@@ -38,6 +38,7 @@ const { createCommissionService, DEPOSIT_METHODS, OWED_WHEN } = require('./src/c
 const { createTexter, toE164 } = require('./src/sms');
 const { createMessageService } = require('./src/messages');
 const { createPush } = require('./src/push');
+const { createMetaConnect } = require('./src/metaconnect');
 const { createWorkReminders } = require('./src/workreminders');
 const { createAlertService } = require('./src/alerts');
 const { createBookingService } = require('./src/bookings');
@@ -220,7 +221,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     archiveDays: config.archiveDays,
     brand: config.brand,
   });
-  const fb = facebook.createFacebookClient(config.facebook, fetchImpl);
+  // Facebook and Instagram: connected with Connect Facebook (or the FB_* settings on the server).
+  const meta = createMetaConnect(db, {
+    env: process.env, publicUrl: config.publicUrl, graphVersion: config.facebook.graphVersion,
+    secret: process.env.APP_ENCRYPTION_KEY || config.setupCode, ...(fetchImpl && { fetchImpl }),
+  });
+  const fb = facebook.createFacebookClient({ pageAccessToken: () => meta.keys.pageToken(), graphVersion: config.facebook.graphVersion }, fetchImpl);
   const mailer = createMailer(config.email, fetchImpl);
   const filesDir = photosDir || config.photosDir || path.join(path.dirname(config.dbPath), 'photos');
   const jobs = createJobService(db, { leads, photosDir: filesDir });
@@ -230,7 +236,12 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     jobs, brand: config.brand, publicUrl: config.publicUrl, mediaDir: path.join(filesDir, 'social'), fetchImpl, ...(socialMedia && { media: socialMedia }),
     writer: socialWriter || createSocialWriter(), videoAi: videoAi || createVideoAi(fetchImpl ? { fetchImpl } : {}),
     logo: path.join(__dirname, 'public', 'brand', 'logo-white.png'), videoEnabled: socialVideo,
-    keys: { ...config.social, facebookToken: config.facebook.pageAccessToken, graphVersion: config.facebook.graphVersion },
+    // Read fresh each time, so connecting or reconnecting Facebook takes effect without a restart.
+    keys: Object.defineProperties({ ...config.social, graphVersion: config.facebook.graphVersion }, {
+      facebookToken: { get: () => meta.keys.pageToken(), enumerable: true },
+      facebookPageId: { get: () => meta.keys.pageId(), enumerable: true },
+      instagramUserId: { get: () => meta.keys.instagramId(), enumerable: true },
+    }),
   });
   const users = createUserService(db, { serverUsers: config.users });
   // The admins' pipelines, loaded before anything sorts leads onto them.
@@ -365,8 +376,8 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     textingConfigured: texter.configured,
     depositMethods: DEPOSIT_METHODS,
     commissionOwedWhen: OWED_WHEN,
-    facebookConfigured: Boolean(config.facebook.pageAccessToken),
-    facebookFormIds: config.facebook.formIds,
+    facebookConfigured: Boolean(meta.keys.pageToken()),
+    facebookFormIds: meta.keys.formIds(),
     googleLsaConfigured: googleLsa.configured,
     emailConfigured: mailer.configured,
     callsEnabled: Boolean(calls),
@@ -1101,11 +1112,13 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('POST', '/api/reminders/:id/snooze', ({ params, body }) => leads.snoozeReminder(Number(params.id), body.due_at));
 
   route('POST', '/api/facebook/sync', async () => {
-    if (!config.facebook.pageAccessToken) throw new HttpError(400, 'Set FB_PAGE_ACCESS_TOKEN to sync Facebook leads.');
-    if (!config.facebook.formIds.length) throw new HttpError(400, 'Set FB_FORM_IDS to the lead form IDs to sync.');
+    if (!meta.keys.pageToken()) throw new HttpError(400, 'Connect Facebook first (Social > Settings > Connect Facebook).');
+    // New lead forms made since connecting are picked up here.
+    const formIds = await meta.refreshForms().catch(() => meta.keys.formIds());
+    if (!formIds.length) throw new HttpError(400, 'The Facebook Page has no lead forms yet.');
     let created = 0;
     let fetched = 0;
-    for (const formId of config.facebook.formIds) {
+    for (const formId of formIds) {
       for (const fbLead of await fb.fetchFormLeads(formId)) {
         fetched++;
         if (leads.ingest(facebook.mapFacebookLead(fbLead)).created) created++;
@@ -1137,19 +1150,46 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     }), { 'Content-Type': 'application/manifest+json' });
   }, { isPublic: true });
 
+  // ---- Connect Facebook (admins): log in with Facebook once; the app keeps the Page's key ----
+  route('GET', '/api/meta-connect', () => meta.status(), { roles: ADMIN });
+  route('PUT', '/api/meta-connect/app', ({ body, actor }) => meta.saveApp(body, actor), { roles: ADMIN });
+  route('POST', '/api/meta-connect/start', ({ actor }) => meta.startUrl(actor), { roles: ADMIN });
+  route('GET', '/api/meta-connect/pick/:pick', ({ params }) => {
+    const pages = meta.pickList(params.pick);
+    if (!pages) throw new HttpError(400, 'That choice expired. Tap Connect Facebook again.');
+    return { pages };
+  }, { roles: ADMIN });
+  route('POST', '/api/meta-connect/pick', ({ body, actor }) => meta.choosePage(body, actor), { roles: ADMIN });
+  route('POST', '/api/meta-connect/disconnect', () => meta.disconnect(), { roles: ADMIN });
+  // Facebook sends the admin back here after they log in and allow the app.
+  route('GET', '/auth/facebook/callback', async ({ req, res, query }) => {
+    const who = authenticate(req);
+    if (!who) return send(res, 302, '', { Location: '/login' });
+    const back = (params) => send(res, 302, '', { Location: `/?${new URLSearchParams(params)}` });
+    if (who.role !== 'admin') return back({ fb: 'error', msg: 'Only an admin can connect Facebook.' });
+    try {
+      const r = await meta.finishLogin(Object.fromEntries(query), { user: who.name });
+      audit.write({ user: who.name, role: who.role, ip: clientIp(req), area: 'settings', action: r.connected ? `Connected Facebook: ${r.connected.page?.name || 'Page'}` : 'Logged in to Facebook to connect a Page' });
+      return back(r.connected ? { fb: 'connected' } : { fb: 'pick', pick: r.pick });
+    } catch (err) {
+      if (!err.status) console.error('Connect Facebook failed:', err.message);
+      return back({ fb: 'error', msg: err.message.slice(0, 300) });
+    }
+  }, { isPublic: true });
+
   // ---- Facebook Lead Ads webhook ----
   // Meta calls GET once to verify the endpoint, then POSTs each new lead.
   route('GET', '/webhooks/facebook', ({ query, res }) => {
     const ok = query.get('hub.mode') === 'subscribe'
-      && config.facebook.verifyToken
-      && query.get('hub.verify_token') === config.facebook.verifyToken;
+      && meta.keys.verifyToken()
+      && query.get('hub.verify_token') === meta.keys.verifyToken();
     if (!ok) throw new HttpError(403, 'Verification failed');
     send(res, 200, query.get('hub.challenge') || '');
   }, { isPublic: true });
 
   route('POST', '/webhooks/facebook', async ({ raw, req, body }) => {
-    if (config.facebook.appSecret
-      && !facebook.verifySignature(raw, req.headers['x-hub-signature-256'], config.facebook.appSecret)) {
+    const appSecret = meta.keys.appSecret();
+    if (appSecret && !facebook.verifySignature(raw, req.headers['x-hub-signature-256'], appSecret)) {
       throw new HttpError(401, 'Bad signature');
     }
     const events = facebook.extractLeadgenEvents(body);
@@ -1284,7 +1324,6 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
 
 if (require.main === module) {
   if (!config.users.length) console.warn('Note: no APP_USERS or APP_PASSWORD set. Until an admin adds a login on the Team panel, the dashboard has no login.');
-  if (!config.facebook.appSecret) console.warn('Warning: FB_APP_SECRET is not set, so Facebook webhook signatures are not checked.');
   http.createServer(createApp()).listen(config.port, config.host, () => {
     console.log(`Lead Pipeline running at http://localhost:${config.port}`);
   });

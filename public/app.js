@@ -2077,6 +2077,12 @@ async function init() {
   initAdminScreens();
   initWinback();
   initAppearance();
+  // Back from Facebook's login (Connect Facebook): /?fb=connected | pick | error.
+  const fbReturn = new URLSearchParams(location.search);
+  if (fbReturn.get('fb') && isAdmin()) {
+    try { history.replaceState(null, '', '/'); } catch { /* not allowed in some previews */ }
+    setTimeout(() => finishFacebookReturn(fbReturn).catch(fail), 300);
+  }
   // Opened from the "time to clock out" reminder: /?mytime=1 opens My time.
   if (new URLSearchParams(location.search).get('mytime')) {
     setTimeout(() => openMyTime(), 300);
