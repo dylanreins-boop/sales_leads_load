@@ -648,7 +648,11 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
     res.end(leadsWorkbook(rows, { title: label }));
   }, { roles: ADMIN });
   route('POST', '/api/leads', async ({ body, actor }) => {
+    // Checked first so a bad stage doesn't leave a lead half-added.
+    if (body.stage != null && body.stage !== '' && !STAGES.some((s) => s.id === body.stage)) throw new HttpError(400, `Unknown stage: ${body.stage}`);
     const result = leads.ingest({ ...body, source: 'manual' }, actor);
+    // Added by hand in a later stage (already talked to them, or booked): start it there.
+    if (body.stage && body.stage !== result.lead.stage) leads.updateLead(result.lead.id, { stage: body.stage }, actor);
     // Added by hand: the welcome text only when the rep ticks it (they may be on the phone with them).
     if (result.created && body.send_welcome && messages.queueWelcome(result.lead, { force: true })) await messages.sendWelcomes().catch(() => {});
     return { ...result, lead: leads.getLead(result.lead.id) };

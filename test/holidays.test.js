@@ -164,3 +164,20 @@ test('yearly holidays: set once, closed every year, a year can be skipped', asyn
   const log = (await call('GET', '/api/audit?area=settings')).data.map((r) => r.action);
   assert.ok(log.includes('Added the yearly holiday Thanksgiving: 4th Thursday of November, every year'), log.join('\n'));
 });
+
+test('a lead added by hand can start in any stage, Booked included', async () => {
+  const booked = (await call('POST', '/api/leads', { full_name: 'Walk In', phone: '702-555-0919', vehicle_type: 'Car', stage: 'booked' }, SAM)).data;
+  assert.equal(booked.lead.stage, 'booked');
+  assert.equal(booked.lead.jobs.length, 0, 'the calendar step comes next, in the app');
+  // An open shop day (earlier tests left some yearly holidays in place).
+  const closed = new Set((await call('GET', '/api/holidays', undefined, SAM)).data.holidays.map((x) => x.date));
+  let day = weekdayAhead(30);
+  while (closed.has(ShopTime.dayKey(day)) || [0, 6].includes(day.getDay())) day.setDate(day.getDate() + 1);
+  const job = await call('POST', `/api/leads/${booked.lead.id}/job`, { job_start: at(day, 9), job_hours: 4, send_confirmation: false }, SAM);
+  assert.equal(job.status, 201, JSON.stringify(job.data));
+  assert.equal((await call('POST', '/api/leads', { full_name: 'Called Already', phone: '702-555-0920', stage: 'contacted' }, SAM)).data.lead.stage, 'contacted');
+  assert.equal((await call('POST', '/api/leads', { full_name: 'Plain', phone: '702-555-0921' }, SAM)).data.lead.stage, 'new');
+  const bad = await call('POST', '/api/leads', { full_name: 'Bad Stage', phone: '702-555-0922', stage: 'sold-ish' }, SAM);
+  assert.equal(bad.status, 400);
+  assert.equal((await call('GET', '/api/leads/search?q=Bad Stage', undefined, SAM)).data.total, 0, 'nothing half-added');
+});

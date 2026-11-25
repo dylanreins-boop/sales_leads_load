@@ -1801,10 +1801,16 @@ async function addLead(e) {
     const { lead, created } = await api('/api/leads', { method: 'POST', body });
     $('#addLeadDialog').close();
     form.reset();
-    toast(created ? 'Lead added' : 'That lead already exists, so the inquiry was added to it');
+    $('.add-lead-booked').hidden = true;
     await loadLeads();
     if (lead.pipeline && lead.pipeline !== state.pipeline) setPipeline(lead.pipeline);
-    openLead(lead.id);
+    await openLead(lead.id);
+    // Added as Booked: put it on the shop calendar right away (same as moving a lead to Booked).
+    const hasJob = (lead.jobs || []).some((j) => !['picked_up', 'cancelled'].includes(j.status));
+    if (lead.stage === 'booked' && !hasJob) {
+      toast(`${created ? 'Lead added as Booked' : 'Added to the existing lead and booked'}. Pick the drop-off time to put it on the calendar.`);
+      openScheduleDialog(lead);
+    } else toast(created ? 'Lead added' : 'That lead already exists, so the inquiry was added to it');
   } catch (err) { fail(err); }
 }
 
@@ -1985,9 +1991,14 @@ async function init() {
   const openAddLead = () => {
     // Adding from a pipeline's tab: start with that pipeline's first vehicle type.
     $('#addLeadForm').vehicle_type.value = (state.meta.allPipelines.find((p) => p.id === state.pipeline)?.types || [])[0] || '';
+    $('#addLeadStage').value = 'new';
+    $('.add-lead-booked').hidden = true;
     $('#addLeadDialog').showModal();
     $('#addLeadForm').first_name.focus();
   };
+  // The stage a lead added by hand starts in (New unless the rep already talked to them or booked them).
+  $('#addLeadStage').replaceChildren(...state.meta.stages.filter((s) => s.id !== 'waste').map((s) => h('option', { value: s.id }, s.label)));
+  $('#addLeadStage').addEventListener('change', (e) => { $('.add-lead-booked').hidden = e.target.value !== 'booked'; });
   $('#addLeadBtn').addEventListener('click', openAddLead);
   $('#boardAddLead').addEventListener('click', openAddLead);
   $('#emailSettingsBtn').addEventListener('click', openEmailSettings);
