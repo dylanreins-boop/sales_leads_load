@@ -1,5 +1,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
+const zlib = require('node:zlib');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./src/config');
@@ -63,11 +64,15 @@ const MIME = {
 
 function send(res, status, body, headers = {}) {
   const isText = typeof body === 'string';
+  const text = isText ? body : JSON.stringify(body);
+  // Big JSON (lead lists with thousands of imported leads) is compressed: about a tenth of the size over the wire.
+  const gzip = !isText && text.length > 2048 && /\bgzip\b/.test(res.req?.headers?.['accept-encoding'] || '');
   res.writeHead(status, {
     'Content-Type': isText ? 'text/plain; charset=utf-8' : 'application/json',
+    ...(gzip && { 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' }),
     ...headers,
   });
-  res.end(isText ? body : JSON.stringify(body));
+  res.end(gzip ? zlib.gzipSync(text, { level: 6 }) : text);
 }
 
 function readBody(req, limit = 1_000_000) {
@@ -389,7 +394,13 @@ function createApp({ db = openDatabase(config.dbPath), fetchImpl, photosDir, sum
   route('GET', '/api/leads/search', ({ query }) => leads.searchLeads(query.get('q')));
   route('GET', '/api/leads', ({ query }) => {
     leads.archiveOldLeads();
-    return insights.decorate(leads.listLeads(leadFilters(query)));
+    return insights.decorate(leads.listLeads({ ...leadFilters(query), slim: true }));
+  });
+  // Tab counts for Past Customers, Old & Dead Leads and Imported, without sending those lists.
+  route('GET', '/api/leads/counts', () => {
+    leads.archiveOldLeads();
+    const c = leads.listCounts();
+    return { old: c.old || 0, customers: c.customers || 0, imported: c.imported || 0 };
   });
   route('POST', '/api/leads/bulk', ({ body, actor }) => leads.bulkUpdate(body, { user: actor.user, role: actor.role }));
   // Already sold: admins see everyone's; sales see the ones they sold.

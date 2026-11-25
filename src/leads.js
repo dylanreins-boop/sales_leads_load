@@ -178,7 +178,9 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   // view: 'active' (the boards), 'old' (Old & Dead Leads) or 'all'.
-  function listLeads({ q, source, pipeline, view = 'active', vehicleType, status } = {}) {
+  // slim: for the screens' lists, leave out each lead's long message (thousands of imported leads carry
+  // their import notes there) and send only the "Status before the app" line the Imported tab shows.
+  function listLeads({ q, source, pipeline, view = 'active', vehicleType, status, slim = false } = {}) {
     const where = [];
     const params = [];
     if (view === 'active') where.push('l.archived_at IS NULL');
@@ -224,8 +226,24 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
                         (SELECT SUM(j.amount_cents) FROM jobs j WHERE j.lead_id = l.id AND j.status = 'picked_up') AS spent_cents
                  FROM leads l ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY l.received_at DESC`).all(...params)
-      .map((row) => ({ ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row),
-        needs_reply: needsReply(row), no_next_step: noNextStep(row) }));
+      .map((row) => {
+        const lead = { ...row, booked_services: parseServices(row.booked_services), pipeline: pipelineFor(row.vehicle_type), status: statusOf(row),
+          needs_reply: needsReply(row), no_next_step: noNextStep(row) };
+        if (slim) {
+          if (lead.import_batch) lead.status_before = (/Status before the app: ([^\n]+)/.exec(lead.message || '') || [])[1] || '';
+          delete lead.message;
+        }
+        return lead;
+      });
+  }
+
+  // How many leads are in each list off the board, for the tab counts (without sending the lists).
+  function listCounts() {
+    return stmt(`SELECT
+      SUM(CASE WHEN archived_at IS NOT NULL AND stage != 'booked' THEN 1 ELSE 0 END) AS old,
+      SUM(CASE WHEN archived_at IS NOT NULL AND stage = 'booked' THEN 1 ELSE 0 END) AS customers,
+      SUM(CASE WHEN import_batch IS NOT NULL THEN 1 ELSE 0 END) AS imported
+      FROM leads`).get();
   }
 
   // The to-do list: what needs someone now, most urgent first. Customer replies nobody has answered,
@@ -534,7 +552,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   function bulkUpdate({ ids, action, stage, sold_on: soldOn = 'received', sold_by: soldByIn = null, amount = null } = {}, { user, role } = {}) {
     const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger))];
     if (!list.length) throw new HttpError(400, 'Pick some leads first.');
-    if (list.length > 5000) throw new HttpError(400, 'Pick 5,000 or fewer at a time.');
+    if (list.length > 20000) throw new HttpError(400, 'Pick 20,000 or fewer at a time.');
     if (!['board', 'stage', 'off', 'sold'].includes(action)) throw new HttpError(400, 'Pick what to do with them.');
     if (action === 'stage' && !STAGE_IDS.has(stage)) throw new HttpError(400, `Unknown stage: ${stage}`);
     let soldCents = null;
@@ -726,7 +744,7 @@ function createLeadService(db, { reminderHour = 9, skipWeekends = false, archive
   }
 
   return {
-    searchLeads, ingest, listLeads, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
+    searchLeads, ingest, listLeads, listCounts, workQueue, getLead, markOpened, markContacted, updateLead, dispositionLead, addNote,
     listReminders, completeReminder, snoozeReminder,
     getEmailSettings, saveEmailSettings, followUpEmailFor, recordEmail, sourceReport,
     archiveOldLeads, restoreLead, bulkUpdate, soldLeads, exportLeads, logActivity, setJobDecorator, setCreatedHook, listUpdates, countUnseenUpdates, markUpdatesSeen,

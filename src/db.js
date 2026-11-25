@@ -526,6 +526,7 @@ function openDatabase(file) {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   migrate(db);
+  addListIndexes(db);
   return db;
 }
 
@@ -635,6 +636,14 @@ function migrate(db) {
   for (const column of ['vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_color', 'vehicle_type', 'booked_services', 'heard_about', 'archived_at', 'restored_at']) {
     if (!has('leads', column)) db.exec(`ALTER TABLE leads ADD COLUMN ${column} TEXT`);
   }
+}
+
+// Indexes for the lead lists (thousands of imported leads): the off-board views, the Imported tab, and each
+// lead's next call reminder.
+function addListIndexes(db) {
+  db.exec(`CREATE INDEX IF NOT EXISTS leads_archived ON leads (archived_at, received_at);
+           CREATE INDEX IF NOT EXISTS leads_import_batch ON leads (import_batch);
+           CREATE INDEX IF NOT EXISTS reminders_lead ON reminders (lead_id, done_at);`);
 }
 
 function transaction(db, fn) {

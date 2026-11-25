@@ -101,8 +101,9 @@ test('a CSV goes on the board as fresh leads when asked, without new-lead alerts
   const bo = (await call('GET', '/api/leads?q=Diaz')).data[0];
   assert.equal(bo.archived_at, null);
   assert.equal(bo.source, 'import');
-  assert.equal(bo.message, 'Call after 5');
+  assert.equal(bo.message, undefined, 'lists leave out the long message');
   const lead = (await call('GET', `/api/leads/${bo.id}`)).data;
+  assert.equal(lead.message, 'Call after 5');
   assert.ok(!lead.activities.some((a) => a.type === 'alert'));
   assert.equal((await upload(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 1, 2, 3]), 'old.xls')).data.error.includes('Save As'), true);
   const template = await fetch(`${base}/api/import/template.csv`, { headers: { Authorization: ADMIN } });
@@ -160,4 +161,29 @@ test('Imported leads: listed wherever they are, and moved in bulk (on the board,
   assert.match(history, /Put on the board \(from the Imported leads\)/);
   assert.match(history, /Taken off the board/);
   await call('POST', `/api/import/batches/${done.batch}/undo`);
+});
+
+test('big imports: tab counts without the lists, slim compressed lists, and bulk moves of all of them', async () => {
+  const rows = ['First Name,Last Name,Mobile,Lead Status,Created Time'];
+  for (let i = 0; i < 300; i++) rows.push(`Kai${i},Moss${i},702${String(7000000 + i)},Contacted,2025-03-0${(i % 9) + 1}`);
+  const up = (await upload(Buffer.from(rows.join('\n')), 'zoho-big.csv')).data;
+  const done = (await call('POST', '/api/import/commit', { token: up.token, mapping: up.mapping, placement: 'board' })).data;
+  assert.equal(done.created, 300);
+
+  const before = (await call('GET', '/api/leads/counts')).data;
+  assert.ok(before.imported >= 300);
+  const res = await fetch(`${base}/api/leads?view=imported`, { headers: { Authorization: ADMIN, 'Accept-Encoding': 'gzip' } });
+  assert.equal(res.headers.get('content-encoding'), 'gzip', 'big lists are compressed');
+  const list = await res.json();
+  const kai = list.find((l) => l.full_name === 'Kai0 Moss0');
+  assert.equal(kai.message, undefined);
+  assert.equal(kai.status_before, 'Contacted', 'the Imported tab still shows the status before the app');
+
+  // Take every imported lead on the board off it at once (more than the old 5,000 cap would matter on a real shop).
+  const ids = list.filter((l) => !l.archived_at).map((l) => l.id);
+  const moved = (await call('POST', '/api/leads/bulk', { ids, action: 'off' })).data;
+  assert.equal(moved.changed, ids.length);
+  const after = (await call('GET', '/api/leads/counts')).data;
+  assert.equal(after.old - before.old, ids.length);
+  assert.equal((await call('POST', '/api/leads/bulk', { ids: Array.from({ length: 20001 }, (_, i) => i + 1), action: 'off' })).data.error, 'Pick 20,000 or fewer at a time.');
 });

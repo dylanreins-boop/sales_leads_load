@@ -22,7 +22,12 @@ const state = {
   importedSort: { key: 'received_at', dir: 'desc' },
   importedSel: new Set(),
   importedShow: 200,
+  // The lists off the board (Past Customers, Old & Dead, Imported) can hold thousands of leads, so each
+  // is fetched only while its tab is open; the tabs show counts.
+  counts: { old: 0, customers: 0, imported: 0 },
+  offLoaded: { old: false, customers: false, imported: false },
 };
+const OFF_LISTS = { old: 'oldLeads', customers: 'customers', imported: 'imported' };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -218,21 +223,31 @@ function tomorrowAtReminderHour() {
 }
 
 // ---------- board ----------
-async function loadLeads() {
+// refresh: the once-a-minute update. It brings the board and the tab counts up to date but doesn't fetch
+// an open off-board list again (thousands of leads); any change someone makes does.
+async function loadLeads({ refresh = false } = {}) {
   // The board isn't filtered by the search box; search shows every match in its own dropdown.
   const params = new URLSearchParams();
   const source = $('#sourceFilter').value;
-  const oldParams = new URLSearchParams(params);
-  oldParams.set('view', 'old');
-  const customerParams = new URLSearchParams(params);
-  customerParams.set('view', 'customers');
   if (source) params.set('source', source);
-  [state.leads, state.oldLeads, state.customers, state.imported] = await Promise.all([
-    api(`/api/leads?${params}`), api(`/api/leads?${oldParams}`), api(`/api/leads?${customerParams}`), api('/api/leads?view=imported'),
+  const open = OFF_LISTS[state.pipeline] ? state.pipeline : null;
+  const fetchOpen = open && !(refresh && state.offLoaded[open]);
+  const [board, counts, list] = await Promise.all([
+    api(`/api/leads?${params}`), api('/api/leads/counts'), fetchOpen ? api(`/api/leads?view=${open}`) : null,
   ]);
-  // Leads no longer there (an import undone) drop out of the selection.
-  const ids = new Set(state.imported.map((l) => l.id));
-  for (const id of state.importedSel) if (!ids.has(id)) state.importedSel.delete(id);
+  state.leads = board;
+  state.counts = counts;
+  if (!refresh) for (const key of Object.keys(OFF_LISTS)) if (key !== open) state.offLoaded[key] = false;
+  if (fetchOpen) {
+    state[OFF_LISTS[open]] = list;
+    state.offLoaded[open] = true;
+    if (open === 'imported') {
+      importedCache.key = null;
+      // Leads no longer there (an import undone) drop out of the selection.
+      const ids = new Set(list.map((l) => l.id));
+      for (const id of state.importedSel) if (!ids.has(id)) state.importedSel.delete(id);
+    }
+  }
   renderBoard();
 }
 
@@ -306,6 +321,7 @@ function setPipeline(id) {
   try { localStorage.setItem('pipeline', id); } catch { /* storage unavailable */ }
   history.replaceState(null, '', `#${id}`);
   renderBoard();
+  if (OFF_LISTS[id] && !state.offLoaded[id]) loadLeads().catch(fail);
 }
 
 function renderTabs() {
@@ -323,9 +339,9 @@ function renderTabs() {
   }, h('span', { class: 'long-label' }, label), h('span', { class: 'short-label' }, (DEFAULT_NAMES[id] === undefined || DEFAULT_NAMES[id] === label) && SHORT[id] || label), h('span', { class: 'count' }, count));
   $('#pipelineTabs').replaceChildren(
     ...state.meta.pipelines.map((p) => tab(p.id, p.label, state.leads.filter((l) => l.pipeline === p.id).length)),
-    tab('customers', 'Past Customers', state.customers.length, 'old-tab'),
-    tab('old', 'Old & Dead Leads', state.oldLeads.length, 'old-tab'),
-    ...(state.imported.length || state.pipeline === 'imported' ? [tab('imported', 'Imported', state.imported.length, 'old-tab')] : []),
+    tab('customers', 'Past Customers', state.counts.customers, 'old-tab'),
+    tab('old', 'Old & Dead Leads', state.counts.old, 'old-tab'),
+    ...(state.counts.imported || state.pipeline === 'imported' ? [tab('imported', 'Imported', state.counts.imported, 'old-tab')] : []),
     h('span', { class: 'spacer' }),
     ...(isAdmin() ? [h('a', { class: 'export-link', href: exportUrl(), download: '', title: 'Download what this tab shows as an Excel file' },
       h('span', { class: 'long-label' }, 'Export to Excel'), h('span', { class: 'short-label' }, 'Excel'))] : []),
@@ -606,7 +622,7 @@ function renderOld() {
         h('td', {}, shortDate(l.received_at)),
         h('td', {}, shortDate(l.archived_at)),
         h('td', {}, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); restoreLead(l.id); } }, 'Restore')))))))))
-    : [h('p', { class: 'muted' }, state.oldLeads.length ? 'No old leads match these filters.' : 'No old or dead leads yet. Leads show up here two weeks after they come in.')]));
+    : [h('p', { class: 'muted' }, !state.offLoaded.old ? 'Loading…' : state.oldLeads.length ? 'No old leads match these filters.' : 'No old or dead leads yet. Leads show up here two weeks after they come in.')]));
 }
 
 // ---------- past customers ----------
@@ -653,7 +669,7 @@ function renderCustomers() {
       h('td', {}, serviceLabels(l.booked_services || [])),
       h('td', { class: 'num' }, l.spent_cents != null ? money(l.spent_cents, { cents: false }) : '–'),
       h('td', {}, h('button', { type: 'button', onclick: (e) => { e.stopPropagation(); restoreLead(l.id); } }, 'Book again'))))),
-  ] : [h('tbody', {}, h('tr', {}, h('td', { class: 'muted' }, !state.customers.length
+  ] : [h('tbody', {}, h('tr', {}, h('td', { class: 'muted' }, !state.offLoaded.customers ? 'Loading…' : !state.customers.length
     ? `No past customers yet. Booked customers show up here ${state.meta.archiveDays} days after their job is picked up.`
     : state.customerDue ? `Nobody here is due for maintenance yet. Customers are flagged ${state.meta.recoatMonths} months after pick-up.`
       : 'No past customers with that vehicle type.')))]));
@@ -682,15 +698,22 @@ function importedWhere(l) {
   return { key: 'old', text: 'Old', order: 2 };
 }
 // "Status before the app: Contacted" from the import notes.
-const importedBefore = (l) => (/Status before the app: ([^\n]+)/.exec(l.message || '') || [])[1] || '';
+const importedBefore = (l) => l.status_before ?? ((/Status before the app: ([^\n]+)/.exec(l.message || '') || [])[1] || '');
 
+// The filtered, sorted rows, worked out once per filter and sort (ticking a box doesn't redo 18,000 leads).
+const importedCache = { key: null, rows: [] };
 function importedRows() {
+  const key = JSON.stringify([state.importedFilters, state.importedSort, state.imported.length]);
+  if (importedCache.key === key) return importedCache.rows;
   const f = state.importedFilters;
   const q = f.q.trim().toLowerCase();
   const digits = q.replace(/\D/g, '');
   const col = IMPORTED_COLUMNS.find((c) => c.key === state.importedSort.key) || IMPORTED_COLUMNS[4];
   const dir = state.importedSort.dir === 'asc' ? 1 : -1;
-  return state.imported
+  // Each lead's sort value is worked out once, not on every comparison.
+  const sortVal = new Map();
+  const val = (l) => { if (!sortVal.has(l.id)) sortVal.set(l.id, col.get(l)); return sortVal.get(l.id); };
+  const rows = state.imported
     .filter((l) => !f.file || l.import_batch === f.file)
     .filter((l) => !f.stage || l.stage === f.stage)
     .filter((l) => !f.source || l.source === f.source)
@@ -698,12 +721,50 @@ function importedRows() {
     .filter((l) => !q || [leadName(l), l.email, [l.vehicle_year, l.vehicle_make, l.vehicle_model].join(' ')].some((v) => String(v || '').toLowerCase().includes(q))
       || (digits.length >= 3 && String(l.phone || '').replace(/\D/g, '').includes(digits)))
     .sort((a, b) => {
-      const x = col.get(a);
-      const y = col.get(b);
+      const x = val(a);
+      const y = val(b);
       // Blanks last, either way.
       if ((x === '' || x == null) !== (y === '' || y == null)) return x === '' || x == null ? 1 : -1;
-      return (x < y ? -1 : x > y ? 1 : 0) * dir || String(b.received_at).localeCompare(String(a.received_at));
+      return (x < y ? -1 : x > y ? 1 : 0) * dir || (b.received_at || '').localeCompare(a.received_at || '');
     });
+  Object.assign(importedCache, { key, rows });
+  return rows;
+}
+
+// Ticking boxes: update the ticks, the highlighted rows and the bulk bar, without redrawing the table.
+function importedTicked() {
+  const rows = importedRows();
+  const sel = state.importedSel;
+  document.querySelectorAll('#importedTable tbody tr[data-id]').forEach((tr) => {
+    const on = sel.has(Number(tr.dataset.id));
+    tr.classList.toggle('picked', on);
+    const box = tr.querySelector('input[type="checkbox"]');
+    if (box) box.checked = on;
+  });
+  const shown = rows.slice(0, state.importedShow);
+  const all = $('#importedTable thead input[type="checkbox"]');
+  if (all) all.checked = shown.length > 0 && shown.every((l) => sel.has(l.id));
+  renderImportedBulk(rows);
+}
+
+// The bulk bar: shows once something is ticked.
+function renderImportedBulk(rows) {
+  const sel = state.importedSel;
+  const bulk = $('#importedBulk');
+  bulk.hidden = !sel.size;
+  if (!sel.size) return;
+  const stageSel = h('select', { 'aria-label': 'Move to stage' }, h('option', { value: '' }, 'Move to stage…'),
+    ...state.meta.stages.map((s) => h('option', { value: s.id }, s.label)));
+  stageSel.addEventListener('change', () => { if (stageSel.value) bulkImported('stage', stageSel.value); });
+  bulk.replaceChildren(...[
+    h('strong', {}, `${sel.size.toLocaleString('en-US')} selected`),
+    sel.size < rows.length && h('button', { type: 'button', class: 'link-btn', onclick: () => { rows.forEach((l) => sel.add(l.id)); importedTicked(); } }, `Select all ${rows.length.toLocaleString('en-US')}`),
+    h('button', { type: 'button', class: 'primary', onclick: () => bulkImported('board') }, 'Put on the board'),
+    stageSel,
+    h('button', { type: 'button', onclick: () => bulkImported('off') }, 'Take off the board'),
+    isAdmin() && h('button', { type: 'button', class: 'imp-sold-btn', onclick: markImportedSold }, '🤝 Mark as sold'),
+    h('button', { type: 'button', class: 'link-btn', onclick: () => { sel.clear(); importedTicked(); } }, 'Clear'),
+  ].filter(Boolean));
 }
 
 function renderImported() {
@@ -733,27 +794,12 @@ function renderImported() {
   $('#importedSummary').replaceChildren(h('span', {}, h('strong', {}, `${rows.length} lead${rows.length === 1 ? '' : 's'}`),
     rows.length !== all.length ? ` of ${all.length}` : '', ` · ${onBoard} on the board · ${rows.length - onBoard} off it`));
 
-  // The bulk bar: shows once something is ticked.
-  const bulk = $('#importedBulk');
-  bulk.hidden = !sel.size;
-  if (sel.size) {
-    const stageSel = h('select', { 'aria-label': 'Move to stage' }, h('option', { value: '' }, 'Move to stage…'),
-      ...state.meta.stages.map((s) => h('option', { value: s.id }, s.label)));
-    stageSel.addEventListener('change', () => { if (stageSel.value) bulkImported('stage', stageSel.value); });
-    bulk.replaceChildren(
-      h('strong', {}, `${sel.size} selected`),
-      sel.size < rows.length && h('button', { type: 'button', class: 'link-btn', onclick: () => { rows.forEach((l) => sel.add(l.id)); renderImported(); } }, `Select all ${rows.length}`),
-      h('button', { type: 'button', class: 'primary', onclick: () => bulkImported('board') }, 'Put on the board'),
-      stageSel,
-      h('button', { type: 'button', onclick: () => bulkImported('off') }, 'Take off the board'),
-      isAdmin() && h('button', { type: 'button', class: 'imp-sold-btn', onclick: markImportedSold }, '🤝 Mark as sold'),
-      h('button', { type: 'button', class: 'link-btn', onclick: () => { sel.clear(); renderImported(); } }, 'Clear'));
-  }
+  renderImportedBulk(rows);
 
   const allShownOn = shown.length > 0 && shown.every((l) => sel.has(l.id));
   const head = h('tr', {},
     h('th', { class: 'imp-check' }, h('input', { type: 'checkbox', 'aria-label': 'Select all shown', checked: allShownOn,
-      onchange: (e) => { shown.forEach((l) => (e.target.checked ? sel.add(l.id) : sel.delete(l.id))); renderImported(); } })),
+      onchange: (e) => { shown.forEach((l) => (e.target.checked ? sel.add(l.id) : sel.delete(l.id))); importedTicked(); } })),
     ...IMPORTED_COLUMNS.map((c) => {
       const on = state.importedSort.key === c.key;
       return h('th', { 'aria-sort': on ? (state.importedSort.dir === 'asc' ? 'ascending' : 'descending') : 'none' },
@@ -762,9 +808,9 @@ function renderImported() {
     }));
   const body = shown.map((l) => {
     const where = importedWhere(l);
-    return h('tr', { class: sel.has(l.id) ? 'picked' : '', title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(l.id, e) },
+    return h('tr', { class: sel.has(l.id) ? 'picked' : '', 'data-id': l.id, title: 'Click to open. Double-click to open full screen.', onclick: (e) => cardClick(l.id, e) },
       h('td', { class: 'imp-check', onclick: (e) => e.stopPropagation() }, h('input', { type: 'checkbox', 'aria-label': `Select ${leadName(l)}`, checked: sel.has(l.id),
-        onchange: (e) => { if (e.target.checked) sel.add(l.id); else sel.delete(l.id); renderImported(); } })),
+        onchange: (e) => { if (e.target.checked) sel.add(l.id); else sel.delete(l.id); importedTicked(); } })),
       h('td', {}, h('strong', {}, leadName(l))),
       h('td', {}, l.phone || ''),
       h('td', {}, [l.vehicle_year, l.vehicle_make, l.vehicle_model].filter(Boolean).join(' ')),
@@ -778,7 +824,7 @@ function renderImported() {
   });
   $('#importedTable').replaceChildren(h('thead', {}, head),
     h('tbody', {}, ...(body.length ? body : [h('tr', {}, h('td', { colspan: IMPORTED_COLUMNS.length + 1, class: 'muted' },
-      all.length ? 'No imported leads match these filters.' : 'Nothing imported yet. Use Import leads (Settings in the menu) to bring in leads from a spreadsheet or another CRM.'))])));
+      !state.offLoaded.imported ? 'Loading…' : all.length ? 'No imported leads match these filters.' : 'Nothing imported yet. Use Import leads (Settings in the menu) to bring in leads from a spreadsheet or another CRM.'))])));
   $('#importedMore').replaceChildren(...(rows.length > shown.length ? [h('button', { type: 'button', onclick: () => { state.importedShow += 200; renderImported(); } },
     `Show more (${rows.length - shown.length} more)`)] : []));
 }
@@ -2028,7 +2074,7 @@ async function init() {
     try { history.replaceState(null, '', '/'); } catch { /* not allowed in some previews */ }
   }
   // Refresh so new Facebook/website leads and due reminders show up on their own.
-  setInterval(() => Promise.all([loadLeads(), loadReminders()]).catch(() => {}), 60_000);
+  setInterval(() => Promise.all([loadLeads({ refresh: true }), loadReminders()]).catch(() => {}), 60_000);
 }
 
 // calendar.js and revenue.js load after this file; start once every script has run.
